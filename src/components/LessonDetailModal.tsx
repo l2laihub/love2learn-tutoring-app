@@ -12,7 +12,6 @@ import {
   Pressable,
   ActivityIndicator,
   TextInput,
-  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../theme';
@@ -45,9 +44,11 @@ interface LessonDetailModalProps {
   onEdit: () => void;
   onComplete: (notes?: string) => Promise<void>;
   onCancel: (reason?: string) => Promise<void>;
+  onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
   onDelete?: () => Promise<void>;
   onDeleteSeries?: () => Promise<void>;
   seriesCount?: number; // Number of lessons in the recurring series
+  isTutor?: boolean; // Whether the current user is a tutor/admin
 }
 
 export function LessonDetailModal({
@@ -58,12 +59,15 @@ export function LessonDetailModal({
   onEdit,
   onComplete,
   onCancel,
+  onUncomplete,
   onDelete,
   onDeleteSeries,
   seriesCount = 0,
+  isTutor = false,
 }: LessonDetailModalProps) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [showUncompleteConfirm, setShowUncompleteConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -174,9 +178,24 @@ export function LessonDetailModal({
     }
   };
 
+  const handleUncomplete = async () => {
+    if (!onUncomplete) return;
+    setLoading(true);
+    try {
+      await onUncomplete();
+      setShowUncompleteConfirm(false);
+      onClose();
+    } catch (err) {
+      console.error('Failed to uncomplete lesson:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleClose = () => {
     setShowCancelConfirm(false);
     setShowCompleteConfirm(false);
+    setShowUncompleteConfirm(false);
     setShowDeleteConfirm(false);
     setShowDeleteSeriesConfirm(false);
     setCancelReason('');
@@ -336,6 +355,42 @@ export function LessonDetailModal({
                   <ActivityIndicator size="small" color={colors.neutral.white} />
                 ) : (
                   <Text style={styles.confirmButtonText}>Delete All</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  if (showUncompleteConfirm) {
+    return (
+      <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+        <View style={styles.overlay}>
+          <View style={styles.confirmDialog}>
+            <Ionicons name="arrow-undo-circle" size={48} color={colors.status.warning} />
+            <Text style={styles.confirmTitle}>Undo Complete?</Text>
+            <Text style={styles.confirmSubtitle}>
+              This will change the lesson status back to "Scheduled". Use this if you accidentally marked the lesson as complete.
+            </Text>
+            <View style={styles.confirmActions}>
+              <Pressable
+                style={[styles.confirmButton, styles.confirmButtonSecondary]}
+                onPress={() => setShowUncompleteConfirm(false)}
+                disabled={loading}
+              >
+                <Text style={styles.confirmButtonSecondaryText}>Go Back</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.confirmButton, styles.confirmButtonWarning]}
+                onPress={handleUncomplete}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.neutral.white} />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Undo Complete</Text>
                 )}
               </Pressable>
             </View>
@@ -533,6 +588,19 @@ export function LessonDetailModal({
             >
               <Ionicons name="checkmark-circle" size={20} color={colors.neutral.white} />
               <Text style={styles.completeButtonText}>Complete</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Undo Complete action - only show for completed lessons (tutor/admin only) */}
+        {displayData.status === 'completed' && isTutor && onUncomplete && (
+          <View style={styles.actions}>
+            <Pressable
+              style={styles.uncompleteButton}
+              onPress={() => setShowUncompleteConfirm(true)}
+            >
+              <Ionicons name="arrow-undo-circle-outline" size={20} color={colors.status.warning} />
+              <Text style={styles.uncompleteButtonText}>Undo Complete</Text>
             </Pressable>
           </View>
         )}
@@ -812,6 +880,23 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.semibold,
     color: colors.neutral.white,
   },
+  uncompleteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.status.warning,
+    backgroundColor: colors.status.warningBg,
+  },
+  uncompleteButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.status.warning,
+  },
   // Confirmation dialog
   overlay: {
     flex: 1,
@@ -883,6 +968,9 @@ const styles = StyleSheet.create({
   },
   confirmButtonSuccess: {
     backgroundColor: colors.status.success,
+  },
+  confirmButtonWarning: {
+    backgroundColor: colors.status.warning,
   },
   confirmButtonText: {
     fontSize: typography.sizes.base,

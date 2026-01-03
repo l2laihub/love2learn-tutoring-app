@@ -522,6 +522,56 @@ export function useCompleteLesson() {
 }
 
 /**
+ * Hook for reverting a completed lesson back to scheduled status
+ * Admin/tutor only - allows undoing accidental completion
+ * @returns Mutation state with uncomplete function
+ */
+export function useUncompleteLesson() {
+  const [data, setData] = useState<ScheduledLesson | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (id: string): Promise<ScheduledLesson | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: lesson, error: updateError } = await supabase
+        .from('scheduled_lessons')
+        .update({
+          status: 'scheduled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setData(lesson);
+      return lesson;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to uncomplete lesson');
+      setError(errorMessage);
+      console.error('useUncompleteLesson error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
  * Hook for permanently deleting a lesson
  * Use with caution - this cannot be undone
  * @returns Mutation state with delete function

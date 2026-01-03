@@ -23,6 +23,7 @@ import {
   useUpdateLesson,
   useCompleteLesson,
   useCancelLesson,
+  useUncompleteLesson,
   useDeleteLesson,
   useCreateGroupedLesson,
   useDeleteLessonSession,
@@ -69,9 +70,12 @@ function getWeekStart(date: Date): Date {
   return d;
 }
 
-// Helper to format date as key
+// Helper to format date as key (using local date, not UTC)
 function formatDateKey(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // Days of the week
@@ -101,6 +105,7 @@ export default function CalendarScreen() {
   const updateLesson = useUpdateLesson();
   const completeLesson = useCompleteLesson();
   const cancelLesson = useCancelLesson();
+  const uncompleteLesson = useUncompleteLesson();
   const deleteLesson = useDeleteLesson();
   const deleteLessonSession = useDeleteLessonSession();
   const { findSeries, findSessionSeries } = useFindRecurringSeries();
@@ -408,6 +413,15 @@ export default function CalendarScreen() {
     // Cancel all lessons in the group
     for (const lesson of selectedGroupedLesson.lessons) {
       await cancelLesson.mutate(lesson.id, reason);
+    }
+    await refetch();
+  };
+
+  const handleUncompleteLesson = async () => {
+    if (!selectedGroupedLesson) return;
+    // Uncomplete all lessons in the group (revert to scheduled)
+    for (const lesson of selectedGroupedLesson.lessons) {
+      await uncompleteLesson.mutate(lesson.id);
     }
     await refetch();
   };
@@ -858,6 +872,7 @@ export default function CalendarScreen() {
         onEdit={handleEditFromDetail}
         onComplete={handleCompleteLesson}
         onCancel={handleCancelLesson}
+        onUncomplete={isTutor ? handleUncompleteLesson : undefined}
         onDelete={isTutor ? handleDeleteLesson : undefined}
         onDeleteSeries={
           isTutor && (seriesLessonIds.length > 1 || seriesSessionIds.length > 1)
@@ -865,6 +880,7 @@ export default function CalendarScreen() {
             : undefined
         }
         seriesCount={isSessionSeries ? seriesSessionIds.length : seriesLessonIds.length}
+        isTutor={isTutor}
       />
     </SafeAreaView>
   );

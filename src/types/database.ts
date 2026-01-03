@@ -67,6 +67,8 @@ export type Database = {
           grade_level: string;
           subjects: string[];
           avatar_url: string | null;
+          hourly_rate: number;
+          subject_rates: Json;
           created_at: string;
           updated_at: string;
         };
@@ -78,6 +80,8 @@ export type Database = {
           grade_level: string;
           subjects?: string[];
           avatar_url?: string | null;
+          hourly_rate?: number;
+          subject_rates?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -89,6 +93,8 @@ export type Database = {
           grade_level?: string;
           subjects?: string[];
           avatar_url?: string | null;
+          hourly_rate?: number;
+          subject_rates?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -552,6 +558,86 @@ export type Database = {
           }
         ];
       };
+      payment_lessons: {
+        Row: {
+          id: string;
+          payment_id: string;
+          lesson_id: string;
+          amount: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          payment_id: string;
+          lesson_id: string;
+          amount: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          payment_id?: string;
+          lesson_id?: string;
+          amount?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'payment_lessons_payment_id_fkey';
+            columns: ['payment_id'];
+            isOneToOne: false;
+            referencedRelation: 'payments';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'payment_lessons_lesson_id_fkey';
+            columns: ['lesson_id'];
+            isOneToOne: false;
+            referencedRelation: 'scheduled_lessons';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      tutor_settings: {
+        Row: {
+          id: string;
+          tutor_id: string;
+          default_rate: number;
+          default_base_duration: number;
+          subject_rates: Json;
+          combined_session_rate: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tutor_id: string;
+          default_rate?: number;
+          default_base_duration?: number;
+          subject_rates?: Json;
+          combined_session_rate?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tutor_id?: string;
+          default_rate?: number;
+          default_base_duration?: number;
+          subject_rates?: Json;
+          combined_session_rate?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'tutor_settings_tutor_id_fkey';
+            columns: ['tutor_id'];
+            isOneToOne: true;
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -683,6 +769,26 @@ export interface Payment {
   updated_at: string;
 }
 
+// Tutor settings for rate configuration
+export interface TutorSettings {
+  id: string;
+  tutor_id: string;
+  default_rate: number;           // Default rate amount
+  default_base_duration: number;  // Default base duration in minutes (e.g., 60)
+  subject_rates: SubjectRates;    // Per-subject rate overrides
+  combined_session_rate: number;  // Flat rate per student for combined sessions
+  created_at: string;
+  updated_at: string;
+}
+
+// Input types for tutor settings
+export interface UpdateTutorSettingsInput {
+  default_rate?: number;
+  default_base_duration?: number;
+  subject_rates?: SubjectRates;
+  combined_session_rate?: number;
+}
+
 // Worksheet assignment
 export interface Assignment {
   id: string;
@@ -740,6 +846,40 @@ export interface PaymentWithParent extends Payment {
   parent: ParentWithStudents;
 }
 
+// Payment lesson - links a payment to a specific lesson with calculated amount
+export interface PaymentLesson {
+  id: string;
+  payment_id: string;
+  lesson_id: string;
+  amount: number;
+  created_at: string;
+}
+
+// Payment lesson with the full lesson details
+export interface PaymentLessonWithDetails extends PaymentLesson {
+  lesson: ScheduledLessonWithStudent;
+}
+
+// Payment with parent and linked lessons
+export interface PaymentWithDetails extends PaymentWithParent {
+  payment_lessons?: PaymentLessonWithDetails[];
+}
+
+// Subject rate with base duration (e.g., $35 for 30 minutes)
+export interface SubjectRateConfig {
+  rate: number;           // Amount in dollars
+  base_duration: number;  // Base duration in minutes (e.g., 30 or 60)
+}
+
+// Subject rates type - each subject can have a rate with base duration
+export interface SubjectRates {
+  piano?: SubjectRateConfig;
+  math?: SubjectRateConfig;
+  reading?: SubjectRateConfig;
+  speech?: SubjectRateConfig;
+  english?: SubjectRateConfig;
+}
+
 // Input types for creating/updating entities
 export interface CreateStudentInput {
   parent_id: string;
@@ -748,6 +888,8 @@ export interface CreateStudentInput {
   grade_level: string;
   subjects?: string[];
   avatar_url?: string | null;
+  hourly_rate?: number;
+  subject_rates?: SubjectRates;
 }
 
 export interface UpdateStudentInput {
@@ -757,6 +899,8 @@ export interface UpdateStudentInput {
   grade_level?: string;
   subjects?: string[];
   avatar_url?: string | null;
+  hourly_rate?: number;
+  subject_rates?: SubjectRates;
 }
 
 export interface CreateParentInput {

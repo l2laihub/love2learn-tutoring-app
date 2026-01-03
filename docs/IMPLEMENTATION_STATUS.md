@@ -120,7 +120,7 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 - [ ] Implement 1-hour reminder
 - [ ] Daily schedule summary for tutor
 
-### Payment Tracking ✅ COMPLETE
+### Payment Tracking ✅ COMPLETE (ENHANCED)
 
 - [x] **Payment tracking screen with monthly view**
   - Monthly navigation
@@ -138,6 +138,18 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
   - Overdue section at top of payments list
   - Red warning styling for overdue items
   - useOverduePayments hook for filtering
+- [x] **Delete payment** - Remove payment records with confirmation dialog
+- [x] **Auto-generate invoice from lessons (NEW)**
+  - `GenerateInvoiceModal` component with two-step flow
+  - Select family and billing month
+  - Shows all uninvoiced completed lessons
+  - Calculates amounts based on student hourly rates
+  - Per-subject rate overrides supported
+  - Links payments to specific lessons via `payment_lessons` table
+- [x] **Payment summary on Home dashboard (NEW)**
+  - Shows collected/outstanding amounts and family count
+  - Overdue payments alert with count
+  - Quick navigation to Payments tab
 
 ---
 
@@ -269,6 +281,7 @@ love2learn-tutoring-app/
 │   │   ├── LessonFormModal.tsx  # Lesson create/edit (ENHANCED)
 │   │   ├── LessonDetailModal.tsx # Lesson view/actions
 │   │   ├── PaymentFormModal.tsx # Payment create/edit
+│   │   ├── GenerateInvoiceModal.tsx # Auto-generate invoice from lessons (NEW)
 │   │   ├── WorksheetGeneratorModal.tsx # Worksheet configuration
 │   │   └── ...
 │   ├── contexts/            # React contexts
@@ -278,7 +291,7 @@ love2learn-tutoring-app/
 │   │   ├── useParents.ts    # Parent CRUD hooks (with search)
 │   │   ├── useImportData.ts # Google Sheets import hook
 │   │   ├── useLessons.ts    # Lesson CRUD hooks (create, update, cancel, complete, delete)
-│   │   ├── usePayments.ts   # Payment CRUD hooks (with summary, overdue)
+│   │   ├── usePayments.ts   # Payment CRUD hooks (with summary, overdue, delete, invoice generation)
 │   │   └── useAssignments.ts
 │   ├── services/            # Business logic
 │   │   └── pianoWorksheetGenerator.ts  # Piano worksheet HTML/PDF generation
@@ -295,13 +308,40 @@ love2learn-tutoring-app/
 │   │   ├── 20260102000002_role_system.sql
 │   │   ├── 20260102000003_handle_new_user_trigger.sql
 │   │   ├── 20260102000004_student_subjects.sql
-│   │   └── 20260102000005_additional_subjects.sql (NEW - pending)
+│   │   ├── 20260102000010_student_hourly_rates.sql (NEW - pending)
+│   │   └── 20260102000011_payment_lessons.sql (NEW - pending)
 │   └── seed.sql            # Sample data for development
 ├── assets/                  # Images, fonts
 └── docs/                    # Documentation
     ├── IMPLEMENTATION_STATUS.md  # This file
     └── sample-import-data.csv    # Sample data for import testing
 ```
+
+---
+
+## Recent Changes (January 3, 2026)
+
+### Payment System Enhancements
+1. **Delete payment** - Remove payment records with confirmation dialog
+2. **Auto-generate invoice from lessons** - New GenerateInvoiceModal component
+   - Two-step flow: Select family/month → Review and confirm
+   - Shows uninvoiced completed lessons
+   - Calculates amounts based on student hourly rates
+   - Supports per-subject rate overrides
+   - Links payments to specific lessons via payment_lessons table
+3. **Student hourly rates** - New columns on students table
+   - Default hourly_rate per student
+   - Optional subject_rates for per-subject pricing
+4. **Payment-lessons linkage** - New payment_lessons junction table
+   - Links payments to the specific lessons they cover
+   - Stores calculated amount per lesson
+5. **Payment summary on Home dashboard** - Quick stats widget
+   - Shows collected, outstanding, and family count
+   - Overdue payments alert
+
+### New Database Migrations
+- `20260102000010_student_hourly_rates.sql` - Add hourly_rate and subject_rates to students
+- `20260102000011_payment_lessons.sql` - Create payment_lessons junction table with RLS
 
 ---
 
@@ -332,12 +372,15 @@ love2learn-tutoring-app/
 
 ## Next Steps (Recommended Order)
 
-1. **Install expo-print and expo-sharing** - Run `npx expo install expo-print expo-sharing expo-file-system` for PDF export
-2. **Run Subjects Migration** - Add reading/speech/english to enum (see SQL above)
-3. **Deploy Edge Function** - Create `send-lesson-notification` for parent notifications
-4. **SheetMagic API** - Add API endpoint to sheetmagic.app for math worksheet integration
-5. **Push Notifications** - Set up Firebase Cloud Messaging
-6. **Home Dashboard** - Add today's lessons and upcoming widgets
+1. **Run Payment Migrations** - Deploy the new hourly rates and payment_lessons tables:
+   ```bash
+   npx supabase db push
+   ```
+2. **Install expo-print and expo-sharing** - Run `npx expo install expo-print expo-sharing expo-file-system` for PDF export
+3. **Run Subjects Migration** - Add reading/speech/english to enum (see SQL above)
+4. **Deploy Edge Function** - Create `send-lesson-notification` for parent notifications
+5. **SheetMagic API** - Add API endpoint to sheetmagic.app for math worksheet integration
+6. **Push Notifications** - Set up Firebase Cloud Messaging
 
 ---
 
@@ -388,6 +431,8 @@ EXPO_PUBLIC_OPENAI_API_KEY=      # Optional (for worksheets feature)
 | `20260102000007_expand_subjects.sql` | Change students.subjects to text[] | ⏳ Pending |
 | `20260102000008_expand_tutoring_subject_enum.sql` | Add reading/speech/english to tutoring_subject enum | ⏳ Pending |
 | `20260102000009_lesson_sessions.sql` | Create lesson_sessions table for grouped lessons | ⏳ Pending |
+| `20260102000010_student_hourly_rates.sql` | Add hourly_rate and subject_rates to students | ⏳ Pending |
+| `20260102000011_payment_lessons.sql` | Create payment_lessons junction table | ⏳ Pending |
 | `seed.sql` | Sample data for development | Optional |
 
 ### Role System

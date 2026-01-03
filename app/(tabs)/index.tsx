@@ -11,6 +11,7 @@ import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
 import { usePendingAssignments } from '../../src/hooks/useAssignments';
+import { usePaymentSummary, useOverduePayments } from '../../src/hooks/usePayments';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { ScheduledLessonWithStudent, AssignmentWithStudent, GroupedLesson } from '../../src/types/database';
@@ -39,6 +40,8 @@ export default function HomeScreen() {
   const { data: todaysLessons, loading: lessonsLoading, refetch: refetchLessons } = useTodaysLessons();
   const { data: upcomingLessons, refetch: refetchUpcoming } = useUpcomingGroupedLessons(5);
   const { data: pendingAssignments, loading: assignmentsLoading, refetch: refetchAssignments } = usePendingAssignments();
+  const { summary: paymentSummary, refetch: refetchPayments } = usePaymentSummary();
+  const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
   const [refreshing, setRefreshing] = useState(false);
 
   // Calculate student counts by subject dynamically
@@ -81,9 +84,16 @@ export default function HomeScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchStudents(), refetchLessons(), refetchUpcoming(), refetchAssignments()]);
+    await Promise.all([
+      refetchStudents(),
+      refetchLessons(),
+      refetchUpcoming(),
+      refetchAssignments(),
+      refetchPayments(),
+      refetchOverdue(),
+    ]);
     setRefreshing(false);
-  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments]);
+  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments, refetchPayments, refetchOverdue]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
@@ -290,6 +300,68 @@ export default function HomeScreen() {
                 <UpcomingLessonRow key={group.session_id || group.lessons[0].id} group={group} />
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Payments Summary (Tutor only) */}
+        {isTutor && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Payments This Month</Text>
+              <Pressable onPress={() => router.push('/(tabs)/payments')}>
+                <Text style={styles.seeAllText}>View all</Text>
+              </Pressable>
+            </View>
+
+            <Pressable
+              style={styles.paymentSummaryCard}
+              onPress={() => router.push('/(tabs)/payments')}
+            >
+              <View style={styles.paymentStats}>
+                <View style={styles.paymentStatItem}>
+                  <Ionicons name="wallet-outline" size={20} color={colors.status.success} />
+                  <View style={styles.paymentStatInfo}>
+                    <Text style={styles.paymentStatLabel}>Collected</Text>
+                    <Text style={[styles.paymentStatAmount, { color: colors.status.success }]}>
+                      ${paymentSummary.totalPaid.toFixed(0)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.paymentStatDivider} />
+
+                <View style={styles.paymentStatItem}>
+                  <Ionicons name="time-outline" size={20} color={colors.status.warning} />
+                  <View style={styles.paymentStatInfo}>
+                    <Text style={styles.paymentStatLabel}>Outstanding</Text>
+                    <Text style={[styles.paymentStatAmount, { color: colors.status.warning }]}>
+                      ${paymentSummary.totalOutstanding.toFixed(0)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.paymentStatDivider} />
+
+                <View style={styles.paymentStatItem}>
+                  <Ionicons name="people-outline" size={20} color={colors.piano.primary} />
+                  <View style={styles.paymentStatInfo}>
+                    <Text style={styles.paymentStatLabel}>Families</Text>
+                    <Text style={[styles.paymentStatAmount, { color: colors.piano.primary }]}>
+                      {paymentSummary.totalFamilies}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {overduePayments.length > 0 && (
+                <View style={styles.overdueAlert}>
+                  <Ionicons name="alert-circle" size={16} color={colors.status.error} />
+                  <Text style={styles.overdueAlertText}>
+                    {overduePayments.length} overdue payment{overduePayments.length > 1 ? 's' : ''}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
           </View>
         )}
 
@@ -849,5 +921,54 @@ const styles = StyleSheet.create({
   },
   assignmentDueTextOverdue: {
     color: colors.status.error,
+  },
+  // Payment summary styles
+  paymentSummaryCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  paymentStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  paymentStatItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  paymentStatInfo: {
+    flex: 1,
+  },
+  paymentStatLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+  },
+  paymentStatAmount: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.bold,
+  },
+  paymentStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: colors.neutral.border,
+    marginHorizontal: spacing.sm,
+  },
+  overdueAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+  },
+  overdueAlertText: {
+    fontSize: typography.sizes.sm,
+    color: colors.status.error,
+    fontWeight: typography.weights.medium,
   },
 });

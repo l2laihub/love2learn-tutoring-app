@@ -12,6 +12,7 @@ import {
   Pressable,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,16 +25,21 @@ import {
   useUpdatePayment,
   useMarkPaymentPaid,
   useOverduePayments,
+  useDeletePayment,
 } from '../../src/hooks/usePayments';
 import { useParents } from '../../src/hooks/useParents';
 import { PaymentWithParent, CreatePaymentInput, UpdatePaymentInput } from '../../src/types/database';
 import { PaymentFormModal, PaymentFormData } from '../../src/components/PaymentFormModal';
+import { GenerateInvoiceModal } from '../../src/components/GenerateInvoiceModal';
+import { RateSettingsModal } from '../../src/components/RateSettingsModal';
 
 export default function PaymentsScreen() {
   const { isTutor, parent } = useAuthContext();
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentWithParent | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -47,6 +53,7 @@ export default function PaymentsScreen() {
   const createPayment = useCreatePayment();
   const updatePayment = useUpdatePayment();
   const markPaid = useMarkPaymentPaid();
+  const deletePayment = useDeletePayment();
 
   // Filter payments for parents (only show their own)
   const displayPayments = useMemo(() => {
@@ -106,6 +113,32 @@ export default function PaymentsScreen() {
     await handleRefresh();
   };
 
+  const handleDeletePayment = (payment: PaymentWithParent) => {
+    Alert.alert(
+      'Delete Payment',
+      `Are you sure you want to delete the payment record for ${payment.parent?.name || 'this family'}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deletePayment.mutate(payment.id);
+            if (success) {
+              await handleRefresh();
+            } else {
+              Alert.alert('Error', 'Failed to delete payment. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleInvoiceSuccess = async () => {
+    await handleRefresh();
+  };
+
   const monthDisplay = selectedMonth.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
@@ -144,12 +177,27 @@ export default function PaymentsScreen() {
         <View style={styles.headerTop}>
           <Text style={styles.title}>Payments</Text>
           {isTutor && (
-            <Pressable
-              style={styles.addButton}
-              onPress={() => setShowCreateModal(true)}
-            >
-              <Ionicons name="add" size={24} color={colors.neutral.white} />
-            </Pressable>
+            <View style={styles.headerButtons}>
+              <Pressable
+                style={styles.settingsButton}
+                onPress={() => setShowSettingsModal(true)}
+              >
+                <Ionicons name="settings-outline" size={20} color={colors.neutral.textSecondary} />
+              </Pressable>
+              <Pressable
+                style={styles.invoiceButton}
+                onPress={() => setShowInvoiceModal(true)}
+              >
+                <Ionicons name="receipt-outline" size={20} color={colors.piano.primary} />
+                <Text style={styles.invoiceButtonText}>Generate</Text>
+              </Pressable>
+              <Pressable
+                style={styles.addButton}
+                onPress={() => setShowCreateModal(true)}
+              >
+                <Ionicons name="add" size={24} color={colors.neutral.white} />
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -273,21 +321,33 @@ export default function PaymentsScreen() {
                   </View>
 
                   <View style={styles.paymentFooter}>
-                    <View style={[styles.statusBadge, { backgroundColor: getStatusBg(payment.status) }]}>
-                      <Text style={[styles.statusBadgeText, { color: getStatusColor(payment.status) }]}>
-                        {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
-                      </Text>
+                    <View style={styles.paymentFooterLeft}>
+                      <View style={[styles.statusBadge, { backgroundColor: getStatusBg(payment.status) }]}>
+                        <Text style={[styles.statusBadgeText, { color: getStatusColor(payment.status) }]}>
+                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                        </Text>
+                      </View>
                     </View>
 
-                    {isTutor && payment.status !== 'paid' && (
-                      <Pressable
-                        style={styles.markPaidButton}
-                        onPress={() => handleMarkPaid(payment)}
-                      >
-                        <Ionicons name="checkmark" size={16} color={colors.status.success} />
-                        <Text style={styles.markPaidText}>Mark Paid</Text>
-                      </Pressable>
-                    )}
+                    <View style={styles.paymentActions}>
+                      {isTutor && payment.status !== 'paid' && (
+                        <Pressable
+                          style={styles.markPaidButton}
+                          onPress={() => handleMarkPaid(payment)}
+                        >
+                          <Ionicons name="checkmark" size={16} color={colors.status.success} />
+                          <Text style={styles.markPaidText}>Mark Paid</Text>
+                        </Pressable>
+                      )}
+                      {isTutor && (
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={() => handleDeletePayment(payment)}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={colors.status.error} />
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
 
                   {payment.notes && (
@@ -325,6 +385,22 @@ export default function PaymentsScreen() {
         initialData={selectedPayment}
         mode="edit"
       />
+
+      {/* Generate Invoice Modal */}
+      <GenerateInvoiceModal
+        visible={showInvoiceModal}
+        onClose={() => setShowInvoiceModal(false)}
+        onSuccess={handleInvoiceSuccess}
+        parents={parents}
+        parentsLoading={parentsLoading}
+        initialMonth={selectedMonth}
+      />
+
+      {/* Rate Settings Modal */}
+      <RateSettingsModal
+        visible={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -352,6 +428,31 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.neutral.text,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  settingsButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  invoiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+    backgroundColor: colors.piano.subtle,
+  },
+  invoiceButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
   },
   addButton: {
     backgroundColor: colors.piano.primary,
@@ -521,6 +622,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.neutral.borderLight,
   },
+  paymentFooterLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  paymentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   statusBadge: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -545,6 +655,12 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.status.success,
+  },
+  deleteButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.status.error,
   },
   paymentNotes: {
     fontSize: typography.sizes.sm,

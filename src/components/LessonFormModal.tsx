@@ -126,6 +126,9 @@ export function LessonFormModal({
   // Other form state - multi-day selection
   const [selectedDates, setSelectedDates] = useState<Date[]>([new Date()]);
   const [selectedTime, setSelectedTime] = useState<string>('15:00');
+  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [customTimeHour, setCustomTimeHour] = useState<string>('15');
+  const [customTimeMinute, setCustomTimeMinute] = useState<string>('00');
   const [notes, setNotes] = useState<string>('');
   const [recurrence, setRecurrence] = useState<RecurrenceType>('none');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | null>(null);
@@ -158,9 +161,15 @@ export function LessonFormModal({
         const date = new Date(initialData.scheduled_at);
         setSelectedDates([date]);
         setCalendarMonth(date);
-        setSelectedTime(
-          `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-        );
+        const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        setSelectedTime(timeStr);
+        // Check if this is a non-standard time (not on 30-min intervals)
+        const isCustomTime = !TIME_SLOTS.includes(timeStr);
+        setShowCustomTime(isCustomTime);
+        if (isCustomTime) {
+          setCustomTimeHour(date.getHours().toString().padStart(2, '0'));
+          setCustomTimeMinute(date.getMinutes().toString().padStart(2, '0'));
+        }
         setRecurrence('none');
         setRecurrenceEndDate(null);
       } else {
@@ -169,6 +178,9 @@ export function LessonFormModal({
         setSelectedDates([now]);
         setCalendarMonth(now);
         setSelectedTime('15:00');
+        setShowCustomTime(false);
+        setCustomTimeHour('15');
+        setCustomTimeMinute('00');
         setSelectedStudents([]);
         setSelectedDuration(30);
         setCustomDuration('');
@@ -820,20 +832,21 @@ export function LessonFormModal({
                       key={time}
                       style={[
                         styles.timeSlot,
-                        selectedTime === time && {
+                        !showCustomTime && selectedTime === time && {
                           backgroundColor: primaryColor,
                           borderColor: primaryColor,
                         },
                       ]}
                       onPress={() => {
                         setSelectedTime(time);
+                        setShowCustomTime(false);
                         setShowTimePicker(false);
                       }}
                     >
                       <Text
                         style={[
                           styles.timeSlotText,
-                          selectedTime === time && styles.timeSlotTextSelected,
+                          !showCustomTime && selectedTime === time && styles.timeSlotTextSelected,
                         ]}
                       >
                         {time}
@@ -841,6 +854,104 @@ export function LessonFormModal({
                     </Pressable>
                   ))}
                 </ScrollView>
+
+                {/* Custom Time Toggle */}
+                <Pressable
+                  style={[
+                    styles.customTimeToggle,
+                    showCustomTime && {
+                      borderColor: primaryColor,
+                      backgroundColor: primaryColor + '15',
+                    },
+                  ]}
+                  onPress={() => {
+                    setShowCustomTime(!showCustomTime);
+                    if (!showCustomTime) {
+                      // Parse current time to initialize custom inputs
+                      const [h, m] = selectedTime.split(':');
+                      setCustomTimeHour(h);
+                      setCustomTimeMinute(m);
+                    }
+                  }}
+                >
+                  <Ionicons
+                    name="options-outline"
+                    size={18}
+                    color={showCustomTime ? primaryColor : colors.neutral.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.customTimeToggleText,
+                      showCustomTime && { color: primaryColor },
+                    ]}
+                  >
+                    Custom Time
+                  </Text>
+                </Pressable>
+
+                {/* Custom Time Input */}
+                {showCustomTime && (
+                  <View style={styles.customTimeContainer}>
+                    <View style={styles.customTimeInputGroup}>
+                      <Text style={styles.customTimeLabel}>Hour</Text>
+                      <TextInput
+                        style={[styles.customTimeInput, { borderColor: primaryColor }]}
+                        value={customTimeHour}
+                        onChangeText={(text) => {
+                          const numericValue = text.replace(/[^0-9]/g, '');
+                          if (numericValue === '' || (parseInt(numericValue, 10) >= 0 && parseInt(numericValue, 10) <= 23)) {
+                            setCustomTimeHour(numericValue);
+                            if (numericValue.length > 0) {
+                              const hour = numericValue.padStart(2, '0');
+                              const minute = customTimeMinute.padStart(2, '0');
+                              setSelectedTime(`${hour}:${minute}`);
+                            }
+                          }
+                        }}
+                        placeholder="00"
+                        placeholderTextColor={colors.neutral.textMuted}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                      <Text style={styles.customTimeHint}>(0-23)</Text>
+                    </View>
+                    <Text style={styles.customTimeSeparator}>:</Text>
+                    <View style={styles.customTimeInputGroup}>
+                      <Text style={styles.customTimeLabel}>Min</Text>
+                      <TextInput
+                        style={[styles.customTimeInput, { borderColor: primaryColor }]}
+                        value={customTimeMinute}
+                        onChangeText={(text) => {
+                          const numericValue = text.replace(/[^0-9]/g, '');
+                          if (numericValue === '' || (parseInt(numericValue, 10) >= 0 && parseInt(numericValue, 10) <= 59)) {
+                            setCustomTimeMinute(numericValue);
+                            if (numericValue.length > 0) {
+                              const hour = customTimeHour.padStart(2, '0');
+                              const minute = numericValue.padStart(2, '0');
+                              setSelectedTime(`${hour}:${minute}`);
+                            }
+                          }
+                        }}
+                        placeholder="00"
+                        placeholderTextColor={colors.neutral.textMuted}
+                        keyboardType="number-pad"
+                        maxLength={2}
+                      />
+                      <Text style={styles.customTimeHint}>(0-59)</Text>
+                    </View>
+                    <Pressable
+                      style={[styles.customTimeApplyButton, { backgroundColor: primaryColor }]}
+                      onPress={() => {
+                        const hour = customTimeHour.padStart(2, '0');
+                        const minute = customTimeMinute.padStart(2, '0');
+                        setSelectedTime(`${hour}:${minute}`);
+                        setShowTimePicker(false);
+                      }}
+                    >
+                      <Ionicons name="checkmark" size={20} color={colors.neutral.white} />
+                    </Pressable>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -1472,6 +1583,74 @@ const styles = StyleSheet.create({
   },
   timeSlotTextSelected: {
     color: colors.neutral.white,
+  },
+  // Custom time styles
+  customTimeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.neutral.border,
+  },
+  customTimeToggleText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  customTimeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  customTimeInputGroup: {
+    alignItems: 'center',
+  },
+  customTimeLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginBottom: spacing.xs,
+  },
+  customTimeInput: {
+    width: 60,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderWidth: 2,
+    borderRadius: borderRadius.md,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    textAlign: 'center',
+    backgroundColor: colors.neutral.white,
+  },
+  customTimeHint: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginTop: spacing.xs,
+  },
+  customTimeSeparator: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginTop: spacing.md,
+  },
+  customTimeApplyButton: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
+    marginTop: spacing.md,
   },
   // Duration styles
   durationContainer: {
