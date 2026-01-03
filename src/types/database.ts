@@ -11,6 +11,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
+// User role type - tutor has admin access, parent has limited access
+export type UserRole = 'parent' | 'tutor';
+
 export type Database = {
   public: {
     Tables: {
@@ -21,6 +24,7 @@ export type Database = {
           name: string;
           email: string;
           phone: string | null;
+          role: UserRole;
           created_at: string;
           updated_at: string;
         };
@@ -30,6 +34,7 @@ export type Database = {
           name: string;
           email: string;
           phone?: string | null;
+          role?: UserRole;
           created_at?: string;
           updated_at?: string;
         };
@@ -39,6 +44,7 @@ export type Database = {
           name?: string;
           email?: string;
           phone?: string | null;
+          role?: UserRole;
           created_at?: string;
           updated_at?: string;
         };
@@ -59,6 +65,7 @@ export type Database = {
           name: string;
           age: number;
           grade_level: string;
+          subjects: ('piano' | 'math')[];
           avatar_url: string | null;
           created_at: string;
           updated_at: string;
@@ -69,6 +76,7 @@ export type Database = {
           name: string;
           age: number;
           grade_level: string;
+          subjects?: ('piano' | 'math')[];
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -79,6 +87,7 @@ export type Database = {
           name?: string;
           age?: number;
           grade_level?: string;
+          subjects?: ('piano' | 'math')[];
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;

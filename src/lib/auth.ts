@@ -67,7 +67,7 @@ export async function signIn(
 
 /**
  * Sign up with email, password, and name
- * Creates both auth user and parent record
+ * Creates auth user - parent record is created automatically via database trigger
  *
  * @param email - User's email address
  * @param password - User's password
@@ -83,6 +83,7 @@ export async function signUp(
     const normalizedEmail = email.trim().toLowerCase();
 
     // Create auth user
+    // The parent record is created automatically via database trigger (handle_new_user)
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: normalizedEmail,
       password,
@@ -101,25 +102,6 @@ export async function signUp(
       return {
         data: null,
         error: new Error('User creation failed - no user returned'),
-      };
-    }
-
-    // Create parent record
-    const { error: parentError } = await supabase.from('parents').insert({
-      user_id: authData.user.id,
-      name: name.trim(),
-      email: normalizedEmail,
-    });
-
-    if (parentError) {
-      console.error('Error creating parent record:', parentError);
-      // Note: Auth user was created but parent record failed
-      // The user can still sign in, and we can retry parent creation later
-      return {
-        data: authData.session,
-        error: new Error(
-          `Account created but profile setup failed: ${parentError.message}`
-        ),
       };
     }
 

@@ -43,9 +43,13 @@ export const colors = {
   // Status colors
   status: {
     success: '#4CAF50',
+    successBg: '#E8F5E9',
     warning: '#FFC107',
+    warningBg: '#FFF8E1',
     error: '#F44336',
+    errorBg: '#FFEBEE',
     info: '#2196F3',
+    infoBg: '#E3F2FD',
     paid: '#4CAF50',
     partial: '#FFC107',
     unpaid: '#F44336',

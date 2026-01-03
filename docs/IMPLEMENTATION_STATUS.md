@@ -10,7 +10,7 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 
 | Phase | Status | Progress |
 |-------|--------|----------|
-| Week 1: Foundation | In Progress | 60% |
+| Week 1: Foundation | Complete | 100% |
 | Week 2: Core Features | Not Started | 0% |
 | Week 3: AI Worksheets | Not Started | 0% |
 | Week 4: Polish | Not Started | 0% |
@@ -28,17 +28,44 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 - [x] UI component library (Card, Button, Badge, Avatar, Input, etc.)
 - [x] Data hooks scaffolding (useStudents, useParents, useLessons, usePayments, useAssignments)
 - [x] Placeholder screens for all tabs
-
-### In Progress
-
-- [ ] Parent list screen with full CRUD functionality
-- [ ] Student list screen with full CRUD functionality
-- [ ] Link students to parents in UI
-
-### Not Started
-
-- [ ] Configure Supabase Auth (email/password)
-- [ ] Create database schema in Supabase (run migrations)
+- [x] **Database migrations deployed**
+  - `20260102000000_initial_schema.sql` - Core tables, enums, indexes, triggers
+  - `20260102000001_rls_policies.sql` - Row Level Security policies
+  - `20260102000003_handle_new_user_trigger.sql` - Auto-create parent on signup
+- [x] **Students & Parents screen with full CRUD functionality**
+  - View students and parents in tabbed interface
+  - Search functionality for both
+  - Add new students and parents via modal forms
+  - Edit existing students and parents (long press)
+  - Delete students and parents with confirmation
+  - Link students to parents during creation
+- [x] **StudentFormModal component** - Form for creating/editing students
+- [x] **ParentFormModal component** - Form for creating/editing parents
+- [x] **Supabase Auth implementation**
+  - AuthContext provider for session management
+  - Login screen with email/password and typed message system
+  - Register screen with name, email, password and email confirmation flow
+  - Password reset functionality with email
+  - Auto-redirect based on auth state
+  - Sign out functionality on home screen
+  - Parent profile created via database trigger on registration
+  - Session persistence with SecureStore
+- [x] **Role-based access control (Tutor vs Parent)**
+  - `20260102000002_role_system.sql` - Role column and updated RLS policies
+  - `role` column on parents table (`'parent'` | `'tutor'`)
+  - `is_tutor()` helper function for RLS policies
+  - Tutors can access all data (students, payments, lessons, etc.)
+  - Parents can only access their own data
+  - Role-aware home screen with different dashboards
+  - AuthContext exposes `role`, `isTutor`, `isParent` helpers
+- [x] **Google Sheets Import (Tutor only)**
+  - `20260102000004_student_subjects.sql` - Added subjects array column to students
+  - Import students and parents from Google Sheets URL
+  - Expected columns: Parent Name, Email, Phone, Student Name, Age, Grade, Subjects
+  - Subjects column accepts: "Piano", "Math", or "Both"
+  - Preview data before importing
+  - Duplicate detection (skips existing parents/students)
+  - ImportDataModal component with step-by-step flow
 
 ---
 
@@ -120,9 +147,8 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 
 | Issue | Priority | Notes |
 |-------|----------|-------|
-| Database schema not deployed | High | Need to run migrations in Supabase |
-| Auth not implemented | High | Currently bypassed for development |
 | PNG assets are placeholders | Low | Need real icon/splash images |
+| TypeScript errors in node_modules | Low | Expo library type conflicts, doesn't affect runtime |
 
 ---
 
@@ -132,35 +158,48 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 love2learn-tutoring-app/
 ├── app/                      # Expo Router screens
 │   ├── (tabs)/              # Tab navigation
-│   │   ├── index.tsx        # Home (placeholder)
+│   │   ├── index.tsx        # Home with sign out
 │   │   ├── calendar.tsx     # Calendar (placeholder)
-│   │   ├── students.tsx     # Students (placeholder)
+│   │   ├── students.tsx     # Students & Parents (FUNCTIONAL)
 │   │   ├── worksheets.tsx   # Worksheets (placeholder)
 │   │   └── payments.tsx     # Payments (placeholder)
 │   ├── (auth)/              # Auth screens
+│   │   ├── _layout.tsx      # Auth stack layout
+│   │   ├── login.tsx        # Login screen
+│   │   └── register.tsx     # Registration screen
 │   ├── student/[id].tsx     # Student detail
 │   ├── parent/[id].tsx      # Parent detail
-│   └── _layout.tsx          # Root layout
+│   └── _layout.tsx          # Root layout with AuthProvider
 ├── src/
 │   ├── components/          # Reusable components
-│   │   ├── ui/             # UI primitives
-│   │   ├── Calendar.tsx    # Calendar component
-│   │   ├── LessonCard.tsx  # Lesson display
-│   │   ├── StudentCard.tsx # Student display
-│   │   ├── PaymentCard.tsx # Payment display
+│   │   ├── ui/             # UI primitives (Card, Button, Input, etc.)
+│   │   ├── StudentCard.tsx  # Student display card
+│   │   ├── StudentFormModal.tsx # Student add/edit form
+│   │   ├── ParentFormModal.tsx  # Parent add/edit form
+│   │   ├── LessonCard.tsx   # Lesson display
+│   │   ├── PaymentCard.tsx  # Payment display
+│   │   ├── Calendar.tsx     # Calendar component
 │   │   └── WorksheetGenerator.tsx
+│   ├── contexts/            # React contexts
+│   │   └── AuthContext.tsx  # Authentication context
 │   ├── hooks/               # Data fetching hooks
-│   │   ├── useStudents.ts
-│   │   ├── useParents.ts
+│   │   ├── useStudents.ts   # Student CRUD hooks
+│   │   ├── useParents.ts    # Parent CRUD hooks
 │   │   ├── useLessons.ts
 │   │   ├── usePayments.ts
 │   │   └── useAssignments.ts
 │   ├── lib/                 # Utilities
 │   │   ├── supabase.ts     # Supabase client
-│   │   └── auth.ts         # Auth helpers
+│   │   └── auth.ts         # Auth helpers (signIn, signUp, etc.)
 │   ├── types/               # TypeScript types
 │   │   └── database.ts     # DB schema types
 │   └── theme/               # Design tokens
+├── supabase/                # Database
+│   ├── migrations/         # SQL migrations
+│   │   ├── 20260102000000_initial_schema.sql
+│   │   ├── 20260102000001_rls_policies.sql
+│   │   └── 20260102000002_role_system.sql
+│   └── seed.sql            # Sample data for development
 ├── assets/                  # Images, fonts
 └── docs/                    # Documentation
 ```
@@ -169,9 +208,9 @@ love2learn-tutoring-app/
 
 ## Next Steps (Recommended Order)
 
-1. **Deploy database schema** - Run SQL migrations in Supabase
-2. **Students screen** - Wire up CRUD with add/edit forms
-3. **Parents screen** - Wire up CRUD with add/edit forms
+1. **Run Role Migration** - Apply `20260102000002_role_system.sql` in Supabase
+2. **Create Tutor Account** - Register and set role to 'tutor' for admin access
+3. **Test Role-Based Access** - Verify tutor sees all data, parents see only their own
 4. **Calendar** - Implement week view with lesson scheduling
 5. **Payments** - Wire up payment tracking
 6. **Worksheets** - AI-powered generation (depends on OpenAI key)
@@ -183,8 +222,67 @@ love2learn-tutoring-app/
 Required environment variables (see `.env.example`):
 
 ```
-EXPO_PUBLIC_SUPABASE_URL=        # Required
-EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=  # Required
-SUPABASE_SECRET_KEY=             # For server-side only
-EXPO_PUBLIC_OPENAI_API_KEY=      # Optional (for worksheets)
+EXPO_PUBLIC_SUPABASE_URL=        # Required - your Supabase project URL
+EXPO_PUBLIC_SUPABASE_ANON_KEY=   # Required - Supabase anon/public key
+SUPABASE_SECRET_KEY=             # For server-side only (optional for MVP)
+EXPO_PUBLIC_OPENAI_API_KEY=      # Optional (for worksheets feature)
 ```
+
+---
+
+## Authentication Flow
+
+### Registration
+1. User enters name, email, password
+2. Supabase auth user created
+3. Parent profile created with `user_id` link
+4. User redirected to main app (or email verification if enabled)
+
+### Login
+1. User enters email, password
+2. Supabase validates credentials
+3. Session stored in SecureStore
+4. User redirected to main app
+
+### Protected Routes
+- Root layout checks auth state on mount
+- Unauthenticated users redirected to login
+- Authenticated users on auth screens redirected to main app
+- RLS policies enforce data access at database level
+
+---
+
+## Database Migrations
+
+| File | Description |
+|------|-------------|
+| `20260102000000_initial_schema.sql` | Core tables, enums, indexes, triggers |
+| `20260102000001_rls_policies.sql` | Row Level Security policies |
+| `20260102000002_role_system.sql` | Role column and tutor access policies |
+| `20260102000003_handle_new_user_trigger.sql` | Auto-create parent profile on signup |
+| `20260102000004_student_subjects.sql` | Add subjects array to students table |
+| `seed.sql` | Sample data for development |
+
+### Role System
+
+The app supports two user roles:
+
+| Role | Description | Data Access |
+|------|-------------|-------------|
+| `parent` | Default role for registered users | Own profile, own students, own payments |
+| `tutor` | Admin role for Trang | All parents, all students, all data |
+
+To make a user a tutor (run in Supabase SQL Editor):
+```sql
+UPDATE parents SET role = 'tutor' WHERE email = 'tutor@example.com';
+```
+
+### RLS Policies Summary
+
+| Table | Parent Access | Tutor Access |
+|-------|--------------|--------------|
+| `parents` | Own profile only | All profiles |
+| `students` | Own students only | All students |
+| `scheduled_lessons` | View own students' lessons | Full CRUD all lessons |
+| `payments` | View own payments | Full CRUD all payments |
+| `assignments` | View own students' assignments | Full CRUD all assignments |

@@ -12,7 +12,7 @@ A mobile application for managing piano and math tutoring lessons, built with Re
 
 ## Tech Stack
 
-- **Frontend**: React Native + Expo (SDK 52)
+- **Frontend**: React Native + Expo (SDK 54)
 - **Navigation**: Expo Router (file-based routing)
 - **Backend**: Supabase (PostgreSQL, Auth, Storage)
 - **Language**: TypeScript
@@ -117,7 +117,10 @@ love2learn-tutoring-app/
 │   └── types/               # TypeScript definitions
 │       └── database.ts     # Database types
 ├── supabase/
-│   └── schema.sql          # Database schema
+│   ├── migrations/         # Database migrations
+│   │   ├── 20260102000000_initial_schema.sql
+│   │   └── 20260102000001_rls_policies.sql
+│   └── seed.sql            # Sample data for development
 ├── assets/                  # Images, fonts
 ├── app.config.ts           # Expo configuration
 ├── package.json
@@ -126,24 +129,51 @@ love2learn-tutoring-app/
 
 ## Database Setup
 
-### Option 1: Supabase Cloud (Recommended)
-
-1. Create a project at [supabase.com](https://supabase.com)
-2. Go to SQL Editor and run the contents of `supabase/schema.sql`
-3. Copy your project URL and anon key to `.env`
-
-### Option 2: Local Supabase
+### Option 1: Supabase CLI (Recommended)
 
 ```bash
-# Install Supabase CLI
-npm install -g supabase
+# Link to your Supabase project (get project ID from dashboard URL)
+npx supabase link --project-ref YOUR_PROJECT_ID
 
+# Push migrations to remote database
+npx supabase db push
+
+# (Optional) Run seed data
+# Copy and run supabase/seed.sql in SQL Editor
+```
+
+### Option 2: Manual via Dashboard
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Go to **SQL Editor** and run migrations in order:
+   - First: `supabase/migrations/20260102000000_initial_schema.sql`
+   - Then: `supabase/migrations/20260102000001_rls_policies.sql`
+3. (Optional) Run `supabase/seed.sql` for sample data
+4. Copy your project URL and anon key to `.env`
+
+### Option 3: Local Supabase (Docker required)
+
+```bash
 # Start local Supabase
-supabase init
-supabase start
+npx supabase start
 
-# Apply schema
-supabase db reset
+# Apply migrations + seed data
+npx supabase db reset
+
+# Get local credentials
+npx supabase status
+```
+
+### Disabling RLS for Development
+
+If testing without authentication:
+
+```sql
+ALTER TABLE parents DISABLE ROW LEVEL SECURITY;
+ALTER TABLE students DISABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_lessons DISABLE ROW LEVEL SECURITY;
+ALTER TABLE payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE assignments DISABLE ROW LEVEL SECURITY;
 ```
 
 ## Development Workflow
