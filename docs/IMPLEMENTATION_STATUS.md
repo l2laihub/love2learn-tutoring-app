@@ -12,7 +12,7 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 |-------|--------|----------|
 | Week 1: Foundation | Complete | 100% |
 | Week 2: Core Features | In Progress | 75% |
-| Week 3: AI Worksheets | In Progress | 40% |
+| Week 3: AI Worksheets | In Progress | 70% |
 | Week 4: Polish | Not Started | 0% |
 
 ---
@@ -143,9 +143,17 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 
 ## Week 3: AI Worksheets
 
-### Piano Worksheets ✅ UI COMPLETE
+### Piano Worksheets ✅ FUNCTIONAL
 
-- [ ] Create piano note image assets (pre-rendered PNGs)
+- [x] **Piano worksheet generation service** (client-side)
+  - `src/services/pianoWorksheetGenerator.ts` generates HTML worksheets
+  - Note naming: shows notes on staff, student writes letter name
+  - Note drawing: shows letter name, student draws note on staff
+  - Supports treble, bass, and grand staff clefs
+  - Difficulty levels with appropriate note ranges
+  - Accidentals (sharps, flats, mixed) support
+  - Answer key generation
+  - SVG-based music notation rendering
 - [x] **Build piano worksheet generator UI**
   - WorksheetGeneratorModal with multi-step flow
   - Worksheet type selection (Note Naming, Note Drawing)
@@ -155,9 +163,8 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
     - Difficulty levels (Beginner, Elementary, Intermediate, Advanced)
     - Accidentals (None, Sharps, Flats, Mixed)
     - Problem count (10, 15, 20)
-    - Fun themes (Space, Animals, Ocean)
-- [ ] Implement note naming worksheet logic
-- [ ] Implement note drawing worksheet logic
+- [x] **Assignment creation** - Saves worksheet config to database
+- [x] **PDF export** - Uses expo-print when available (requires package install)
 
 ### Math Worksheets ✅ UI COMPLETE
 
@@ -169,14 +176,21 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
     - Problem count (10, 15, 20, 25)
     - Include word problems toggle
     - Include visual aids toggle
-- [ ] OpenAI integration for math problem generation
-- [ ] Grade-level topic selection (K-6) ✅ UI done, needs backend
+- [ ] **SheetMagic API integration** - Will integrate with sheetmagic.app for math worksheet generation
+- [ ] OpenAI integration for math problem generation (alternative approach)
+
+### Assignments Tab ✅ FUNCTIONAL
+
+- [x] **Assigned worksheets list** - Shows all created worksheets
+- [x] **Assignment status** - Pending/Completed badges
+- [x] **Assignment details** - Tap to view assignment info
+- [x] **useAssignments hook** - Full CRUD operations already implemented
 
 ### PDF Generation
 
-- [ ] PDF generation pipeline
-- [ ] Save worksheets to Supabase Storage
-- [ ] Worksheet preview and download
+- [x] **HTML to PDF pipeline** - Uses expo-print for PDF generation
+- [ ] Save worksheets to Supabase Storage (deferred - using local files)
+- [ ] Worksheet preview modal
 
 ---
 
@@ -266,6 +280,8 @@ love2learn-tutoring-app/
 │   │   ├── useLessons.ts    # Lesson CRUD hooks (create, update, cancel, complete, delete)
 │   │   ├── usePayments.ts   # Payment CRUD hooks (with summary, overdue)
 │   │   └── useAssignments.ts
+│   ├── services/            # Business logic
+│   │   └── pianoWorksheetGenerator.ts  # Piano worksheet HTML/PDF generation
 │   ├── lib/                 # Utilities
 │   │   ├── supabase.ts     # Supabase client
 │   │   └── auth.ts         # Auth helpers (signIn, signUp, etc.)
@@ -316,13 +332,12 @@ love2learn-tutoring-app/
 
 ## Next Steps (Recommended Order)
 
-1. **Run Subjects Migration** - Add reading/speech/english to enum (see SQL above)
-2. **Deploy Edge Function** - Create `send-lesson-notification` for parent notifications
-3. **Worksheet Backend** - Implement PDF generation for worksheets
-4. **OpenAI Integration** - Connect math worksheet generator to AI
-5. **Piano Assets** - Create note images for piano worksheets
-6. **Push Notifications** - Set up Firebase Cloud Messaging
-7. **Home Dashboard** - Add today's lessons and upcoming widgets
+1. **Install expo-print and expo-sharing** - Run `npx expo install expo-print expo-sharing expo-file-system` for PDF export
+2. **Run Subjects Migration** - Add reading/speech/english to enum (see SQL above)
+3. **Deploy Edge Function** - Create `send-lesson-notification` for parent notifications
+4. **SheetMagic API** - Add API endpoint to sheetmagic.app for math worksheet integration
+5. **Push Notifications** - Set up Firebase Cloud Messaging
+6. **Home Dashboard** - Add today's lessons and upcoming widgets
 
 ---
 

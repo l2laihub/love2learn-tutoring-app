@@ -239,17 +239,17 @@ export function useCreateAssignment() {
         throw new Error(createError.message);
       }
 
-      // Notify parent about new assignment
-      try {
-        await supabase.functions.invoke('send-assignment-notification', {
-          body: {
-            assignmentId: assignment.id,
-            type: 'assignment_created',
-          },
-        });
-      } catch (notificationError) {
-        console.warn('Failed to send notification:', notificationError);
-      }
+      // TODO: Notify parent about new assignment when Edge Function is deployed
+      // try {
+      //   await supabase.functions.invoke('send-assignment-notification', {
+      //     body: {
+      //       assignmentId: assignment.id,
+      //       type: 'assignment_created',
+      //     },
+      //   });
+      // } catch (notificationError) {
+      //   console.warn('Failed to send notification:', notificationError);
+      // }
 
       setData(assignment);
       return assignment;
@@ -346,17 +346,17 @@ export function useCompleteAssignment() {
         throw new Error(updateError.message);
       }
 
-      // Notify tutor that assignment was completed
-      try {
-        await supabase.functions.invoke('send-assignment-notification', {
-          body: {
-            assignmentId: assignment.id,
-            type: 'assignment_completed',
-          },
-        });
-      } catch (notificationError) {
-        console.warn('Failed to send notification:', notificationError);
-      }
+      // TODO: Notify tutor that assignment was completed when Edge Function is deployed
+      // try {
+      //   await supabase.functions.invoke('send-assignment-notification', {
+      //     body: {
+      //       assignmentId: assignment.id,
+      //       type: 'assignment_completed',
+      //     },
+      //   });
+      // } catch (notificationError) {
+      //   console.warn('Failed to send notification:', notificationError);
+      // }
 
       setData(assignment);
       return assignment;

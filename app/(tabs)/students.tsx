@@ -3,7 +3,7 @@
  * Displays and manages students and their parent relationships
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,10 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -102,6 +105,10 @@ export default function StudentsScreen() {
   const [selectedSubjects, setSelectedSubjects] = useState<Subject[]>([]);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
 
+  // Selection mode state
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+
   // Modal state
   const [studentModalVisible, setStudentModalVisible] = useState(false);
   const [parentModalVisible, setParentModalVisible] = useState(false);
@@ -144,7 +151,7 @@ export default function StudentsScreen() {
     setSearchQuery('');
   }, []);
 
-  // Filter and search students
+  // Filter and search students (moved up for dependency)
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
       // Search filter
@@ -167,6 +174,134 @@ export default function StudentsScreen() {
       return true;
     });
   }, [students, searchQuery, selectedSubjects]);
+
+  // Clear selection when filters change (selection is scoped to current filter)
+  useEffect(() => {
+    setSelectedStudentIds(new Set());
+  }, [searchQuery, selectedSubjects]);
+
+  // Selection handlers
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionMode(prev => !prev);
+    setSelectedStudentIds(new Set());
+  }, []);
+
+  const toggleStudentSelection = useCallback((studentId: string) => {
+    setSelectedStudentIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(studentId)) {
+        newSet.delete(studentId);
+      } else {
+        newSet.add(studentId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const selectAllFiltered = useCallback(() => {
+    const allIds = new Set(filteredStudents.map(s => s.id));
+    setSelectedStudentIds(allIds);
+  }, [filteredStudents]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedStudentIds(new Set());
+  }, []);
+
+  // Get selected students and their parent emails
+  const selectedStudents = useMemo(() => {
+    return filteredStudents.filter(s => selectedStudentIds.has(s.id));
+  }, [filteredStudents, selectedStudentIds]);
+
+  const selectedParentEmails = useMemo(() => {
+    const emailSet = new Set<string>();
+    selectedStudents.forEach(student => {
+      if (student.parent?.email) {
+        emailSet.add(student.parent.email);
+      }
+    });
+    return Array.from(emailSet);
+  }, [selectedStudents]);
+
+  // Email action handlers
+  const handleCopyEmails = useCallback(async () => {
+    if (selectedParentEmails.length === 0) {
+      if (Platform.OS === 'web') {
+        window.alert('No parent emails found for selected students.');
+      } else {
+        Alert.alert('No Emails', 'No parent emails found for selected students.');
+      }
+      return;
+    }
+    const emailString = selectedParentEmails.join(', ');
+    await Clipboard.setStringAsync(emailString);
+    const message = `${selectedParentEmails.length} email${selectedParentEmails.length > 1 ? 's' : ''} copied to clipboard.`;
+    if (Platform.OS === 'web') {
+      window.alert(message);
+    } else {
+      Alert.alert('Copied!', message);
+    }
+  }, [selectedParentEmails]);
+
+  const handleOpenEmailClient = useCallback(async () => {
+    if (selectedParentEmails.length === 0) {
+      if (Platform.OS === 'web') {
+        window.alert('No parent emails found for selected students.');
+      } else {
+        Alert.alert('No Emails', 'No parent emails found for selected students.');
+      }
+      return;
+    }
+    // Use BCC to protect privacy
+    const mailtoUrl = `mailto:?bcc=${encodeURIComponent(selectedParentEmails.join(','))}`;
+
+    if (Platform.OS === 'web') {
+      // On web, directly open the mailto link
+      window.open(mailtoUrl, '_self');
+    } else {
+      const canOpen = await Linking.canOpenURL(mailtoUrl);
+      if (canOpen) {
+        await Linking.openURL(mailtoUrl);
+      } else {
+        Alert.alert('Error', 'Unable to open email client. Emails have been copied to clipboard instead.');
+        await Clipboard.setStringAsync(selectedParentEmails.join(', '));
+      }
+    }
+  }, [selectedParentEmails]);
+
+  const showEmailOptions = useCallback(() => {
+    if (selectedParentEmails.length === 0) {
+      if (Platform.OS === 'web') {
+        window.alert('No parent emails found for selected students.');
+      } else {
+        Alert.alert('No Emails', 'No parent emails found for selected students.');
+      }
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      // On web, show a simple confirm dialog with options
+      const choice = window.confirm(
+        `You have ${selectedParentEmails.length} parent email${selectedParentEmails.length > 1 ? 's' : ''}.\n\n` +
+        `Click OK to copy emails to clipboard, or Cancel to open email client.`
+      );
+      if (choice) {
+        handleCopyEmails();
+      } else {
+        handleOpenEmailClient();
+      }
+    } else {
+      // On native, use Alert with buttons
+      Alert.alert(
+        `Email ${selectedParentEmails.length} Parent${selectedParentEmails.length > 1 ? 's' : ''}`,
+        'Choose an action:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Copy Emails', onPress: handleCopyEmails },
+          { text: 'Open Email App', onPress: handleOpenEmailClient },
+        ]
+      );
+    }
+  }, [selectedParentEmails, handleCopyEmails, handleOpenEmailClient]);
 
   // Group students by subject for grouped view
   const groupedStudents = useMemo(() => {
@@ -430,8 +565,24 @@ export default function StudentsScreen() {
             </Text>
           </View>
           <View style={styles.headerButtons}>
+            {/* Selection mode toggle - only visible for students view */}
+            {viewMode === 'students' && filteredStudents.length > 0 && (
+              <TouchableOpacity
+                style={[
+                  styles.selectionModeButton,
+                  selectionMode && styles.selectionModeButtonActive,
+                ]}
+                onPress={toggleSelectionMode}
+              >
+                <Ionicons
+                  name={selectionMode ? 'close' : 'checkbox-outline'}
+                  size={20}
+                  color={selectionMode ? colors.neutral.white : colors.piano.primary}
+                />
+              </TouchableOpacity>
+            )}
             {/* Import button - only visible to tutors */}
-            {isTutor && (
+            {isTutor && !selectionMode && (
               <TouchableOpacity
                 style={styles.importButton}
                 onPress={() => setImportModalVisible(true)}
@@ -439,17 +590,19 @@ export default function StudentsScreen() {
                 <Ionicons name="cloud-upload-outline" size={20} color={colors.piano.primary} />
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={handleAddPress}
-              disabled={isMutating}
-            >
-              {isMutating ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Ionicons name="add" size={24} color="#FFFFFF" />
-              )}
-            </TouchableOpacity>
+            {!selectionMode && (
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={handleAddPress}
+                disabled={isMutating}
+              >
+                {isMutating ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Ionicons name="add" size={24} color="#FFFFFF" />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -613,21 +766,58 @@ export default function StudentsScreen() {
               />
             ) : displayMode === 'list' ? (
               // List View
-              filteredStudents.map((student) => (
-                <TouchableOpacity
-                  key={student.id}
-                  onLongPress={() => handleStudentLongPress(student)}
-                  activeOpacity={0.7}
-                >
-                  <StudentCard
-                    name={student.name}
-                    grade={parseInt(student.grade_level) || 0}
-                    subjects={student.subjects || []}
-                    parentName={student.parent?.name || 'Unknown'}
-                    onPress={() => handleStudentPress(student.id)}
-                  />
-                </TouchableOpacity>
-              ))
+              filteredStudents.map((student) => {
+                const isSelected = selectedStudentIds.has(student.id);
+
+                // When in selection mode, wrap with selection UI
+                if (selectionMode) {
+                  return (
+                    <TouchableOpacity
+                      key={student.id}
+                      onPress={() => toggleStudentSelection(student.id)}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.selectableCardWrapper,
+                        isSelected && styles.selectableCardSelected,
+                      ]}
+                    >
+                      <View style={styles.checkboxContainer}>
+                        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                          {isSelected && (
+                            <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+                          )}
+                        </View>
+                      </View>
+                      <View style={styles.selectableCardContent}>
+                        <StudentCard
+                          name={student.name}
+                          grade={parseInt(student.grade_level) || 0}
+                          subjects={student.subjects || []}
+                          parentName={student.parent?.name || 'Unknown'}
+                          onPress={() => toggleStudentSelection(student.id)}
+                        />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+
+                // Normal mode - just render the card
+                return (
+                  <TouchableOpacity
+                    key={student.id}
+                    onLongPress={() => handleStudentLongPress(student)}
+                    activeOpacity={0.7}
+                  >
+                    <StudentCard
+                      name={student.name}
+                      grade={parseInt(student.grade_level) || 0}
+                      subjects={student.subjects || []}
+                      parentName={student.parent?.name || 'Unknown'}
+                      onPress={() => handleStudentPress(student.id)}
+                    />
+                  </TouchableOpacity>
+                );
+              })
             ) : (
               // Grouped View
               groupedStudents.map(([subject, subjectStudents]) => {
@@ -646,21 +836,58 @@ export default function StudentsScreen() {
                       </View>
                     </View>
                     <View style={styles.subjectGroupStudents}>
-                      {subjectStudents.map((student) => (
-                        <TouchableOpacity
-                          key={`${subject}-${student.id}`}
-                          onLongPress={() => handleStudentLongPress(student)}
-                          activeOpacity={0.7}
-                        >
-                          <StudentCard
-                            name={student.name}
-                            grade={parseInt(student.grade_level) || 0}
-                            subjects={student.subjects || []}
-                            parentName={student.parent?.name || 'Unknown'}
-                            onPress={() => handleStudentPress(student.id)}
-                          />
-                        </TouchableOpacity>
-                      ))}
+                      {subjectStudents.map((student) => {
+                        const isSelected = selectedStudentIds.has(student.id);
+
+                        // When in selection mode, wrap with selection UI
+                        if (selectionMode) {
+                          return (
+                            <TouchableOpacity
+                              key={`${subject}-${student.id}`}
+                              onPress={() => toggleStudentSelection(student.id)}
+                              activeOpacity={0.7}
+                              style={[
+                                styles.selectableCardWrapper,
+                                isSelected && styles.selectableCardSelected,
+                              ]}
+                            >
+                              <View style={styles.checkboxContainer}>
+                                <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                                  {isSelected && (
+                                    <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+                                  )}
+                                </View>
+                              </View>
+                              <View style={styles.selectableCardContent}>
+                                <StudentCard
+                                  name={student.name}
+                                  grade={parseInt(student.grade_level) || 0}
+                                  subjects={student.subjects || []}
+                                  parentName={student.parent?.name || 'Unknown'}
+                                  onPress={() => toggleStudentSelection(student.id)}
+                                />
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        }
+
+                        // Normal mode - just render the card
+                        return (
+                          <TouchableOpacity
+                            key={`${subject}-${student.id}`}
+                            onLongPress={() => handleStudentLongPress(student)}
+                            activeOpacity={0.7}
+                          >
+                            <StudentCard
+                              name={student.name}
+                              grade={parseInt(student.grade_level) || 0}
+                              subjects={student.subjects || []}
+                              parentName={student.parent?.name || 'Unknown'}
+                              onPress={() => handleStudentPress(student.id)}
+                            />
+                          </TouchableOpacity>
+                        );
+                      })}
                     </View>
                   </View>
                 );
@@ -717,6 +944,59 @@ export default function StudentsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Selection Toolbar */}
+      {selectionMode && viewMode === 'students' && (
+        <View style={styles.selectionToolbar}>
+          <View style={styles.selectionInfo}>
+            <Text style={styles.selectionCount}>
+              {selectedStudentIds.size} selected
+            </Text>
+            <Text style={styles.selectionEmailCount}>
+              ({selectedParentEmails.length} email{selectedParentEmails.length !== 1 ? 's' : ''})
+            </Text>
+          </View>
+          <View style={styles.selectionActions}>
+            {selectedStudentIds.size < filteredStudents.length ? (
+              <TouchableOpacity
+                style={styles.selectionActionButton}
+                onPress={selectAllFiltered}
+              >
+                <Ionicons name="checkbox" size={20} color={colors.piano.primary} />
+                <Text style={styles.selectionActionText}>Select All</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.selectionActionButton}
+                onPress={clearSelection}
+              >
+                <Ionicons name="square-outline" size={20} color={colors.neutral.textMuted} />
+                <Text style={[styles.selectionActionText, { color: colors.neutral.textMuted }]}>Deselect</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.emailButton,
+                selectedStudentIds.size === 0 && styles.emailButtonDisabled,
+              ]}
+              onPress={showEmailOptions}
+              disabled={selectedStudentIds.size === 0}
+            >
+              <Ionicons
+                name="mail"
+                size={20}
+                color={selectedStudentIds.size === 0 ? colors.neutral.textMuted : colors.neutral.white}
+              />
+              <Text style={[
+                styles.emailButtonText,
+                selectedStudentIds.size === 0 && styles.emailButtonTextDisabled,
+              ]}>
+                Email Parents
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Student Form Modal */}
       <StudentFormModal
@@ -1040,5 +1320,117 @@ const styles = StyleSheet.create({
   },
   subjectGroupStudents: {
     gap: spacing.sm,
+  },
+  // Selection mode styles
+  selectionModeButton: {
+    backgroundColor: colors.neutral.surface,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  selectionModeButtonActive: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  selectableCardWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+  },
+  selectableCardSelected: {
+    backgroundColor: colors.piano.subtle,
+  },
+  selectableCardContent: {
+    flex: 1,
+  },
+  checkboxContainer: {
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.neutral.border,
+    backgroundColor: colors.neutral.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  // Selection toolbar styles
+  selectionToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.neutral.surface,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+    shadowColor: colors.shadow.color,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  selectionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  selectionCount: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  selectionEmailCount: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+  },
+  selectionActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  selectionActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  selectionActionText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
+  },
+  emailButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.piano.primary,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+  },
+  emailButtonDisabled: {
+    backgroundColor: colors.neutral.border,
+  },
+  emailButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.white,
+  },
+  emailButtonTextDisabled: {
+    color: colors.neutral.textMuted,
   },
 });
