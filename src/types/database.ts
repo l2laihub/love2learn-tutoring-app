@@ -65,7 +65,7 @@ export type Database = {
           name: string;
           age: number;
           grade_level: string;
-          subjects: ('piano' | 'math')[];
+          subjects: string[];
           avatar_url: string | null;
           created_at: string;
           updated_at: string;
@@ -76,7 +76,7 @@ export type Database = {
           name: string;
           age: number;
           grade_level: string;
-          subjects?: ('piano' | 'math')[];
+          subjects?: string[];
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -87,7 +87,7 @@ export type Database = {
           name?: string;
           age?: number;
           grade_level?: string;
-          subjects?: ('piano' | 'math')[];
+          subjects?: string[];
           avatar_url?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -677,6 +677,7 @@ export interface CreateStudentInput {
   name: string;
   age: number;
   grade_level: string;
+  subjects?: string[];
   avatar_url?: string | null;
 }
 
@@ -685,6 +686,7 @@ export interface UpdateStudentInput {
   name?: string;
   age?: number;
   grade_level?: string;
+  subjects?: string[];
   avatar_url?: string | null;
 }
 

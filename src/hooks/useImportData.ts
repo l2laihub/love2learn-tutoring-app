@@ -6,6 +6,61 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 
+// Direct API helper for import operations (bypasses Supabase client issues on web)
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+
+async function directSupabaseQuery<T>(
+  endpoint: string,
+  options: {
+    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    body?: any;
+    params?: Record<string, string>;
+    accessToken?: string;
+  } = {}
+): Promise<{ data: T | null; error: Error | null }> {
+  const { method = 'GET', body, params, accessToken } = options;
+
+  let url = `${SUPABASE_URL}/rest/v1/${endpoint}`;
+  if (params) {
+    const searchParams = new URLSearchParams(params);
+    url += `?${searchParams.toString()}`;
+  }
+
+  const headers: Record<string, string> = {
+    'apikey': SUPABASE_KEY,
+    'Content-Type': 'application/json',
+    'Prefer': method === 'POST' ? 'return=representation' : 'return=minimal',
+  };
+
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  } else {
+    headers['Authorization'] = `Bearer ${SUPABASE_KEY}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { data: null, error: new Error(errorData.message || `HTTP ${response.status}`) };
+    }
+
+    const data = await response.json().catch(() => null);
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err : new Error('Network error') };
+  }
+}
+
+// Supported subjects for the tutoring app
+export type Subject = 'piano' | 'math' | 'reading' | 'speech' | 'english';
+
 export interface ImportRow {
   parentName: string;
   parentEmail: string;
@@ -13,7 +68,7 @@ export interface ImportRow {
   studentName: string;
   studentAge: number;
   studentGrade: string;
-  subjects: ('piano' | 'math')[];
+  subjects: string[];
 }
 
 export interface ImportResult {
@@ -24,12 +79,19 @@ export interface ImportResult {
   skipped: string[];
 }
 
+export interface ImportProgress {
+  current: number;
+  total: number;
+  currentItem: string;
+}
+
 export interface ImportState {
   loading: boolean;
   parsing: boolean;
   error: string | null;
   preview: ImportRow[];
   result: ImportResult | null;
+  progress: ImportProgress | null;
 }
 
 /**
@@ -73,19 +135,28 @@ function parseCSV(csvContent: string): ImportRow[] {
       const studentName = values[3]?.trim() || '';
       const studentAge = parseInt(values[4]?.trim() || '0', 10);
       const studentGrade = values[5]?.trim() || 'K';
-      const subjectsRaw = values[6]?.trim().toLowerCase() || 'both';
+      const subjectsRaw = values[6]?.trim().toLowerCase() || '';
 
-      // Parse subjects column - accepts: "piano", "math", "both", "piano, math", etc.
-      const subjects: ('piano' | 'math')[] = [];
-      if (subjectsRaw.includes('both') || (subjectsRaw.includes('piano') && subjectsRaw.includes('math'))) {
+      // Parse subjects column - supports multiple subjects
+      // Handles formats like: "Piano", "Math", "Piano & Reading", "Speech", "English", etc.
+      const subjects: string[] = [];
+
+      // Check for each known subject
+      if (subjectsRaw.includes('piano')) subjects.push('piano');
+      if (subjectsRaw.includes('math')) subjects.push('math');
+      if (subjectsRaw.includes('reading')) subjects.push('reading');
+      if (subjectsRaw.includes('speech')) subjects.push('speech');
+      if (subjectsRaw.includes('english')) subjects.push('english');
+
+      // Handle "both" as piano + math for backwards compatibility
+      if (subjectsRaw === 'both') {
+        subjects.length = 0; // Clear
         subjects.push('piano', 'math');
-      } else if (subjectsRaw.includes('piano')) {
-        subjects.push('piano');
-      } else if (subjectsRaw.includes('math')) {
-        subjects.push('math');
-      } else {
-        // Default to both if unrecognized
-        subjects.push('piano', 'math');
+      }
+
+      // If no recognized subjects, use the raw value as-is (trimmed and lowercased)
+      if (subjects.length === 0 && subjectsRaw) {
+        subjects.push(subjectsRaw);
       }
 
       // Basic validation
@@ -98,6 +169,13 @@ function parseCSV(csvContent: string): ImportRow[] {
           studentAge,
           studentGrade,
           subjects,
+        });
+      } else {
+        console.warn(`[CSV] Skipped row ${i + 1}: missing required fields`, {
+          parentName: parentName || '(empty)',
+          parentEmail: parentEmail || '(empty)',
+          studentName: studentName || '(empty)',
+          studentAge,
         });
       }
     }
@@ -146,6 +224,7 @@ export function useImportData() {
     error: null,
     preview: [],
     result: null,
+    progress: null,
   });
 
   /**
@@ -186,7 +265,8 @@ export function useImportData() {
    * Import the data into the database
    */
   const importData = useCallback(async (rows: ImportRow[]): Promise<ImportResult> => {
-    setState(prev => ({ ...prev, loading: true, error: null, result: null }));
+    console.log(`[Import] Starting import of ${rows.length} rows`);
+    setState(prev => ({ ...prev, loading: true, error: null, result: null, progress: null }));
 
     const result: ImportResult = {
       success: false,
@@ -197,6 +277,53 @@ export function useImportData() {
     };
 
     try {
+      // Get access token - try multiple methods
+      console.log(`[Import] Getting access token...`);
+      let accessToken: string | null = null;
+
+      // Method 1: Try to get from Supabase client (with timeout)
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+        ]) as { data: { session: any }, error: any };
+        accessToken = sessionResult.data?.session?.access_token;
+        if (accessToken) {
+          console.log(`[Import] Got token from Supabase client`);
+        }
+      } catch (err) {
+        console.log(`[Import] Supabase client timeout, trying localStorage...`);
+      }
+
+      // Method 2: Try localStorage directly (web fallback)
+      if (!accessToken && typeof localStorage !== 'undefined') {
+        try {
+          // Supabase stores session with key pattern: sb-{project-ref}-auth-token
+          const storageKey = Object.keys(localStorage).find(key =>
+            key.includes('supabase') && key.includes('auth')
+          ) || `sb-${SUPABASE_URL.split('//')[1]?.split('.')[0]}-auth-token`;
+
+          const storedSession = localStorage.getItem(storageKey);
+          if (storedSession) {
+            const parsed = JSON.parse(storedSession);
+            accessToken = parsed.access_token || parsed.currentSession?.access_token;
+            if (accessToken) {
+              console.log(`[Import] Got token from localStorage`);
+            }
+          }
+        } catch (err) {
+          console.log(`[Import] localStorage parse failed:`, err);
+        }
+      }
+
+      if (!accessToken) {
+        throw new Error('Not authenticated. Please log out and log back in, then try again.');
+      }
+
+      console.log(`[Import] Access token obtained: ${accessToken.substring(0, 20)}...`);
+
+      console.log(`[Import] Grouping rows by parent...`);
+
       // Group rows by parent email to avoid duplicate parent creation
       const parentMap = new Map<string, { parent: Partial<ImportRow>; students: ImportRow[] }>();
 
@@ -223,72 +350,134 @@ export function useImportData() {
       }
 
       // Process each parent and their students
+      const totalParents = parentMap.size;
+      let currentIndex = 0;
+
       for (const [email, { parent, students }] of parentMap) {
         try {
-          // Check if parent already exists
-          const { data: existingParent } = await supabase
-            .from('parents')
-            .select('id')
-            .eq('email', email)
-            .single();
+          currentIndex++;
+          console.log(`[Import] Processing parent ${currentIndex}/${totalParents}: ${email}`);
+
+          // Update progress
+          setState(prev => ({
+            ...prev,
+            progress: {
+              current: currentIndex,
+              total: totalParents,
+              currentItem: parent.parentName || email,
+            },
+          }));
+
+          // Check if parent already exists using direct API
+          const { data: existingParents, error: selectError } = await directSupabaseQuery<{ id: string }[]>(
+            'parents',
+            {
+              method: 'GET',
+              params: {
+                select: 'id',
+                email: `eq.${email}`,
+                limit: '1',
+              },
+              accessToken,
+            }
+          );
+
+          if (selectError) {
+            console.error(`[Import] Error checking parent ${email}:`, selectError);
+            result.errors.push(`Failed to check parent ${parent.parentName}: ${selectError.message}`);
+            continue;
+          }
 
           let parentId: string;
+          const existingParent = existingParents?.[0];
 
           if (existingParent) {
             parentId = existingParent.id;
             result.skipped.push(`Parent "${parent.parentName}" (${email}) already exists`);
+            console.log(`[Import] Parent exists: ${parentId}`);
           } else {
-            // Create parent (without user_id - they haven't registered yet)
-            // Use a placeholder UUID that will be updated when they register
-            const { data: newParent, error: parentError } = await supabase
-              .from('parents')
-              .insert({
-                name: parent.parentName,
-                email: email,
-                phone: parent.parentPhone || null,
-                user_id: '00000000-0000-0000-0000-000000000000', // Placeholder
-              })
-              .select('id')
-              .single();
+            // Create parent without user_id - they haven't registered yet
+            const parentName = parent.parentName || '';
+            console.log(`[Import] Creating new parent: ${parentName}`);
 
-            if (parentError) {
-              result.errors.push(`Failed to create parent ${parent.parentName}: ${parentError.message}`);
+            const { data: newParentData, error: parentError } = await directSupabaseQuery<{ id: string }[]>(
+              'parents',
+              {
+                method: 'POST',
+                body: {
+                  name: parentName,
+                  email: email,
+                  phone: parent.parentPhone || null,
+                },
+                params: { select: 'id' },
+                accessToken,
+              }
+            );
+
+            if (parentError || !newParentData?.[0]) {
+              console.error(`[Import] Error creating parent:`, parentError);
+              result.errors.push(`Failed to create parent ${parent.parentName}: ${parentError?.message || 'No data returned'}`);
               continue;
             }
 
-            parentId = newParent.id;
+            parentId = newParentData[0].id;
             result.parentsCreated++;
+            console.log(`[Import] Created parent: ${parentId}`);
           }
 
           // Create students for this parent
           for (const student of students) {
-            // Check if student already exists for this parent
-            const { data: existingStudent } = await supabase
-              .from('students')
-              .select('id')
-              .eq('parent_id', parentId)
-              .eq('name', student.studentName)
-              .single();
+            console.log(`[Import] Processing student: ${student.studentName}`);
 
-            if (existingStudent) {
-              result.skipped.push(`Student "${student.studentName}" already exists for ${parent.parentName}`);
+            // Check if student already exists for this parent using direct API
+            const { data: existingStudents, error: studentSelectError } = await directSupabaseQuery<{ id: string }[]>(
+              'students',
+              {
+                method: 'GET',
+                params: {
+                  select: 'id',
+                  parent_id: `eq.${parentId}`,
+                  name: `eq.${student.studentName}`,
+                  limit: '1',
+                },
+                accessToken,
+              }
+            );
+
+            if (studentSelectError) {
+              console.error(`[Import] Error checking student:`, studentSelectError);
+              result.errors.push(`Failed to check student ${student.studentName}: ${studentSelectError.message}`);
               continue;
             }
 
-            const { error: studentError } = await supabase
-              .from('students')
-              .insert({
-                parent_id: parentId,
-                name: student.studentName,
-                age: student.studentAge,
-                grade_level: student.studentGrade,
-                subjects: student.subjects,
-              });
+            if (existingStudents?.[0]) {
+              result.skipped.push(`Student "${student.studentName}" already exists for ${parent.parentName}`);
+              console.log(`[Import] Student exists: ${existingStudents[0].id}`);
+              continue;
+            }
+
+            console.log(`[Import] Creating student: ${student.studentName}`);
+            const { error: studentError } = await directSupabaseQuery(
+              'students',
+              {
+                method: 'POST',
+                body: {
+                  parent_id: parentId,
+                  name: student.studentName,
+                  age: student.studentAge,
+                  grade_level: student.studentGrade,
+                  subjects: student.subjects,
+                },
+                accessToken,
+              }
+            );
 
             if (studentError) {
+              console.error(`[Import] Error creating student:`, studentError);
               result.errors.push(`Failed to create student ${student.studentName}: ${studentError.message}`);
             } else {
               result.studentsCreated++;
+              console.log(`[Import] Created student: ${student.studentName}`);
             }
           }
         } catch (error) {
@@ -298,9 +487,11 @@ export function useImportData() {
       }
 
       result.success = result.errors.length === 0;
-      setState(prev => ({ ...prev, loading: false, result }));
+      console.log(`[Import] Complete:`, result);
+      setState(prev => ({ ...prev, loading: false, result, progress: null }));
       return result;
     } catch (error) {
+      console.error(`[Import] Fatal error:`, error);
       const message = error instanceof Error ? error.message : 'Failed to import data';
       setState(prev => ({ ...prev, loading: false, error: message }));
       result.errors.push(message);
@@ -318,6 +509,7 @@ export function useImportData() {
       error: null,
       preview: [],
       result: null,
+      progress: null,
     });
   }, []);
 

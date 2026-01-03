@@ -16,7 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useImportData, ImportRow } from '../hooks/useImportData';
+import { useImportData, ImportRow, ImportProgress } from '../hooks/useImportData';
 import { colors, spacing, typography, borderRadius } from '../theme';
 
 interface ImportDataModalProps {
@@ -35,6 +35,7 @@ export function ImportDataModal({ visible, onClose, onSuccess }: ImportDataModal
     error,
     preview,
     result,
+    progress,
     fetchPreview,
     importData,
     reset,
@@ -166,8 +167,36 @@ export function ImportDataModal({ visible, onClose, onSuccess }: ImportDataModal
         ))}
       </ScrollView>
 
+      {loading && progress && (
+        <View style={styles.progressContainer}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressText}>
+              Importing {progress.current} of {progress.total}...
+            </Text>
+            <Text style={styles.progressPercentage}>
+              {Math.round((progress.current / progress.total) * 100)}%
+            </Text>
+          </View>
+          <View style={styles.progressBarBackground}>
+            <View
+              style={[
+                styles.progressBarFill,
+                { width: `${(progress.current / progress.total) * 100}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.progressCurrentItem} numberOfLines={1}>
+            {progress.currentItem}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.cancelButton} onPress={() => setStep('input')}>
+        <TouchableOpacity
+          style={[styles.cancelButton, loading && styles.buttonDisabled]}
+          onPress={() => setStep('input')}
+          disabled={loading}
+        >
           <Text style={styles.cancelButtonText}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -176,7 +205,12 @@ export function ImportDataModal({ visible, onClose, onSuccess }: ImportDataModal
           disabled={loading}
         >
           {loading ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <View style={styles.loadingButtonContent}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.primaryButtonText}>
+                {progress ? ` ${progress.current}/${progress.total}` : ' Importing...'}
+              </Text>
+            </View>
           ) : (
             <Text style={styles.primaryButtonText}>Import {preview.length} Records</Text>
           )}
@@ -545,5 +579,51 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: '#FFFFFF',
+  },
+  progressContainer: {
+    backgroundColor: colors.neutral.surface,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  progressText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  progressPercentage: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.bold,
+    color: colors.piano.primary,
+  },
+  progressBarBackground: {
+    height: 8,
+    backgroundColor: colors.neutral.border,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: colors.piano.primary,
+    borderRadius: 4,
+  },
+  progressCurrentItem: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
+  },
+  loadingButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

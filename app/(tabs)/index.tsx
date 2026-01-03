@@ -1,11 +1,28 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuthContext } from '../../src/contexts/AuthContext';
+import { useStudents } from '../../src/hooks/useStudents';
+import { useMemo } from 'react';
 
 export default function HomeScreen() {
   const { parent, signOut, isTutor } = useAuthContext();
+  const { data: students, loading: studentsLoading } = useStudents();
+
+  // Calculate student counts by subject
+  const studentCounts = useMemo(() => {
+    let piano = 0;
+    let math = 0;
+
+    students.forEach((student) => {
+      const subjects = student.subjects || [];
+      if (subjects.includes('piano')) piano++;
+      if (subjects.includes('math')) math++;
+    });
+
+    return { piano, math };
+  }, [students]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
@@ -123,18 +140,32 @@ export default function HomeScreen() {
             {isTutor ? 'Student Overview' : 'Quick Stats'}
           </Text>
           <View style={styles.statsContainer}>
-            <View style={[styles.statCard, styles.coralCard]}>
-              <Text style={styles.statNumber}>0</Text>
+            <Pressable
+              style={[styles.statCard, styles.coralCard]}
+              onPress={() => router.push('/(tabs)/students')}
+            >
+              {studentsLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.statNumber}>{studentCounts.piano}</Text>
+              )}
               <Text style={styles.statLabel}>
                 {isTutor ? 'Piano Students' : 'Piano Lessons'}
               </Text>
-            </View>
-            <View style={[styles.statCard, styles.greenCard]}>
-              <Text style={styles.statNumber}>0</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.statCard, styles.greenCard]}
+              onPress={() => router.push('/(tabs)/students')}
+            >
+              {studentsLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.statNumber}>{studentCounts.math}</Text>
+              )}
               <Text style={styles.statLabel}>
                 {isTutor ? 'Math Students' : 'Math Lessons'}
               </Text>
-            </View>
+            </Pressable>
           </View>
         </View>
 

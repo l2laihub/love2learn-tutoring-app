@@ -2,7 +2,7 @@
 
 Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md).
 
-**Last Updated:** January 2, 2026
+**Last Updated:** January 2, 2026 (Evening)
 
 ---
 
@@ -158,9 +158,9 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 love2learn-tutoring-app/
 ├── app/                      # Expo Router screens
 │   ├── (tabs)/              # Tab navigation
-│   │   ├── index.tsx        # Home with sign out
+│   │   ├── index.tsx        # Home with sign out & role-aware dashboard
 │   │   ├── calendar.tsx     # Calendar (placeholder)
-│   │   ├── students.tsx     # Students & Parents (FUNCTIONAL)
+│   │   ├── students.tsx     # Students & Parents (FUNCTIONAL + Import)
 │   │   ├── worksheets.tsx   # Worksheets (placeholder)
 │   │   └── payments.tsx     # Payments (placeholder)
 │   ├── (auth)/              # Auth screens
@@ -176,15 +176,17 @@ love2learn-tutoring-app/
 │   │   ├── StudentCard.tsx  # Student display card
 │   │   ├── StudentFormModal.tsx # Student add/edit form
 │   │   ├── ParentFormModal.tsx  # Parent add/edit form
+│   │   ├── ImportDataModal.tsx  # Google Sheets import (tutor only)
 │   │   ├── LessonCard.tsx   # Lesson display
 │   │   ├── PaymentCard.tsx  # Payment display
 │   │   ├── Calendar.tsx     # Calendar component
 │   │   └── WorksheetGenerator.tsx
 │   ├── contexts/            # React contexts
-│   │   └── AuthContext.tsx  # Authentication context
+│   │   └── AuthContext.tsx  # Authentication context with role helpers
 │   ├── hooks/               # Data fetching hooks
 │   │   ├── useStudents.ts   # Student CRUD hooks
 │   │   ├── useParents.ts    # Parent CRUD hooks
+│   │   ├── useImportData.ts # Google Sheets import hook
 │   │   ├── useLessons.ts
 │   │   ├── usePayments.ts
 │   │   └── useAssignments.ts
@@ -192,25 +194,31 @@ love2learn-tutoring-app/
 │   │   ├── supabase.ts     # Supabase client
 │   │   └── auth.ts         # Auth helpers (signIn, signUp, etc.)
 │   ├── types/               # TypeScript types
-│   │   └── database.ts     # DB schema types
+│   │   └── database.ts     # DB schema types (with subjects field)
 │   └── theme/               # Design tokens
 ├── supabase/                # Database
 │   ├── migrations/         # SQL migrations
 │   │   ├── 20260102000000_initial_schema.sql
 │   │   ├── 20260102000001_rls_policies.sql
-│   │   └── 20260102000002_role_system.sql
+│   │   ├── 20260102000002_role_system.sql
+│   │   ├── 20260102000003_handle_new_user_trigger.sql
+│   │   └── 20260102000004_student_subjects.sql
 │   └── seed.sql            # Sample data for development
 ├── assets/                  # Images, fonts
 └── docs/                    # Documentation
+    └── sample-import-data.csv  # Sample data for import testing
 ```
 
 ---
 
 ## Next Steps (Recommended Order)
 
-1. **Run Role Migration** - Apply `20260102000002_role_system.sql` in Supabase
+1. **Run All Migrations** - Apply migrations in Supabase SQL Editor:
+   - `20260102000002_role_system.sql` - Role column and tutor access
+   - `20260102000003_handle_new_user_trigger.sql` - Auto-create parent on signup
+   - `20260102000004_student_subjects.sql` - Add subjects to students
 2. **Create Tutor Account** - Register and set role to 'tutor' for admin access
-3. **Test Role-Based Access** - Verify tutor sees all data, parents see only their own
+3. **Import Sample Data** - Use Google Sheets import with sample-import-data.csv
 4. **Calendar** - Implement week view with lesson scheduling
 5. **Payments** - Wire up payment tracking
 6. **Worksheets** - AI-powered generation (depends on OpenAI key)

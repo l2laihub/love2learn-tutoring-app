@@ -438,7 +438,7 @@ export default function StudentsScreen() {
                   <StudentCard
                     name={student.name}
                     grade={parseInt(student.grade_level) || 0}
-                    subjects={['piano']} // TODO: Get from student subjects
+                    subjects={student.subjects || []}
                     parentName={student.parent?.name || 'Unknown'}
                     onPress={() => handleStudentPress(student.id)}
                   />
@@ -526,10 +526,15 @@ export default function StudentsScreen() {
       {isTutor && (
         <ImportDataModal
           visible={importModalVisible}
-          onClose={() => setImportModalVisible(false)}
-          onSuccess={() => {
+          onClose={() => {
+            // Refetch data when modal closes to ensure we have latest data
             refetchStudents();
             refetchParents();
+            setImportModalVisible(false);
+          }}
+          onSuccess={async () => {
+            // Refetch both students and parents after successful import
+            await Promise.all([refetchStudents(), refetchParents()]);
           }}
         />
       )}

@@ -31,6 +31,7 @@ interface StudentFormModalProps {
 }
 
 const GRADE_OPTIONS = [
+  { value: 'Preschool', label: 'Preschool' },
   { value: 'K', label: 'Kindergarten' },
   { value: '1st', label: '1st Grade' },
   { value: '2nd', label: '2nd Grade' },
@@ -38,6 +39,15 @@ const GRADE_OPTIONS = [
   { value: '4th', label: '4th Grade' },
   { value: '5th', label: '5th Grade' },
   { value: '6th', label: '6th Grade' },
+  { value: '7th', label: '7th Grade' },
+];
+
+const SUBJECT_OPTIONS = [
+  { value: 'piano', label: 'Piano', icon: 'musical-notes', color: colors.piano.primary },
+  { value: 'math', label: 'Math', icon: 'calculator', color: colors.math.primary },
+  { value: 'reading', label: 'Reading', icon: 'book', color: '#9C27B0' },
+  { value: 'speech', label: 'Speech', icon: 'mic', color: '#FF9800' },
+  { value: 'english', label: 'English', icon: 'language', color: '#2196F3' },
 ];
 
 export function StudentFormModal({
@@ -55,6 +65,7 @@ export function StudentFormModal({
   const [age, setAge] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [parentId, setParentId] = useState('');
+  const [subjects, setSubjects] = useState<string[]>([]);
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -67,11 +78,13 @@ export function StudentFormModal({
         setAge(student.age.toString());
         setGradeLevel(student.grade_level);
         setParentId(student.parent_id);
+        setSubjects(student.subjects || []);
       } else {
         setName('');
         setAge('');
         setGradeLevel('');
         setParentId(parents.length === 1 ? parents[0].id : '');
+        setSubjects([]);
       }
       setErrors({});
     }
@@ -99,6 +112,10 @@ export function StudentFormModal({
       newErrors.parentId = 'Parent is required';
     }
 
+    if (subjects.length === 0) {
+      newErrors.subjects = 'At least one subject is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -111,6 +128,7 @@ export function StudentFormModal({
       age: parseInt(age, 10),
       grade_level: gradeLevel,
       parent_id: parentId,
+      subjects: subjects,
     };
 
     const success = await onSave(data);
@@ -205,6 +223,52 @@ export function StudentFormModal({
             </View>
             {errors.gradeLevel && (
               <Text style={styles.errorText}>{errors.gradeLevel}</Text>
+            )}
+          </View>
+
+          {/* Subjects Selector */}
+          <View style={styles.fieldContainer}>
+            <Text style={styles.label}>Subjects</Text>
+            <View style={styles.subjectsGrid}>
+              {SUBJECT_OPTIONS.map((option) => {
+                const isSelected = subjects.includes(option.value);
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[
+                      styles.subjectOption,
+                      isSelected && { backgroundColor: option.color + '20', borderColor: option.color },
+                    ]}
+                    onPress={() => {
+                      if (isSelected) {
+                        setSubjects(subjects.filter((s) => s !== option.value));
+                      } else {
+                        setSubjects([...subjects, option.value]);
+                      }
+                    }}
+                  >
+                    <Ionicons
+                      name={option.icon as any}
+                      size={18}
+                      color={isSelected ? option.color : colors.neutral.textMuted}
+                    />
+                    <Text
+                      style={[
+                        styles.subjectOptionText,
+                        isSelected && { color: option.color, fontWeight: typography.weights.medium },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={16} color={option.color} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {errors.subjects && (
+              <Text style={styles.errorText}>{errors.subjects}</Text>
             )}
           </View>
 
@@ -343,6 +407,26 @@ const styles = StyleSheet.create({
   gradeOptionTextSelected: {
     color: colors.piano.primary,
     fontWeight: typography.weights.medium,
+  },
+  subjectsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  subjectOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral.background,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    gap: spacing.xs,
+  },
+  subjectOptionText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
   },
   parentsList: {
     gap: spacing.sm,

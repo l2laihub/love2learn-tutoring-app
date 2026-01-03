@@ -9,7 +9,7 @@ import { colors, spacing, typography, borderRadius } from '../theme';
 interface StudentCardProps {
   name: string;
   grade: number;
-  subjects: Array<'piano' | 'math'>;
+  subjects: string[];
   parentName: string;
   pianoLevel?: 'beginner' | 'intermediate' | 'advanced';
   nextLesson?: string;
@@ -79,10 +79,27 @@ export function StudentCard({
   );
 }
 
+// Subject emoji mapping
+const SUBJECT_EMOJIS: Record<string, string> = {
+  piano: '🎹',
+  math: '➗',
+  reading: '📖',
+  speech: '🎤',
+  english: '📝',
+};
+
+const SUBJECT_COLORS: Record<string, string> = {
+  piano: colors.piano.primary,
+  math: colors.math.primary,
+  reading: '#9C27B0',
+  speech: '#FF9800',
+  english: '#2196F3',
+};
+
 // Compact student list item
 interface StudentListItemProps {
   name: string;
-  subjects: Array<'piano' | 'math'>;
+  subjects: string[];
   onPress?: () => void;
 }
 
@@ -98,10 +115,10 @@ export function StudentListItem({ name, subjects, onPress }: StudentListItemProp
               key={subject}
               style={[
                 styles.listItemSubject,
-                { color: subject === 'piano' ? colors.piano.primary : colors.math.primary },
+                { color: SUBJECT_COLORS[subject] || colors.neutral.textSecondary },
               ]}
             >
-              {subject === 'piano' ? '🎹' : '➗'}
+              {SUBJECT_EMOJIS[subject] || '📚'}
             </Text>
           ))}
         </View>
@@ -113,7 +130,7 @@ export function StudentListItem({ name, subjects, onPress }: StudentListItemProp
 
 // Student selector for forms
 interface StudentSelectorProps {
-  students: Array<{ id: string; name: string; subjects: Array<'piano' | 'math'> }>;
+  students: Array<{ id: string; name: string; subjects: string[] }>;
   selectedId?: string;
   onSelect: (id: string) => void;
 }
