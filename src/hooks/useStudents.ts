@@ -24,17 +24,29 @@ export function useStudents(): ListQueryState<StudentWithParent> {
   const [error, setError] = useState<Error | null>(null);
 
   const fetchStudents = useCallback(async () => {
+    console.log('[useStudents] fetchStudents called');
     try {
       setLoading(true);
       setError(null);
 
-      const { data: students, error: fetchError } = await supabase
+      console.log('[useStudents] Executing query...');
+
+      // Add timeout to detect hanging queries
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Students query timeout after 10s')), 10000);
+      });
+
+      const queryPromise = supabase
         .from('students')
         .select(`
           *,
           parent:parents(*)
         `)
         .order('name', { ascending: true });
+
+      const { data: students, error: fetchError } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>;
+
+      console.log('[useStudents] Query result:', { count: students?.length, error: fetchError?.message });
 
       if (fetchError) {
         throw new Error(fetchError.message);
@@ -44,9 +56,10 @@ export function useStudents(): ListQueryState<StudentWithParent> {
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch students');
       setError(errorMessage);
-      console.error('useStudents error:', errorMessage);
+      console.error('[useStudents] Error:', errorMessage);
     } finally {
       setLoading(false);
+      console.log('[useStudents] Done');
     }
   }, []);
 

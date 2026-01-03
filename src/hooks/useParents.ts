@@ -22,11 +22,11 @@ interface ParentWithCount extends Parent {
 }
 
 /**
- * Fetch all parents with student counts
- * @returns List of parents with student count, loading state, and error
+ * Fetch all parents with their students
+ * @returns List of parents with students, loading state, and error
  */
-export function useParents(): ListQueryState<ParentWithCount> {
-  const [data, setData] = useState<ParentWithCount[]>([]);
+export function useParents(): ListQueryState<ParentWithStudents> {
+  const [data, setData] = useState<ParentWithStudents[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -35,12 +35,12 @@ export function useParents(): ListQueryState<ParentWithCount> {
       setLoading(true);
       setError(null);
 
-      // Fetch parents with student count using a subquery
+      // Fetch parents with students
       const { data: parents, error: fetchError } = await supabase
         .from('parents')
         .select(`
           *,
-          students(id)
+          students(*)
         `)
         .order('name', { ascending: true });
 
@@ -48,14 +48,7 @@ export function useParents(): ListQueryState<ParentWithCount> {
         throw new Error(fetchError.message);
       }
 
-      // Transform to include student_count
-      const parentsWithCount: ParentWithCount[] = (parents || []).map((parent) => ({
-        ...parent,
-        student_count: Array.isArray(parent.students) ? parent.students.length : 0,
-        students: undefined, // Remove the students array from the response
-      })) as ParentWithCount[];
-
-      setData(parentsWithCount);
+      setData((parents as ParentWithStudents[]) || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch parents');
       setError(errorMessage);

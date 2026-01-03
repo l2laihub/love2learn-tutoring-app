@@ -1,14 +1,25 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator } from 'react-native';
+/**
+ * Home Screen
+ * Dashboard for tutors and parents with today's lessons and quick stats
+ */
+
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
-import { useMemo } from 'react';
+import { useTodaysLessons, useUpcomingLessons } from '../../src/hooks/useLessons';
+import { useMemo, useState, useCallback } from 'react';
+import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
+import { ScheduledLessonWithStudent } from '../../src/types/database';
 
 export default function HomeScreen() {
   const { parent, signOut, isTutor } = useAuthContext();
-  const { data: students, loading: studentsLoading } = useStudents();
+  const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
+  const { data: todaysLessons, loading: lessonsLoading, refetch: refetchLessons } = useTodaysLessons();
+  const { data: upcomingLessons, refetch: refetchUpcoming } = useUpcomingLessons(5);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Calculate student counts by subject
   const studentCounts = useMemo(() => {
@@ -21,16 +32,32 @@ export default function HomeScreen() {
       if (subjects.includes('math')) math++;
     });
 
-    return { piano, math };
+    return { piano, math, total: students.length };
   }, [students]);
+
+  // Calculate today's lesson stats
+  const todayStats = useMemo(() => {
+    const scheduled = todaysLessons.filter(l => l.status === 'scheduled').length;
+    const completed = todaysLessons.filter(l => l.status === 'completed').length;
+    const totalMinutes = todaysLessons
+      .filter(l => l.status !== 'cancelled')
+      .reduce((acc, l) => acc + l.duration_min, 0);
+
+    return { scheduled, completed, totalMinutes, total: todaysLessons.length };
+  }, [todaysLessons]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refetchStudents(), refetchLessons(), refetchUpcoming()]);
+    setRefreshing(false);
+  }, [refetchStudents, refetchLessons, refetchUpcoming]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
 
-    // Use window.confirm for web, or just sign out directly
     const shouldSignOut = Platform.OS === 'web'
       ? window.confirm('Are you sure you want to sign out?')
-      : true; // On native, we could use Alert, but for simplicity just sign out
+      : true;
 
     if (shouldSignOut) {
       console.log('Confirming sign out...');
@@ -56,9 +83,23 @@ export default function HomeScreen() {
   // Get first name for greeting
   const firstName = parent?.name?.split(' ')[0] ?? '';
 
+  // Get greeting based on time of day
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.userInfo}>
@@ -69,12 +110,12 @@ export default function HomeScreen() {
                 <Ionicons
                   name={isTutor ? 'school' : 'person'}
                   size={24}
-                  color={isTutor ? '#9C27B0' : '#FF6B6B'}
+                  color={isTutor ? colors.piano.primary : colors.piano.primary}
                 />
               </View>
               <View>
                 <Text style={styles.greeting}>
-                  Welcome{firstName ? `, ${firstName}` : ''}!
+                  {greeting}{firstName ? `, ${firstName}` : ''}!
                 </Text>
                 <View style={styles.roleContainer}>
                   <View style={[
@@ -84,7 +125,7 @@ export default function HomeScreen() {
                     <Ionicons
                       name={isTutor ? 'star' : 'people'}
                       size={12}
-                      color={isTutor ? '#9C27B0' : '#666'}
+                      color={isTutor ? colors.piano.primary : colors.neutral.textSecondary}
                     />
                     <Text style={[
                       styles.roleText,
@@ -104,125 +145,264 @@ export default function HomeScreen() {
               ]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="log-out-outline" size={24} color="#666" />
+              <Ionicons name="log-out-outline" size={24} color={colors.neutral.textSecondary} />
             </Pressable>
           </View>
         </View>
 
-        {/* Tutor-specific dashboard */}
-        {isTutor && (
-          <View style={styles.section}>
+        {/* Today's Schedule */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Today's Schedule</Text>
-            <View style={styles.placeholder}>
-              <Ionicons name="calendar" size={32} color="#9C27B0" />
-              <Text style={styles.placeholderText}>
-                Your lessons for today will appear here
+            <Pressable onPress={() => router.push('/(tabs)/calendar')}>
+              <Text style={styles.seeAllText}>See all</Text>
+            </Pressable>
+          </View>
+
+          {lessonsLoading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator color={colors.piano.primary} />
+            </View>
+          ) : todaysLessons.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="sunny-outline" size={40} color={colors.neutral.textMuted} />
+              <Text style={styles.emptyTitle}>No lessons today</Text>
+              <Text style={styles.emptySubtitle}>
+                {isTutor ? 'Enjoy your day off!' : 'No lessons scheduled for today'}
               </Text>
             </View>
-          </View>
-        )}
-
-        {/* Parent-specific dashboard */}
-        {!isTutor && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Children's Lessons</Text>
-            <View style={styles.placeholder}>
-              <Ionicons name="book" size={32} color="#FF6B6B" />
-              <Text style={styles.placeholderText}>
-                Your children's upcoming lessons will appear here
-              </Text>
+          ) : (
+            <View style={styles.lessonsContainer}>
+              {todaysLessons.slice(0, 3).map((lesson) => (
+                <LessonCard key={lesson.id} lesson={lesson} />
+              ))}
+              {todaysLessons.length > 3 && (
+                <Pressable
+                  style={styles.moreButton}
+                  onPress={() => router.push('/(tabs)/calendar')}
+                >
+                  <Text style={styles.moreButtonText}>
+                    +{todaysLessons.length - 3} more lessons
+                  </Text>
+                </Pressable>
+              )}
             </View>
-          </View>
-        )}
+          )}
+        </View>
 
+        {/* Quick Stats */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {isTutor ? 'Student Overview' : 'Quick Stats'}
+            {isTutor ? 'Quick Stats' : 'Overview'}
           </Text>
-          <View style={styles.statsContainer}>
+          <View style={styles.statsGrid}>
             <Pressable
-              style={[styles.statCard, styles.coralCard]}
+              style={[styles.statCard, { backgroundColor: colors.piano.primary }]}
               onPress={() => router.push('/(tabs)/students')}
             >
               {studentsLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={colors.neutral.white} size="small" />
               ) : (
                 <Text style={styles.statNumber}>{studentCounts.piano}</Text>
               )}
-              <Text style={styles.statLabel}>
-                {isTutor ? 'Piano Students' : 'Piano Lessons'}
-              </Text>
+              <Text style={styles.statLabel}>Piano</Text>
+              <View style={styles.statIcon}>
+                <Text style={{ fontSize: 20 }}>🎹</Text>
+              </View>
             </Pressable>
+
             <Pressable
-              style={[styles.statCard, styles.greenCard]}
+              style={[styles.statCard, { backgroundColor: colors.math.primary }]}
               onPress={() => router.push('/(tabs)/students')}
             >
               {studentsLoading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={colors.neutral.white} size="small" />
               ) : (
                 <Text style={styles.statNumber}>{studentCounts.math}</Text>
               )}
-              <Text style={styles.statLabel}>
-                {isTutor ? 'Math Students' : 'Math Lessons'}
-              </Text>
+              <Text style={styles.statLabel}>Math</Text>
+              <View style={styles.statIcon}>
+                <Text style={{ fontSize: 20 }}>➗</Text>
+              </View>
             </Pressable>
+
+            <Pressable
+              style={[styles.statCard, { backgroundColor: colors.accent.main }]}
+              onPress={() => router.push('/(tabs)/calendar')}
+            >
+              <Text style={styles.statNumber}>{todayStats.scheduled}</Text>
+              <Text style={styles.statLabel}>Today</Text>
+              <View style={styles.statIcon}>
+                <Ionicons name="today" size={20} color={colors.neutral.white} style={{ opacity: 0.8 }} />
+              </View>
+            </Pressable>
+
+            {isTutor && (
+              <View style={[styles.statCard, { backgroundColor: colors.status.success }]}>
+                <Text style={styles.statNumber}>{todayStats.completed}</Text>
+                <Text style={styles.statLabel}>Done</Text>
+                <View style={styles.statIcon}>
+                  <Ionicons name="checkmark-circle" size={20} color={colors.neutral.white} style={{ opacity: 0.8 }} />
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
-        {/* Tutor: Payment overview */}
-        {isTutor && (
+        {/* Upcoming Lessons (Tutor only) */}
+        {isTutor && upcomingLessons.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Status</Text>
-            <View style={styles.statsContainer}>
-              <View style={[styles.statCard, styles.blueCard]}>
-                <Text style={styles.statNumber}>$0</Text>
-                <Text style={styles.statLabel}>Due This Month</Text>
-              </View>
-              <View style={[styles.statCard, styles.orangeCard]}>
-                <Text style={styles.statNumber}>0</Text>
-                <Text style={styles.statLabel}>Pending</Text>
-              </View>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Upcoming</Text>
+              <Pressable onPress={() => router.push('/(tabs)/calendar')}>
+                <Text style={styles.seeAllText}>Calendar</Text>
+              </Pressable>
+            </View>
+            <View style={styles.upcomingList}>
+              {upcomingLessons.slice(0, 3).map((lesson) => (
+                <UpcomingLessonRow key={lesson.id} lesson={lesson} />
+              ))}
             </View>
           </View>
         )}
 
-        {/* Parent: Assignments */}
+        {/* Quick Actions (Tutor) */}
+        {isTutor && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionsGrid}>
+              <Pressable
+                style={styles.actionCard}
+                onPress={() => router.push('/(tabs)/calendar')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.accent.subtle }]}>
+                  <Ionicons name="add-circle" size={24} color={colors.accent.main} />
+                </View>
+                <Text style={styles.actionLabel}>Schedule Lesson</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.actionCard}
+                onPress={() => router.push('/(tabs)/students')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.accent.subtle }]}>
+                  <Ionicons name="person-add" size={24} color={colors.accent.main} />
+                </View>
+                <Text style={styles.actionLabel}>Add Student</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.actionCard}
+                onPress={() => router.push('/(tabs)/worksheets')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.status.infoBg }]}>
+                  <Ionicons name="document-text" size={24} color={colors.status.info} />
+                </View>
+                <Text style={styles.actionLabel}>Worksheets</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Parent: Assignments placeholder */}
         {!isTutor && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Assignments</Text>
-            <View style={styles.placeholder}>
-              <Ionicons name="document-text" size={32} color="#4CAF50" />
-              <Text style={styles.placeholderText}>
-                Worksheets and practice assignments will appear here
+            <View style={styles.emptyCard}>
+              <Ionicons name="document-text-outline" size={40} color={colors.neutral.textMuted} />
+              <Text style={styles.emptyTitle}>No assignments yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Worksheets from your tutor will appear here
               </Text>
             </View>
           </View>
         )}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Activity</Text>
-          <View style={styles.placeholder}>
-            <Ionicons name="time" size={32} color="#999" />
-            <Text style={styles.placeholderText}>
-              Recent activity will appear here
-            </Text>
-          </View>
-        </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// Lesson Card Component
+function LessonCard({ lesson }: { lesson: ScheduledLessonWithStudent }) {
+  const subjectColor = getSubjectColor(lesson.subject);
+  const lessonTime = new Date(lesson.scheduled_at);
+  const timeString = lessonTime.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return (
+    <Pressable
+      style={[
+        styles.lessonCard,
+        { borderLeftColor: subjectColor.primary },
+        lesson.status === 'completed' && styles.lessonCardCompleted,
+      ]}
+      onPress={() => router.push('/(tabs)/calendar')}
+    >
+      <View style={styles.lessonTime}>
+        <Text style={styles.lessonTimeText}>{timeString}</Text>
+        <Text style={styles.lessonDuration}>{lesson.duration_min}m</Text>
+      </View>
+      <View style={styles.lessonInfo}>
+        <Text style={styles.lessonStudent}>{lesson.student.name}</Text>
+        <View style={styles.lessonSubject}>
+          <Text style={{ fontSize: 14 }}>
+            {lesson.subject === 'piano' ? '🎹' : '➗'}
+          </Text>
+          <Text style={[styles.lessonSubjectText, { color: subjectColor.primary }]}>
+            {lesson.subject === 'piano' ? 'Piano' : 'Math'}
+          </Text>
+        </View>
+      </View>
+      {lesson.status === 'completed' && (
+        <Ionicons name="checkmark-circle" size={20} color={colors.status.success} />
+      )}
+      {lesson.status === 'scheduled' && (
+        <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+      )}
+    </Pressable>
+  );
+}
+
+// Upcoming Lesson Row
+function UpcomingLessonRow({ lesson }: { lesson: ScheduledLessonWithStudent }) {
+  const subjectColor = getSubjectColor(lesson.subject);
+  const lessonDate = new Date(lesson.scheduled_at);
+  const dayName = lessonDate.toLocaleDateString('en-US', { weekday: 'short' });
+  const timeString = lessonDate.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return (
+    <View style={styles.upcomingRow}>
+      <View style={[styles.upcomingDot, { backgroundColor: subjectColor.primary }]} />
+      <View style={styles.upcomingInfo}>
+        <Text style={styles.upcomingStudent}>{lesson.student.name}</Text>
+        <Text style={styles.upcomingTime}>
+          {dayName} at {timeString}
+        </Text>
+      </View>
+      <Text style={{ fontSize: 16 }}>
+        {lesson.subject === 'piano' ? '🎹' : '➗'}
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.neutral.background,
   },
   content: {
-    padding: 16,
+    padding: spacing.base,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: spacing.lg,
   },
   headerTop: {
     flexDirection: 'row',
@@ -238,44 +418,44 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#FFF0F0',
+    backgroundColor: colors.piano.subtle,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   tutorAvatarContainer: {
-    backgroundColor: '#F3E5F5',
+    backgroundColor: colors.piano.subtle,
   },
   greeting: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
   },
   roleContainer: {
     flexDirection: 'row',
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: 12,
-    gap: 4,
+    borderRadius: borderRadius.full,
+    gap: spacing.xs,
   },
   parentBadge: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.neutral.borderLight,
   },
   tutorBadge: {
-    backgroundColor: '#F3E5F5',
+    backgroundColor: colors.piano.subtle,
   },
   roleText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    fontWeight: typography.weights.medium,
   },
   tutorRoleText: {
-    color: '#9C27B0',
+    color: colors.piano.primary,
   },
   signOutButton: {
     width: 44,
@@ -283,75 +463,199 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    backgroundColor: colors.neutral.white,
+    ...shadows.sm,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.md,
   },
-  placeholder: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 24,
+  seeAllText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+    marginBottom: spacing.md,
+  },
+  loadingCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 100,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...shadows.sm,
   },
-  placeholderText: {
-    fontSize: 14,
-    color: '#999',
+  emptyCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
   },
-  statsContainer: {
+  emptyTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    marginTop: spacing.md,
+  },
+  emptySubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    marginTop: spacing.xs,
+  },
+  lessonsContainer: {
+    gap: spacing.sm,
+  },
+  lessonCard: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderLeftWidth: 4,
+    ...shadows.sm,
+  },
+  lessonCardCompleted: {
+    backgroundColor: colors.status.successBg,
+    opacity: 0.9,
+  },
+  lessonTime: {
+    width: 60,
+    marginRight: spacing.md,
+  },
+  lessonTimeText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  lessonDuration: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+  },
+  lessonInfo: {
+    flex: 1,
+  },
+  lessonStudent: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    marginBottom: 2,
+  },
+  lessonSubject: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lessonSubjectText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+  },
+  moreButton: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  moreButtonText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
   },
   statCard: {
     flex: 1,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  coralCard: {
-    backgroundColor: '#FF6B6B',
-  },
-  greenCard: {
-    backgroundColor: '#4CAF50',
-  },
-  blueCard: {
-    backgroundColor: '#2196F3',
-  },
-  orangeCard: {
-    backgroundColor: '#FF9800',
+    minWidth: '45%',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    position: 'relative',
+    overflow: 'hidden',
+    ...shadows.md,
   },
   statNumber: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontSize: typography.sizes['2xl'],
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.white,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    marginTop: 4,
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.white,
+    marginTop: spacing.xs,
     opacity: 0.9,
+  },
+  statIcon: {
+    position: 'absolute',
+    right: spacing.md,
+    top: spacing.md,
+    opacity: 0.8,
+  },
+  upcomingList: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  upcomingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.borderLight,
+  },
+  upcomingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: spacing.md,
+  },
+  upcomingInfo: {
+    flex: 1,
+  },
+  upcomingStudent: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  upcomingTime: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  actionsGrid: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  actionCard: {
+    flex: 1,
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  actionLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    textAlign: 'center',
   },
 });

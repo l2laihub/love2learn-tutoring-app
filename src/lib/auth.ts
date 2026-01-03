@@ -237,21 +237,31 @@ export async function updatePassword(
 export async function getParentByUserId(
   userId: string
 ): Promise<Parent | null> {
+  console.log('[getParentByUserId] Starting query for:', userId);
   try {
-    const { data, error } = await supabase
+    // Add timeout to detect hanging queries
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Parent query timeout after 10s')), 10000);
+    });
+
+    const queryPromise = supabase
       .from('parents')
       .select('*')
       .eq('user_id', userId)
       .single();
 
+    const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>;
+
+    console.log('[getParentByUserId] Query result:', { hasData: !!data, role: data?.role, error: error?.message });
+
     if (error) {
-      console.error('Error fetching parent:', error);
+      console.error('[getParentByUserId] Error:', error);
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('Unexpected error fetching parent:', error);
+    console.error('[getParentByUserId] Unexpected error:', error);
     return null;
   }
 }
@@ -264,24 +274,37 @@ export async function getParentByUserId(
  * @returns AuthState object with user, session, parent, loading, and authenticated status
  */
 export function useAuth(): AuthState {
+  console.log('[useAuth] Hook called');
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [parent, setParent] = useState<Parent | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchParent = useCallback(async (userId: string) => {
+    console.log('[useAuth] Fetching parent for:', userId);
     const parentData = await getParentByUserId(userId);
+    console.log('[useAuth] Parent result:', parentData?.role);
     setParent(parentData);
   }, []);
 
   useEffect(() => {
-    // Get initial session
+    // Get initial session with timeout to prevent hanging
     const initializeAuth = async () => {
+      console.log('[useAuth] initializeAuth starting...');
       try {
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession();
+        // Add timeout to prevent infinite hang
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('getSession timeout after 5s')), 5000);
+        });
 
+        const sessionPromise = supabase.auth.getSession();
+
+        const { data: { session: initialSession } } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as Awaited<typeof sessionPromise>;
+
+        console.log('[useAuth] getSession result:', !!initialSession);
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
 
@@ -289,9 +312,14 @@ export function useAuth(): AuthState {
           await fetchParent(initialSession.user.id);
         }
       } catch (error) {
-        console.error('Error initializing auth:', error);
+        console.error('[useAuth] Error initializing auth:', error);
+        // On timeout or error, set session to null and continue
+        setSession(null);
+        setUser(null);
+        setParent(null);
       } finally {
         setIsLoading(false);
+        console.log('[useAuth] Auth initialization complete, isLoading set to false');
       }
     };
 

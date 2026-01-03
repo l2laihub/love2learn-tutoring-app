@@ -171,7 +171,7 @@ export default function StudentsScreen() {
     router.push(`/parent/${parentId}`);
   };
 
-  const handleParentLongPress = (parent: Parent & { student_count: number }) => {
+  const handleParentLongPress = (parent: Parent) => {
     Alert.alert(parent.name, 'What would you like to do?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -209,10 +209,13 @@ export default function StudentsScreen() {
     );
   };
 
-  const confirmDeleteParent = (parent: Parent & { student_count: number }) => {
-    const hasStudents = parent.student_count > 0;
+  const confirmDeleteParent = (parent: Parent) => {
+    // Find the parent with students to get student count
+    const parentWithStudents = parents.find(p => p.id === parent.id);
+    const studentCount = parentWithStudents?.students?.length ?? 0;
+    const hasStudents = studentCount > 0;
     const message = hasStudents
-      ? `Are you sure you want to delete ${parent.name}? This will also delete their ${parent.student_count} student(s). This action cannot be undone.`
+      ? `Are you sure you want to delete ${parent.name}? This will also delete their ${studentCount} student(s). This action cannot be undone.`
       : `Are you sure you want to delete ${parent.name}? This action cannot be undone.`;
 
     Alert.alert('Delete Parent', message, [
@@ -481,8 +484,8 @@ export default function StudentsScreen() {
                     <Text style={styles.parentName}>{parent.name}</Text>
                     <Text style={styles.parentEmail}>{parent.email}</Text>
                     <Text style={styles.parentStudentCount}>
-                      {parent.student_count} student
-                      {parent.student_count !== 1 ? 's' : ''}
+                      {parent.students?.length ?? 0} student
+                      {(parent.students?.length ?? 0) !== 1 ? 's' : ''}
                     </Text>
                   </View>
                   <Ionicons

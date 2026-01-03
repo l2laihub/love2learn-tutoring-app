@@ -377,37 +377,67 @@ export type Database = {
         ];
       };
       // Tutoring-specific tables
-      scheduled_lessons: {
+      lesson_sessions: {
         Row: {
           id: string;
-          student_id: string;
-          subject: 'piano' | 'math';
           scheduled_at: string;
           duration_min: number;
-          status: 'scheduled' | 'completed' | 'cancelled';
           notes: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          student_id: string;
-          subject: 'piano' | 'math';
           scheduled_at: string;
           duration_min: number;
-          status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
+          scheduled_at?: string;
+          duration_min?: number;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      scheduled_lessons: {
+        Row: {
+          id: string;
+          student_id: string;
+          subject: 'piano' | 'math' | 'reading' | 'speech' | 'english';
+          scheduled_at: string;
+          duration_min: number;
+          status: 'scheduled' | 'completed' | 'cancelled';
+          notes: string | null;
+          session_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          student_id: string;
+          subject: 'piano' | 'math' | 'reading' | 'speech' | 'english';
+          scheduled_at: string;
+          duration_min: number;
+          status?: 'scheduled' | 'completed' | 'cancelled';
+          notes?: string | null;
+          session_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
           student_id?: string;
-          subject?: 'piano' | 'math';
+          subject?: 'piano' | 'math' | 'reading' | 'speech' | 'english';
           scheduled_at?: string;
           duration_min?: number;
           status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
+          session_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -417,6 +447,13 @@ export type Database = {
             columns: ['student_id'];
             isOneToOne: false;
             referencedRelation: 'students';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'scheduled_lessons_session_id_fkey';
+            columns: ['session_id'];
+            isOneToOne: false;
+            referencedRelation: 'lesson_sessions';
             referencedColumns: ['id'];
           }
         ];
@@ -575,14 +612,14 @@ export type AssignmentStatus = 'assigned' | 'completed';
 // Worksheet types
 export type WorksheetType = 'piano_naming' | 'piano_drawing' | 'math';
 
-// Lesson duration options (in minutes)
-export type LessonDuration = 30 | 45 | 60;
+// Lesson duration in minutes (supports custom durations from 15-240 minutes)
+export type LessonDuration = number;
 
 // Piano levels
 export type PianoLevel = 'beginner' | 'intermediate' | 'advanced';
 
-// Subject type for tutoring (piano or math)
-export type TutoringSubject = 'piano' | 'math';
+// Subject type for tutoring (all supported subjects)
+export type TutoringSubject = 'piano' | 'math' | 'reading' | 'speech' | 'english';
 
 // Grade levels (K=0, 1-6)
 export type GradeLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -608,6 +645,16 @@ export interface MathWorksheetConfig {
 
 export type WorksheetConfig = PianoWorksheetConfig | MathWorksheetConfig;
 
+// Lesson session - groups related lessons together (e.g., siblings taking combined classes)
+export interface LessonSession {
+  id: string;
+  scheduled_at: string;
+  duration_min: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Scheduled tutoring lesson (distinct from content lessons)
 export interface ScheduledLesson {
   id: string;
@@ -617,6 +664,7 @@ export interface ScheduledLesson {
   duration_min: number; // Typically 30, 45, or 60
   status: TutoringLessonStatus;
   notes: string | null;
+  session_id: string | null; // Links to lesson_sessions for grouped lessons
   created_at: string;
   updated_at: string;
 }
@@ -663,6 +711,27 @@ export interface ScheduledLessonWithStudent extends ScheduledLesson {
   student: StudentWithParent;
 }
 
+// Lesson session with all its lessons
+export interface LessonSessionWithLessons extends LessonSession {
+  lessons: ScheduledLessonWithStudent[];
+}
+
+// Grouped lesson for calendar display - represents either a single lesson or a session
+export interface GroupedLesson {
+  // If session_id is set, this represents a grouped session
+  session_id: string | null;
+  // All lessons in this group (1 for standalone, multiple for sessions)
+  lessons: ScheduledLessonWithStudent[];
+  // Display properties
+  scheduled_at: string; // Session start time
+  end_time: string; // Computed end time
+  duration_min: number; // Total duration
+  // Derived display strings
+  student_names: string[]; // e.g., ['Lauren Vu', 'Lian Vu']
+  subjects: TutoringSubject[]; // e.g., ['piano', 'reading']
+  status: TutoringLessonStatus; // Derived from individual lessons
+}
+
 export interface AssignmentWithStudent extends Assignment {
   student: Student;
 }
@@ -703,12 +772,19 @@ export interface UpdateParentInput {
   phone?: string | null;
 }
 
+export interface CreateLessonSessionInput {
+  scheduled_at: string;
+  duration_min: number;
+  notes?: string | null;
+}
+
 export interface CreateScheduledLessonInput {
   student_id: string;
   subject: TutoringSubject;
   scheduled_at: string;
   duration_min: LessonDuration;
   notes?: string | null;
+  session_id?: string | null;
 }
 
 export interface UpdateScheduledLessonInput {

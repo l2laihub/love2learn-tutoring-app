@@ -15,7 +15,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   splash: {
     image: './assets/splash.png',
     resizeMode: 'contain',
-    backgroundColor: '#FF6B6B', // Coral theme color
+    backgroundColor: '#FFFFFF', // White background for logo
   },
   assetBundlePatterns: ['**/*'],
   ios: {
@@ -28,7 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#FF6B6B', // Coral theme color
+      backgroundColor: '#FFFFFF', // White background for logo
     },
     package: 'com.love2learn.app',
   },

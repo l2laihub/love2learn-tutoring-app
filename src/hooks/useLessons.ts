@@ -6,7 +6,7 @@
  * which is distinct from the 'lessons' table that stores educational content.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   ScheduledLesson,
@@ -15,6 +15,11 @@ import {
   UpdateScheduledLessonInput,
   ListQueryState,
   QueryState,
+  LessonSession,
+  CreateLessonSessionInput,
+  GroupedLesson,
+  TutoringSubject,
+  TutoringLessonStatus,
 } from '../types/database';
 
 /**
@@ -242,19 +247,19 @@ export function useCreateLesson() {
         throw new Error(createError.message);
       }
 
-      // Trigger notification to parent
-      // This calls a Supabase Edge Function that handles push notifications
-      try {
-        await supabase.functions.invoke('send-lesson-notification', {
-          body: {
-            lessonId: lesson.id,
-            type: 'lesson_created',
-          },
-        });
-      } catch (notificationError) {
-        // Log but don't fail the mutation if notification fails
-        console.warn('Failed to send notification:', notificationError);
-      }
+      // TODO: Trigger notification to parent when Edge Function is deployed
+      // The 'send-lesson-notification' Edge Function needs to be created in Supabase
+      // Once deployed, uncomment the following code:
+      // try {
+      //   await supabase.functions.invoke('send-lesson-notification', {
+      //     body: {
+      //       lessonId: lesson.id,
+      //       type: 'lesson_created',
+      //     },
+      //   });
+      // } catch (notificationError) {
+      //   console.warn('Failed to send notification:', notificationError);
+      // }
 
       setData(lesson);
       return lesson;
@@ -305,19 +310,19 @@ export function useUpdateLesson() {
         throw new Error(updateError.message);
       }
 
-      // If the time was changed, notify the parent
-      if (input.scheduled_at) {
-        try {
-          await supabase.functions.invoke('send-lesson-notification', {
-            body: {
-              lessonId: lesson.id,
-              type: 'lesson_rescheduled',
-            },
-          });
-        } catch (notificationError) {
-          console.warn('Failed to send notification:', notificationError);
-        }
-      }
+      // TODO: Notify parent when Edge Function is deployed
+      // if (input.scheduled_at) {
+      //   try {
+      //     await supabase.functions.invoke('send-lesson-notification', {
+      //       body: {
+      //         lessonId: lesson.id,
+      //         type: 'lesson_rescheduled',
+      //       },
+      //     });
+      //   } catch (notificationError) {
+      //     console.warn('Failed to send notification:', notificationError);
+      //   }
+      // }
 
       setData(lesson);
       return lesson;
@@ -370,18 +375,18 @@ export function useCancelLesson() {
         throw new Error(updateError.message);
       }
 
-      // Notify the parent about cancellation
-      try {
-        await supabase.functions.invoke('send-lesson-notification', {
-          body: {
-            lessonId: lesson.id,
-            type: 'lesson_cancelled',
-            reason,
-          },
-        });
-      } catch (notificationError) {
-        console.warn('Failed to send notification:', notificationError);
-      }
+      // TODO: Notify parent about cancellation when Edge Function is deployed
+      // try {
+      //   await supabase.functions.invoke('send-lesson-notification', {
+      //     body: {
+      //       lessonId: lesson.id,
+      //       type: 'lesson_cancelled',
+      //       reason,
+      //     },
+      //   });
+      // } catch (notificationError) {
+      //   console.warn('Failed to send notification:', notificationError);
+      // }
 
       setData(lesson);
       return lesson;
@@ -460,6 +465,259 @@ export function useCompleteLesson() {
 }
 
 /**
+ * Hook for permanently deleting a lesson
+ * Use with caution - this cannot be undone
+ * @returns Mutation state with delete function
+ */
+export function useDeleteLesson() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: deleteError } = await supabase
+        .from('scheduled_lessons')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to delete lesson');
+      setError(errorMessage);
+      console.error('useDeleteLesson error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
+}
+
+/**
+ * Hook to find recurring series lessons
+ * Finds lessons that match the same student, subject, time of day, and day of week
+ * @returns Function to find series and count
+ */
+export function useFindRecurringSeries() {
+  // Find recurring series for standalone lessons
+  const findSeries = useCallback(async (lesson: ScheduledLessonWithStudent): Promise<string[]> => {
+    try {
+      const lessonDate = new Date(lesson.scheduled_at);
+      const dayOfWeek = lessonDate.getDay();
+      const timeString = lessonDate.toTimeString().slice(0, 5); // HH:MM format
+
+      // Get all lessons for this student with same subject
+      const { data: allLessons, error: fetchError } = await supabase
+        .from('scheduled_lessons')
+        .select('id, scheduled_at')
+        .eq('student_id', lesson.student_id)
+        .eq('subject', lesson.subject)
+        .eq('duration_min', lesson.duration_min);
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      if (!allLessons) return [lesson.id];
+
+      // Filter to lessons on same day of week and same time
+      const seriesLessons = allLessons.filter(l => {
+        const d = new Date(l.scheduled_at);
+        const lDayOfWeek = d.getDay();
+        const lTimeString = d.toTimeString().slice(0, 5);
+        return lDayOfWeek === dayOfWeek && lTimeString === timeString;
+      });
+
+      return seriesLessons.map(l => l.id);
+    } catch (err) {
+      console.error('useFindRecurringSeries error:', err);
+      return [lesson.id];
+    }
+  }, []);
+
+  // Find recurring series for grouped sessions (Combined Sessions)
+  // Returns session IDs that match same students, subjects, time, and day of week
+  const findSessionSeries = useCallback(async (groupedLesson: GroupedLesson): Promise<string[]> => {
+    try {
+      if (!groupedLesson.session_id) return [];
+
+      const sessionDate = new Date(groupedLesson.scheduled_at);
+      const dayOfWeek = sessionDate.getDay();
+      const timeString = sessionDate.toTimeString().slice(0, 5); // HH:MM format
+
+      // Get all lesson IDs in this session
+      const lessonIds = groupedLesson.lessons.map(l => l.id);
+
+      // Get all sessions that have similar characteristics
+      // We'll find sessions with same time, day of week, and matching student/subject combinations
+      const { data: allLessons, error: fetchError } = await supabase
+        .from('scheduled_lessons')
+        .select('id, session_id, scheduled_at, student_id, subject')
+        .not('session_id', 'is', null);
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      if (!allLessons) return [groupedLesson.session_id];
+
+      // Group lessons by session_id
+      const sessionMap = new Map<string, typeof allLessons>();
+      for (const lesson of allLessons) {
+        if (!lesson.session_id) continue;
+        const existing = sessionMap.get(lesson.session_id) || [];
+        existing.push(lesson);
+        sessionMap.set(lesson.session_id, existing);
+      }
+
+      // Get the student-subject pairs from the current session
+      const currentPairs = new Set(
+        groupedLesson.lessons.map(l => `${l.student_id}:${l.subject}`)
+      );
+
+      // Find sessions that match:
+      // 1. Same day of week
+      // 2. Same time
+      // 3. Same student-subject combinations
+      const matchingSessions: string[] = [];
+
+      for (const [sessionId, lessons] of sessionMap) {
+        if (lessons.length === 0) continue;
+
+        const firstLesson = lessons[0];
+        const d = new Date(firstLesson.scheduled_at);
+        const lDayOfWeek = d.getDay();
+        const lTimeString = d.toTimeString().slice(0, 5);
+
+        // Check day and time match
+        if (lDayOfWeek !== dayOfWeek || lTimeString !== timeString) continue;
+
+        // Check student-subject pairs match
+        const sessionPairs = new Set(
+          lessons.map(l => `${l.student_id}:${l.subject}`)
+        );
+
+        // Check if all pairs match (same size and all elements present)
+        if (sessionPairs.size !== currentPairs.size) continue;
+
+        let allMatch = true;
+        for (const pair of currentPairs) {
+          if (!sessionPairs.has(pair)) {
+            allMatch = false;
+            break;
+          }
+        }
+
+        if (allMatch) {
+          matchingSessions.push(sessionId);
+        }
+      }
+
+      return matchingSessions;
+    } catch (err) {
+      console.error('useFindRecurringSeries findSessionSeries error:', err);
+      return groupedLesson.session_id ? [groupedLesson.session_id] : [];
+    }
+  }, []);
+
+  return { findSeries, findSessionSeries };
+}
+
+/**
+ * Hook for deleting an entire recurring lesson series
+ * @returns Mutation state with delete function for lessons and sessions
+ */
+export function useDeleteLessonSeries() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  // Delete standalone lessons by their IDs
+  const mutate = useCallback(async (lessonIds: string[]): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Delete all lessons in the series
+      const { error: deleteError } = await supabase
+        .from('scheduled_lessons')
+        .delete()
+        .in('id', lessonIds);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to delete lesson series');
+      setError(errorMessage);
+      console.error('useDeleteLessonSeries error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Delete sessions (Combined Sessions) by their session IDs
+  // This deletes the session and all lessons associated with it
+  const mutateSessions = useCallback(async (sessionIds: string[]): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // First delete all lessons associated with these sessions
+      const { error: lessonsError } = await supabase
+        .from('scheduled_lessons')
+        .delete()
+        .in('session_id', sessionIds);
+
+      if (lessonsError) {
+        throw new Error(lessonsError.message);
+      }
+
+      // Then delete the sessions themselves
+      const { error: sessionsError } = await supabase
+        .from('lesson_sessions')
+        .delete()
+        .in('id', sessionIds);
+
+      if (sessionsError) {
+        throw new Error(sessionsError.message);
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to delete session series');
+      setError(errorMessage);
+      console.error('useDeleteLessonSeries mutateSessions error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, mutateSessions, reset };
+}
+
+/**
  * Fetch lessons for a specific week
  * @param weekStart - Start date of the week (typically Monday)
  * @returns List of lessons for the week
@@ -476,4 +734,305 @@ export function useWeekLessons(weekStart: Date): ListQueryState<ScheduledLessonW
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
   });
+}
+
+// ============================================================================
+// SESSION-RELATED HOOKS
+// ============================================================================
+
+/**
+ * Hook for creating a new lesson session (groups related lessons)
+ * @returns Mutation state with create function
+ */
+export function useCreateLessonSession() {
+  const [data, setData] = useState<LessonSession | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (input: CreateLessonSessionInput): Promise<LessonSession | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: session, error: createError } = await supabase
+        .from('lesson_sessions')
+        .insert(input)
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      setData(session);
+      return session;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to create lesson session');
+      setError(errorMessage);
+      console.error('useCreateLessonSession error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Hook for deleting a lesson session and its associated lessons
+ * @returns Mutation state with delete function
+ */
+export function useDeleteLessonSession() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (sessionId: string): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // First, delete all lessons in the session
+      const { error: lessonsDeleteError } = await supabase
+        .from('scheduled_lessons')
+        .delete()
+        .eq('session_id', sessionId);
+
+      if (lessonsDeleteError) {
+        throw new Error(lessonsDeleteError.message);
+      }
+
+      // Then delete the session itself
+      const { error: sessionDeleteError } = await supabase
+        .from('lesson_sessions')
+        .delete()
+        .eq('id', sessionId);
+
+      if (sessionDeleteError) {
+        throw new Error(sessionDeleteError.message);
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to delete lesson session');
+      setError(errorMessage);
+      console.error('useDeleteLessonSession error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
+}
+
+// ============================================================================
+// GROUPING UTILITIES
+// ============================================================================
+
+/**
+ * Helper function to calculate end time from start time and duration
+ */
+function calculateEndTime(scheduledAt: string, durationMin: number): string {
+  const startTime = new Date(scheduledAt);
+  const endTime = new Date(startTime.getTime() + durationMin * 60 * 1000);
+  return endTime.toISOString();
+}
+
+/**
+ * Helper function to derive the overall status from a group of lessons
+ */
+function deriveGroupStatus(lessons: ScheduledLessonWithStudent[]): TutoringLessonStatus {
+  if (lessons.every(l => l.status === 'completed')) return 'completed';
+  if (lessons.every(l => l.status === 'cancelled')) return 'cancelled';
+  if (lessons.some(l => l.status === 'cancelled')) return 'scheduled'; // Partial cancel = still scheduled
+  return 'scheduled';
+}
+
+/**
+ * Groups lessons by session_id for calendar display
+ * Lessons without a session_id become their own group (standalone lessons)
+ * @param lessons - Array of lessons with student info
+ * @returns Array of grouped lessons for calendar display
+ */
+export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): GroupedLesson[] {
+  const sessionMap = new Map<string, ScheduledLessonWithStudent[]>();
+  const standaloneLessons: ScheduledLessonWithStudent[] = [];
+
+  // Separate lessons into sessions and standalone
+  for (const lesson of lessons) {
+    if (lesson.session_id) {
+      const existing = sessionMap.get(lesson.session_id) || [];
+      existing.push(lesson);
+      sessionMap.set(lesson.session_id, existing);
+    } else {
+      standaloneLessons.push(lesson);
+    }
+  }
+
+  const grouped: GroupedLesson[] = [];
+
+  // Process session groups
+  for (const [sessionId, sessionLessons] of sessionMap) {
+    // Sort by scheduled_at to get proper order
+    sessionLessons.sort((a, b) =>
+      new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+    );
+
+    const firstLesson = sessionLessons[0];
+
+    // For grouped sessions, all lessons share the same time slot and duration
+    // Use the first lesson's duration (they should all be the same for a session)
+    const sessionDuration = firstLesson.duration_min;
+
+    // Get unique student names and subjects
+    const studentNames = [...new Set(sessionLessons.map(l => l.student.name))];
+    const subjects = [...new Set(sessionLessons.map(l => l.subject))] as TutoringSubject[];
+
+    grouped.push({
+      session_id: sessionId,
+      lessons: sessionLessons,
+      scheduled_at: firstLesson.scheduled_at,
+      end_time: calculateEndTime(firstLesson.scheduled_at, sessionDuration),
+      duration_min: sessionDuration,
+      student_names: studentNames,
+      subjects,
+      status: deriveGroupStatus(sessionLessons),
+    });
+  }
+
+  // Process standalone lessons
+  for (const lesson of standaloneLessons) {
+    grouped.push({
+      session_id: null,
+      lessons: [lesson],
+      scheduled_at: lesson.scheduled_at,
+      end_time: calculateEndTime(lesson.scheduled_at, lesson.duration_min),
+      duration_min: lesson.duration_min,
+      student_names: [lesson.student.name],
+      subjects: [lesson.subject],
+      status: lesson.status,
+    });
+  }
+
+  // Sort all grouped lessons by scheduled_at
+  grouped.sort((a, b) =>
+    new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
+  );
+
+  return grouped;
+}
+
+/**
+ * Hook that returns lessons grouped by session for calendar display
+ * @param options - Filter options
+ * @returns Grouped lessons with loading/error state
+ */
+export function useGroupedLessons(options: LessonsFilterOptions = {}): ListQueryState<GroupedLesson> {
+  const { data: lessons, loading, error, refetch } = useLessons(options);
+
+  const groupedData = useMemo(() => {
+    return groupLessonsBySession(lessons);
+  }, [lessons]);
+
+  return { data: groupedData, loading, error, refetch };
+}
+
+/**
+ * Hook that returns grouped lessons for a specific week
+ * @param weekStart - Start date of the week
+ * @returns Grouped lessons for the week
+ */
+export function useWeekGroupedLessons(weekStart: Date): ListQueryState<GroupedLesson> {
+  const startDate = new Date(weekStart);
+  startDate.setHours(0, 0, 0, 0);
+
+  const endDate = new Date(startDate);
+  endDate.setDate(endDate.getDate() + 6);
+  endDate.setHours(23, 59, 59, 999);
+
+  return useGroupedLessons({
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+  });
+}
+
+/**
+ * Hook for creating a grouped lesson session with multiple lessons
+ * Creates a session and all related lessons in one operation
+ * @returns Mutation state with create function
+ */
+export function useCreateGroupedLesson() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [data, setData] = useState<{ session: LessonSession; lessons: ScheduledLesson[] } | null>(null);
+
+  const mutate = useCallback(async (
+    sessionInput: CreateLessonSessionInput,
+    lessonInputs: Omit<CreateScheduledLessonInput, 'session_id'>[]
+  ): Promise<{ session: LessonSession; lessons: ScheduledLesson[] } | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Create the session first
+      const { data: session, error: sessionError } = await supabase
+        .from('lesson_sessions')
+        .insert(sessionInput)
+        .select()
+        .single();
+
+      if (sessionError) {
+        throw new Error(sessionError.message);
+      }
+
+      // Create all lessons with the session_id
+      const lessonsWithSession = lessonInputs.map(input => ({
+        ...input,
+        session_id: session.id,
+        status: 'scheduled' as const,
+      }));
+
+      const { data: lessons, error: lessonsError } = await supabase
+        .from('scheduled_lessons')
+        .insert(lessonsWithSession)
+        .select();
+
+      if (lessonsError) {
+        // Try to clean up the session if lessons failed
+        await supabase.from('lesson_sessions').delete().eq('id', session.id);
+        throw new Error(lessonsError.message);
+      }
+
+      const result = { session, lessons };
+      setData(result);
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to create grouped lesson');
+      setError(errorMessage);
+      console.error('useCreateGroupedLesson error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
 }

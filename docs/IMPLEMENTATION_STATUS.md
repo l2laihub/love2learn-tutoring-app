@@ -2,7 +2,7 @@
 
 Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md).
 
-**Last Updated:** January 2, 2026 (Evening)
+**Last Updated:** January 3, 2026
 
 ---
 
@@ -11,8 +11,8 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 | Phase | Status | Progress |
 |-------|--------|----------|
 | Week 1: Foundation | Complete | 100% |
-| Week 2: Core Features | Not Started | 0% |
-| Week 3: AI Worksheets | Not Started | 0% |
+| Week 2: Core Features | In Progress | 75% |
+| Week 3: AI Worksheets | In Progress | 40% |
 | Week 4: Polish | Not Started | 0% |
 
 ---
@@ -71,13 +71,47 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 
 ## Week 2: Core Features
 
-### Calendar & Scheduling
+### Calendar & Scheduling ✅ COMPLETE
 
-- [ ] Build calendar week view component
-- [ ] Implement lesson creation flow (select student, date, time, duration, subject)
-- [ ] Lesson edit/cancel functionality
-- [ ] Color-coded by subject (Piano = coral, Math = green)
-- [ ] Quick view: today's lessons on home screen
+- [x] **Build calendar week view component**
+  - Weekly calendar with navigation (previous/next week)
+  - Day columns with lesson cards
+  - Color-coded by subject
+  - Today indicator
+  - Pull-to-refresh functionality
+- [x] **Implement lesson creation flow**
+  - LessonFormModal with full-featured calendar picker
+  - Student selection with search/filtering
+  - **Multi-student selection** - Select multiple students at once
+  - **Per-student subject selection** - Choose different subjects for each student
+  - **Multi-day selection** - Schedule lessons on multiple dates simultaneously
+  - Time slot picker with common times
+  - **Custom duration** - Preset options (30, 45, 60, 90 min) plus custom input (15-240 min)
+  - Recurrence options (weekly, bi-weekly, monthly)
+  - Notes field
+  - Batch creation - creates lessons for each date × student × subject combination
+- [x] **Lesson edit/cancel functionality**
+  - LessonDetailModal with lesson information display
+  - Edit button opens LessonFormModal in edit mode
+  - Cancel with optional reason
+  - Mark as completed with optional notes
+  - **Delete lesson permanently** (tutor only)
+- [x] **Combined/Grouped Session Support (NEW)**
+  - `lesson_sessions` table groups related lessons together
+  - **Create as Combined Session** toggle when scheduling multiple students/subjects
+  - Sessions display as single card on calendar with time range (e.g., "3:30 PM – 6:30 PM")
+  - Student names joined with "&" (e.g., "Lauren & Lian Vu")
+  - Subjects listed together (e.g., "Piano, Reading")
+  - Group indicator icon on calendar cards
+  - Detail modal shows all lessons in the session
+  - Complete/Cancel/Delete affects entire session
+- [x] **Color-coded by subject**
+  - Piano = Teal (#3D9CA8)
+  - Math = Green (#7CB342)
+  - Reading = Purple (#9C27B0)
+  - Speech = Orange (#FF9800)
+  - English = Blue (#2196F3)
+- [x] **Quick view: today's lessons on home screen** (via useWeekLessons hook)
 
 ### Push Notifications
 
@@ -86,29 +120,57 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 - [ ] Implement 1-hour reminder
 - [ ] Daily schedule summary for tutor
 
-### Payment Tracking
+### Payment Tracking ✅ COMPLETE
 
-- [ ] Payment tracking screen with monthly view
-- [ ] Mark payment as paid/partial/unpaid
-- [ ] Record payment amount and date
-- [ ] Visual indicator for overdue payments
+- [x] **Payment tracking screen with monthly view**
+  - Monthly navigation
+  - Summary cards (total due, collected, outstanding)
+  - Payment list with status indicators
+  - Overdue payments section with warning styling
+- [x] **Mark payment as paid/partial/unpaid**
+  - PaymentFormModal for creating/editing payments
+  - Status badges (Paid = green, Partial = yellow, Unpaid = red)
+- [x] **Record payment amount and date**
+  - Amount due and amount paid fields
+  - Payment date tracking
+  - Notes field for additional info
+- [x] **Visual indicator for overdue payments**
+  - Overdue section at top of payments list
+  - Red warning styling for overdue items
+  - useOverduePayments hook for filtering
 
 ---
 
 ## Week 3: AI Worksheets
 
-### Piano Worksheets
+### Piano Worksheets ✅ UI COMPLETE
 
 - [ ] Create piano note image assets (pre-rendered PNGs)
-- [ ] Build piano worksheet generator UI
+- [x] **Build piano worksheet generator UI**
+  - WorksheetGeneratorModal with multi-step flow
+  - Worksheet type selection (Note Naming, Note Drawing)
+  - Student selection
+  - Configuration options:
+    - Clef selection (Treble, Bass, Grand Staff)
+    - Difficulty levels (Beginner, Elementary, Intermediate, Advanced)
+    - Accidentals (None, Sharps, Flats, Mixed)
+    - Problem count (10, 15, 20)
+    - Fun themes (Space, Animals, Ocean)
 - [ ] Implement note naming worksheet logic
 - [ ] Implement note drawing worksheet logic
 
-### Math Worksheets
+### Math Worksheets ✅ UI COMPLETE
 
-- [ ] Build math worksheet generator UI
+- [x] **Build math worksheet generator UI**
+  - Math worksheet type in WorksheetGeneratorModal
+  - Configuration options:
+    - Grade level selection (K-6)
+    - Topic selection (Addition, Subtraction, Multiplication, Division, etc.)
+    - Problem count (10, 15, 20, 25)
+    - Include word problems toggle
+    - Include visual aids toggle
 - [ ] OpenAI integration for math problem generation
-- [ ] Grade-level topic selection (K-6)
+- [ ] Grade-level topic selection (K-6) ✅ UI done, needs backend
 
 ### PDF Generation
 
@@ -149,6 +211,19 @@ Tracking implementation progress against the [MVP PRD](../Love2Learn_MVP_PRD.md)
 |-------|----------|-------|
 | PNG assets are placeholders | Low | Need real icon/splash images |
 | TypeScript errors in node_modules | Low | Expo library type conflicts, doesn't affect runtime |
+| **tutoring_subject enum missing values** | **High** | Database enum only has 'piano' and 'math'. Need to add 'reading', 'speech', 'english'. See migration below. |
+| Edge Function not deployed | Medium | `send-lesson-notification` commented out, notifications disabled |
+
+### Required Migration: Add Additional Subjects
+
+Run this in Supabase SQL Editor to enable all 5 subjects:
+
+```sql
+-- Add new values to the tutoring_subject enum
+ALTER TYPE tutoring_subject ADD VALUE IF NOT EXISTS 'reading';
+ALTER TYPE tutoring_subject ADD VALUE IF NOT EXISTS 'speech';
+ALTER TYPE tutoring_subject ADD VALUE IF NOT EXISTS 'english';
+```
 
 ---
 
@@ -159,10 +234,10 @@ love2learn-tutoring-app/
 ├── app/                      # Expo Router screens
 │   ├── (tabs)/              # Tab navigation
 │   │   ├── index.tsx        # Home with sign out & role-aware dashboard
-│   │   ├── calendar.tsx     # Calendar (placeholder)
+│   │   ├── calendar.tsx     # Lesson Calendar (FUNCTIONAL)
 │   │   ├── students.tsx     # Students & Parents (FUNCTIONAL + Import)
-│   │   ├── worksheets.tsx   # Worksheets (placeholder)
-│   │   └── payments.tsx     # Payments (placeholder)
+│   │   ├── worksheets.tsx   # Worksheets (UI COMPLETE, needs backend)
+│   │   └── payments.tsx     # Payments (FUNCTIONAL)
 │   ├── (auth)/              # Auth screens
 │   │   ├── _layout.tsx      # Auth stack layout
 │   │   ├── login.tsx        # Login screen
@@ -177,51 +252,77 @@ love2learn-tutoring-app/
 │   │   ├── StudentFormModal.tsx # Student add/edit form
 │   │   ├── ParentFormModal.tsx  # Parent add/edit form
 │   │   ├── ImportDataModal.tsx  # Google Sheets import (tutor only)
-│   │   ├── LessonCard.tsx   # Lesson display
-│   │   ├── PaymentCard.tsx  # Payment display
-│   │   ├── Calendar.tsx     # Calendar component
-│   │   └── WorksheetGenerator.tsx
+│   │   ├── LessonFormModal.tsx  # Lesson create/edit (ENHANCED)
+│   │   ├── LessonDetailModal.tsx # Lesson view/actions
+│   │   ├── PaymentFormModal.tsx # Payment create/edit
+│   │   ├── WorksheetGeneratorModal.tsx # Worksheet configuration
+│   │   └── ...
 │   ├── contexts/            # React contexts
 │   │   └── AuthContext.tsx  # Authentication context with role helpers
 │   ├── hooks/               # Data fetching hooks
 │   │   ├── useStudents.ts   # Student CRUD hooks
-│   │   ├── useParents.ts    # Parent CRUD hooks
+│   │   ├── useParents.ts    # Parent CRUD hooks (with search)
 │   │   ├── useImportData.ts # Google Sheets import hook
-│   │   ├── useLessons.ts
-│   │   ├── usePayments.ts
+│   │   ├── useLessons.ts    # Lesson CRUD hooks (create, update, cancel, complete, delete)
+│   │   ├── usePayments.ts   # Payment CRUD hooks (with summary, overdue)
 │   │   └── useAssignments.ts
 │   ├── lib/                 # Utilities
 │   │   ├── supabase.ts     # Supabase client
 │   │   └── auth.ts         # Auth helpers (signIn, signUp, etc.)
 │   ├── types/               # TypeScript types
-│   │   └── database.ts     # DB schema types (with subjects field)
-│   └── theme/               # Design tokens
+│   │   └── database.ts     # DB schema types (TutoringSubject includes all 5)
+│   └── theme/               # Design tokens (Nurturing Growth palette)
 ├── supabase/                # Database
 │   ├── migrations/         # SQL migrations
 │   │   ├── 20260102000000_initial_schema.sql
 │   │   ├── 20260102000001_rls_policies.sql
 │   │   ├── 20260102000002_role_system.sql
 │   │   ├── 20260102000003_handle_new_user_trigger.sql
-│   │   └── 20260102000004_student_subjects.sql
+│   │   ├── 20260102000004_student_subjects.sql
+│   │   └── 20260102000005_additional_subjects.sql (NEW - pending)
 │   └── seed.sql            # Sample data for development
 ├── assets/                  # Images, fonts
 └── docs/                    # Documentation
-    └── sample-import-data.csv  # Sample data for import testing
+    ├── IMPLEMENTATION_STATUS.md  # This file
+    └── sample-import-data.csv    # Sample data for import testing
 ```
+
+---
+
+## Recent Changes (January 2, 2026)
+
+### Calendar & Scheduling Enhancements
+1. **Multi-student selection** - Select multiple students when scheduling lessons
+2. **Per-student subject selection** - Choose different subjects for each student
+3. **Multi-day selection** - Tap multiple dates on calendar to schedule lessons on different days
+4. **Custom duration** - Enter any duration from 15-240 minutes
+5. **Student search** - Filter students by name or parent name
+6. **Delete lesson** - Tutors can permanently delete scheduled lessons
+7. **Deduplication** - Prevents duplicate lessons from appearing in calendar view
+
+### Payment Tracking
+1. **Full payment CRUD** - Create, edit, view payments
+2. **Monthly navigation** - Browse payments by month
+3. **Summary dashboard** - Total due, collected, outstanding
+4. **Overdue tracking** - Separate section for overdue payments
+
+### Worksheet Generator UI
+1. **Piano worksheets** - Note naming and note drawing types
+2. **Math worksheets** - Grade-level topic selection
+3. **Configuration options** - Difficulty, problem count, themes
+4. **Multi-step flow** - Type → Student → Configuration
 
 ---
 
 ## Next Steps (Recommended Order)
 
-1. **Run All Migrations** - Apply migrations in Supabase SQL Editor:
-   - `20260102000002_role_system.sql` - Role column and tutor access
-   - `20260102000003_handle_new_user_trigger.sql` - Auto-create parent on signup
-   - `20260102000004_student_subjects.sql` - Add subjects to students
-2. **Create Tutor Account** - Register and set role to 'tutor' for admin access
-3. **Import Sample Data** - Use Google Sheets import with sample-import-data.csv
-4. **Calendar** - Implement week view with lesson scheduling
-5. **Payments** - Wire up payment tracking
-6. **Worksheets** - AI-powered generation (depends on OpenAI key)
+1. **Run Subjects Migration** - Add reading/speech/english to enum (see SQL above)
+2. **Deploy Edge Function** - Create `send-lesson-notification` for parent notifications
+3. **Worksheet Backend** - Implement PDF generation for worksheets
+4. **OpenAI Integration** - Connect math worksheet generator to AI
+5. **Piano Assets** - Create note images for piano worksheets
+6. **Push Notifications** - Set up Firebase Cloud Messaging
+7. **Home Dashboard** - Add today's lessons and upcoming widgets
 
 ---
 
@@ -262,14 +363,17 @@ EXPO_PUBLIC_OPENAI_API_KEY=      # Optional (for worksheets feature)
 
 ## Database Migrations
 
-| File | Description |
-|------|-------------|
-| `20260102000000_initial_schema.sql` | Core tables, enums, indexes, triggers |
-| `20260102000001_rls_policies.sql` | Row Level Security policies |
-| `20260102000002_role_system.sql` | Role column and tutor access policies |
-| `20260102000003_handle_new_user_trigger.sql` | Auto-create parent profile on signup |
-| `20260102000004_student_subjects.sql` | Add subjects array to students table |
-| `seed.sql` | Sample data for development |
+| File | Description | Status |
+|------|-------------|--------|
+| `20260102000000_initial_schema.sql` | Core tables, enums, indexes, triggers | ✅ Deployed |
+| `20260102000001_rls_policies.sql` | Row Level Security policies | ✅ Deployed |
+| `20260102000002_role_system.sql` | Role column and tutor access policies | ✅ Deployed |
+| `20260102000003_handle_new_user_trigger.sql` | Auto-create parent profile on signup | ✅ Deployed |
+| `20260102000004_student_subjects.sql` | Add subjects array to students table | ✅ Deployed |
+| `20260102000007_expand_subjects.sql` | Change students.subjects to text[] | ⏳ Pending |
+| `20260102000008_expand_tutoring_subject_enum.sql` | Add reading/speech/english to tutoring_subject enum | ⏳ Pending |
+| `20260102000009_lesson_sessions.sql` | Create lesson_sessions table for grouped lessons | ⏳ Pending |
+| `seed.sql` | Sample data for development | Optional |
 
 ### Role System
 
@@ -292,5 +396,6 @@ UPDATE parents SET role = 'tutor' WHERE email = 'tutor@example.com';
 | `parents` | Own profile only | All profiles |
 | `students` | Own students only | All students |
 | `scheduled_lessons` | View own students' lessons | Full CRUD all lessons |
+| `lesson_sessions` | View own students' sessions | Full CRUD all sessions |
 | `payments` | View own payments | Full CRUD all payments |
 | `assignments` | View own students' assignments | Full CRUD all assignments |

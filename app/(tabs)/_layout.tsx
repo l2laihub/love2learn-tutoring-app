@@ -1,14 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Color scheme constants
-const COLORS = {
-  primaryCoral: '#FF6B6B', // Piano theme
-  primaryGreen: '#4CAF50', // Math theme
-  inactive: '#8E8E93',
-  background: '#FFFFFF',
-};
+import { colors } from '../../src/theme';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -28,12 +21,12 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: COLORS.primaryCoral,
-        tabBarInactiveTintColor: COLORS.inactive,
+        tabBarActiveTintColor: colors.primary.main,
+        tabBarInactiveTintColor: colors.neutral.textMuted,
         tabBarStyle: {
-          backgroundColor: COLORS.background,
+          backgroundColor: colors.neutral.white,
           borderTopWidth: 1,
-          borderTopColor: '#E5E5E5',
+          borderTopColor: colors.neutral.border,
           paddingBottom: Math.max(insets.bottom, 10),
           paddingTop: 8,
           height: 60 + Math.max(insets.bottom, 10),
@@ -43,9 +36,9 @@ export default function TabLayout() {
           fontWeight: '500',
         },
         headerStyle: {
-          backgroundColor: COLORS.primaryCoral,
+          backgroundColor: colors.primary.main,
         },
-        headerTintColor: '#FFFFFF',
+        headerTintColor: colors.neutral.textInverse,
         headerTitleStyle: {
           fontWeight: '600',
         },
@@ -86,7 +79,7 @@ export default function TabLayout() {
         options={{
           title: 'Worksheets',
           headerTitle: 'AI Worksheets',
-          tabBarActiveTintColor: COLORS.primaryGreen,
+          tabBarActiveTintColor: colors.secondary.main,
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="document-text" color={color} size={size} />
           ),

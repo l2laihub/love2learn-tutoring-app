@@ -1,80 +1,287 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+/**
+ * Worksheets Screen
+ * AI-powered worksheet generation for piano and math lessons
+ */
+
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
+import { useAuthContext } from '../../src/contexts/AuthContext';
+import { useStudents } from '../../src/hooks/useStudents';
+import { WorksheetGeneratorModal, WorksheetConfig } from '../../src/components/WorksheetGeneratorModal';
+import { TutoringSubject } from '../../src/types/database';
+
+type TabType = 'generate' | 'assigned';
+
+// Piano quick templates
+const PIANO_TEMPLATES = [
+  { id: 'note-naming', label: 'Note Naming', icon: '🎵', clef: 'treble', difficulty: 'beginner' },
+  { id: 'note-drawing', label: 'Note Drawing', icon: '✏️', clef: 'treble', difficulty: 'beginner' },
+  { id: 'bass-clef', label: 'Bass Clef', icon: '🎹', clef: 'bass', difficulty: 'elementary' },
+  { id: 'grand-staff', label: 'Grand Staff', icon: '🎼', clef: 'grand', difficulty: 'intermediate' },
+];
+
+// Math quick templates
+const MATH_TEMPLATES = [
+  { id: 'addition', label: 'Addition', icon: '➕', topic: 'addition', grade: 1 },
+  { id: 'subtraction', label: 'Subtraction', icon: '➖', topic: 'subtraction', grade: 1 },
+  { id: 'multiplication', label: 'Multiplication', icon: '✖️', topic: 'multiplication', grade: 3 },
+  { id: 'division', label: 'Division', icon: '➗', topic: 'division', grade: 3 },
+];
 
 export default function WorksheetsScreen() {
-  const handleGenerateWorksheet = () => {
-    // TODO: Navigate to worksheet generator
-    console.log('Generate worksheet pressed');
+  const { role: userRole } = useAuthContext();
+  const { data: students } = useStudents();
+  const [activeTab, setActiveTab] = useState<TabType>('generate');
+  const [showGenerator, setShowGenerator] = useState(false);
+  const [presetSubject, setPresetSubject] = useState<TutoringSubject | undefined>();
+
+  const isTutor = userRole === 'tutor';
+
+  const handleOpenGenerator = (subject?: TutoringSubject) => {
+    setPresetSubject(subject);
+    setShowGenerator(true);
+  };
+
+  const handleGenerateWorksheet = async (config: WorksheetConfig) => {
+    // TODO: Call Supabase Edge Function to generate PDF
+    console.log('Generating worksheet with config:', config);
+
+    // For now, just show success
+    // In production, this would:
+    // 1. Call edge function to generate PDF
+    // 2. Store worksheet record in database
+    // 3. Optionally assign to student
+  };
+
+  const handleQuickTemplate = (
+    subject: TutoringSubject,
+    templateConfig: Record<string, unknown>
+  ) => {
+    // Pre-fill generator with template settings
+    setPresetSubject(subject);
+    setShowGenerator(true);
+    // The modal will use preset subject to show appropriate initial config
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>AI Worksheet Generator</Text>
-          <Text style={styles.subtitle}>
-            Create personalized math worksheets with AI
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.generateButton}
-          onPress={handleGenerateWorksheet}
+      {/* Tab Bar */}
+      <View style={styles.tabBar}>
+        <Pressable
+          style={[styles.tab, activeTab === 'generate' && styles.tabActive]}
+          onPress={() => setActiveTab('generate')}
         >
-          <View style={styles.generateButtonContent}>
-            <Ionicons name="sparkles" size={32} color="#FFFFFF" />
-            <Text style={styles.generateButtonText}>Generate New Worksheet</Text>
-            <Text style={styles.generateButtonSubtext}>
-              Powered by AI for personalized learning
-            </Text>
-          </View>
-        </TouchableOpacity>
+          <Ionicons
+            name="sparkles"
+            size={20}
+            color={activeTab === 'generate' ? colors.piano.primary : colors.neutral.textMuted}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'generate' && styles.tabTextActive,
+            ]}
+          >
+            Generate
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, activeTab === 'assigned' && styles.tabActive]}
+          onPress={() => setActiveTab('assigned')}
+        >
+          <Ionicons
+            name="document-text"
+            size={20}
+            color={activeTab === 'assigned' ? colors.piano.primary : colors.neutral.textMuted}
+          />
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'assigned' && styles.tabTextActive,
+            ]}
+          >
+            Assigned
+          </Text>
+        </Pressable>
+      </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Templates</Text>
-          <View style={styles.templateGrid}>
-            <TouchableOpacity style={styles.templateCard}>
-              <Ionicons name="add-circle-outline" size={24} color="#4CAF50" />
-              <Text style={styles.templateText}>Addition</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.templateCard}>
-              <Ionicons name="remove-circle-outline" size={24} color="#4CAF50" />
-              <Text style={styles.templateText}>Subtraction</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.templateCard}>
-              <Ionicons name="close-circle-outline" size={24} color="#4CAF50" />
-              <Text style={styles.templateText}>Multiplication</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.templateCard}>
-              <Ionicons name="ellipse-outline" size={24} color="#4CAF50" />
-              <Text style={styles.templateText}>Division</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {activeTab === 'generate' ? (
+          <>
+            {/* Main Generate Button */}
+            <Pressable
+              style={styles.generateButton}
+              onPress={() => handleOpenGenerator()}
+            >
+              <View style={styles.generateButtonGradient}>
+                <View style={styles.generateButtonContent}>
+                  <View style={styles.generateIconContainer}>
+                    <Ionicons name="sparkles" size={32} color={colors.neutral.white} />
+                  </View>
+                  <Text style={styles.generateButtonTitle}>
+                    Generate New Worksheet
+                  </Text>
+                  <Text style={styles.generateButtonSubtitle}>
+                    AI-powered worksheets for piano & math
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Worksheets</Text>
+            {/* Piano Templates */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>🎹</Text>
+                <Text style={styles.sectionTitle}>Piano Worksheets</Text>
+              </View>
+              <View style={styles.templateGrid}>
+                {PIANO_TEMPLATES.map((template) => (
+                  <Pressable
+                    key={template.id}
+                    style={styles.templateCard}
+                    onPress={() => handleQuickTemplate('piano', template)}
+                  >
+                    <View
+                      style={[
+                        styles.templateIconContainer,
+                        { backgroundColor: colors.piano.subtle },
+                      ]}
+                    >
+                      <Text style={styles.templateIcon}>{template.icon}</Text>
+                    </View>
+                    <Text style={styles.templateLabel}>{template.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Math Templates */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>➗</Text>
+                <Text style={styles.sectionTitle}>Math Worksheets</Text>
+              </View>
+              <View style={styles.templateGrid}>
+                {MATH_TEMPLATES.map((template) => (
+                  <Pressable
+                    key={template.id}
+                    style={styles.templateCard}
+                    onPress={() => handleQuickTemplate('math', template)}
+                  >
+                    <View
+                      style={[
+                        styles.templateIconContainer,
+                        { backgroundColor: colors.math.subtle },
+                      ]}
+                    >
+                      <Text style={styles.templateIcon}>{template.icon}</Text>
+                    </View>
+                    <Text style={styles.templateLabel}>{template.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* How It Works */}
+            <View style={styles.howItWorks}>
+              <Text style={styles.howItWorksTitle}>How It Works</Text>
+              <View style={styles.stepsList}>
+                <View style={styles.step}>
+                  <View style={styles.stepNumber}>
+                    <Text style={styles.stepNumberText}>1</Text>
+                  </View>
+                  <View style={styles.stepContent}>
+                    <Text style={styles.stepTitle}>Choose Subject</Text>
+                    <Text style={styles.stepDescription}>
+                      Select piano or math worksheet type
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.step}>
+                  <View style={styles.stepNumber}>
+                    <Text style={styles.stepNumberText}>2</Text>
+                  </View>
+                  <View style={styles.stepContent}>
+                    <Text style={styles.stepTitle}>Configure Options</Text>
+                    <Text style={styles.stepDescription}>
+                      Set difficulty, topics, and problem count
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.step}>
+                  <View style={styles.stepNumber}>
+                    <Text style={styles.stepNumberText}>3</Text>
+                  </View>
+                  <View style={styles.stepContent}>
+                    <Text style={styles.stepTitle}>Generate & Assign</Text>
+                    <Text style={styles.stepDescription}>
+                      AI creates a personalized worksheet PDF
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </>
+        ) : (
+          /* Assigned Tab */
           <View style={styles.emptyState}>
-            <Ionicons name="document-text-outline" size={48} color="#CCC" />
-            <Text style={styles.emptyText}>No worksheets generated yet</Text>
-            <Text style={styles.emptySubtext}>
-              Create your first AI-generated worksheet above
+            <View style={styles.emptyIconContainer}>
+              <Ionicons
+                name="document-text-outline"
+                size={64}
+                color={colors.neutral.border}
+              />
+            </View>
+            <Text style={styles.emptyTitle}>No Assigned Worksheets</Text>
+            <Text style={styles.emptySubtitle}>
+              {isTutor
+                ? 'Generate a worksheet and assign it to a student to track their progress.'
+                : 'Your assigned worksheets will appear here.'}
             </Text>
+            {isTutor && (
+              <Pressable
+                style={styles.emptyButton}
+                onPress={() => {
+                  setActiveTab('generate');
+                }}
+              >
+                <Ionicons
+                  name="sparkles"
+                  size={18}
+                  color={colors.neutral.white}
+                />
+                <Text style={styles.emptyButtonText}>Generate Worksheet</Text>
+              </Pressable>
+            )}
           </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Saved Worksheets</Text>
-          <View style={styles.emptyState}>
-            <Ionicons name="folder-outline" size={48} color="#CCC" />
-            <Text style={styles.emptyText}>No saved worksheets</Text>
-            <Text style={styles.emptySubtext}>
-              Your saved worksheets will appear here
-            </Text>
-          </View>
-        </View>
+        )}
       </ScrollView>
+
+      {/* Worksheet Generator Modal */}
+      <WorksheetGeneratorModal
+        visible={showGenerator}
+        onClose={() => {
+          setShowGenerator(false);
+          setPresetSubject(undefined);
+        }}
+        onGenerate={handleGenerateWorksheet}
+        students={students}
+        studentsLoading={false}
+        presetSubject={presetSubject}
+      />
     </SafeAreaView>
   );
 }
@@ -82,102 +289,209 @@ export default function WorksheetsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: colors.neutral.background,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: colors.neutral.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+  },
+  tabActive: {
+    borderBottomWidth: 2,
+    borderBottomColor: colors.piano.primary,
+  },
+  tabText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textMuted,
+  },
+  tabTextActive: {
+    color: colors.piano.primary,
   },
   content: {
-    padding: 16,
+    flex: 1,
   },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  scrollContent: {
+    padding: spacing.base,
+    paddingBottom: spacing['2xl'],
   },
   generateButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    marginBottom: spacing.xl,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    ...shadows.lg,
+  },
+  generateButtonGradient: {
+    backgroundColor: colors.piano.primary,
+    padding: spacing.xl,
   },
   generateButtonContent: {
     alignItems: 'center',
   },
-  generateButtonText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginTop: 12,
+  generateIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
   },
-  generateButtonSubtext: {
-    fontSize: 14,
-    color: '#FFFFFF',
+  generateButtonTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.white,
+    marginBottom: spacing.xs,
+  },
+  generateButtonSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.white,
     opacity: 0.9,
-    marginTop: 4,
   },
   section: {
-    marginBottom: 24,
+    marginBottom: spacing.xl,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  sectionIcon: {
+    fontSize: 20,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
   },
   templateGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: spacing.sm,
   },
   templateCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    width: '48%',
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
     alignItems: 'center',
-    width: '47%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...shadows.sm,
   },
-  templateText: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 8,
-    fontWeight: '500',
+  templateIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  templateIcon: {
+    fontSize: 24,
+  },
+  templateLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    textAlign: 'center',
+  },
+  howItWorks: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    ...shadows.sm,
+  },
+  howItWorksTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.md,
+  },
+  stepsList: {
+    gap: spacing.md,
+  },
+  step: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.piano.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.bold,
+    color: colors.piano.primary,
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: 2,
+  },
+  stepDescription: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
   },
   emptyState: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 32,
+    flex: 1,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
+    paddingVertical: spacing['2xl'] * 2,
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
+  emptyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.neutral.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+    ...shadows.sm,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 4,
+  emptyTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.xs,
+  },
+  emptySubtitle: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
     textAlign: 'center',
+    maxWidth: 280,
+    marginBottom: spacing.lg,
+  },
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.piano.primary,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.lg,
+    ...shadows.md,
+  },
+  emptyButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.white,
   },
 });
