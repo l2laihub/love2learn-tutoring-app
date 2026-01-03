@@ -9,30 +9,63 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
-import { useTodaysLessons, useUpcomingLessons } from '../../src/hooks/useLessons';
+import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
+import { usePendingAssignments } from '../../src/hooks/useAssignments';
 import { useMemo, useState, useCallback } from 'react';
-import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
-import { ScheduledLessonWithStudent } from '../../src/types/database';
+import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
+import { ScheduledLessonWithStudent, AssignmentWithStudent, GroupedLesson } from '../../src/types/database';
+
+// Subject emoji mapping
+const subjectEmojis: Record<Subject, string> = {
+  piano: '🎹',
+  math: '➗',
+  reading: '📚',
+  speech: '🗣️',
+  english: '📝',
+};
+
+// Subject display names
+const subjectNames: Record<Subject, string> = {
+  piano: 'Piano',
+  math: 'Math',
+  reading: 'Reading',
+  speech: 'Speech',
+  english: 'English',
+};
 
 export default function HomeScreen() {
   const { parent, signOut, isTutor } = useAuthContext();
   const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
   const { data: todaysLessons, loading: lessonsLoading, refetch: refetchLessons } = useTodaysLessons();
-  const { data: upcomingLessons, refetch: refetchUpcoming } = useUpcomingLessons(5);
+  const { data: upcomingLessons, refetch: refetchUpcoming } = useUpcomingGroupedLessons(5);
+  const { data: pendingAssignments, loading: assignmentsLoading, refetch: refetchAssignments } = usePendingAssignments();
   const [refreshing, setRefreshing] = useState(false);
 
-  // Calculate student counts by subject
-  const studentCounts = useMemo(() => {
-    let piano = 0;
-    let math = 0;
+  // Calculate student counts by subject dynamically
+  const subjectCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const allSubjects: Subject[] = ['piano', 'math', 'reading', 'speech', 'english'];
+
+    // Initialize all subjects with 0
+    allSubjects.forEach(subject => {
+      counts[subject] = 0;
+    });
 
     students.forEach((student) => {
       const subjects = student.subjects || [];
-      if (subjects.includes('piano')) piano++;
-      if (subjects.includes('math')) math++;
+      subjects.forEach((subject) => {
+        if (counts[subject] !== undefined) {
+          counts[subject]++;
+        }
+      });
     });
 
-    return { piano, math, total: students.length };
+    // Get subjects that have at least one student, sorted by count (descending)
+    const activeSubjects = allSubjects
+      .filter(subject => counts[subject] > 0)
+      .sort((a, b) => counts[b] - counts[a]);
+
+    return { counts, activeSubjects, total: students.length };
   }, [students]);
 
   // Calculate today's lesson stats
@@ -48,9 +81,9 @@ export default function HomeScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchStudents(), refetchLessons(), refetchUpcoming()]);
+    await Promise.all([refetchStudents(), refetchLessons(), refetchUpcoming(), refetchAssignments()]);
     setRefreshing(false);
-  }, [refetchStudents, refetchLessons, refetchUpcoming]);
+  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
@@ -196,36 +229,29 @@ export default function HomeScreen() {
             {isTutor ? 'Quick Stats' : 'Overview'}
           </Text>
           <View style={styles.statsGrid}>
-            <Pressable
-              style={[styles.statCard, { backgroundColor: colors.piano.primary }]}
-              onPress={() => router.push('/(tabs)/students')}
-            >
-              {studentsLoading ? (
-                <ActivityIndicator color={colors.neutral.white} size="small" />
-              ) : (
-                <Text style={styles.statNumber}>{studentCounts.piano}</Text>
-              )}
-              <Text style={styles.statLabel}>Piano</Text>
-              <View style={styles.statIcon}>
-                <Text style={{ fontSize: 20 }}>🎹</Text>
-              </View>
-            </Pressable>
+            {/* Dynamic subject cards - show active subjects */}
+            {subjectCounts.activeSubjects.map((subject) => {
+              const subjectColor = getSubjectColor(subject);
+              return (
+                <Pressable
+                  key={subject}
+                  style={[styles.statCard, { backgroundColor: subjectColor.primary }]}
+                  onPress={() => router.push('/(tabs)/students')}
+                >
+                  {studentsLoading ? (
+                    <ActivityIndicator color={colors.neutral.white} size="small" />
+                  ) : (
+                    <Text style={styles.statNumber}>{subjectCounts.counts[subject]}</Text>
+                  )}
+                  <Text style={styles.statLabel}>{subjectNames[subject]}</Text>
+                  <View style={styles.statIcon}>
+                    <Text style={{ fontSize: 20 }}>{subjectEmojis[subject]}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
 
-            <Pressable
-              style={[styles.statCard, { backgroundColor: colors.math.primary }]}
-              onPress={() => router.push('/(tabs)/students')}
-            >
-              {studentsLoading ? (
-                <ActivityIndicator color={colors.neutral.white} size="small" />
-              ) : (
-                <Text style={styles.statNumber}>{studentCounts.math}</Text>
-              )}
-              <Text style={styles.statLabel}>Math</Text>
-              <View style={styles.statIcon}>
-                <Text style={{ fontSize: 20 }}>➗</Text>
-              </View>
-            </Pressable>
-
+            {/* Today's lessons card */}
             <Pressable
               style={[styles.statCard, { backgroundColor: colors.accent.main }]}
               onPress={() => router.push('/(tabs)/calendar')}
@@ -237,6 +263,7 @@ export default function HomeScreen() {
               </View>
             </Pressable>
 
+            {/* Done card - tutor only */}
             {isTutor && (
               <View style={[styles.statCard, { backgroundColor: colors.status.success }]}>
                 <Text style={styles.statNumber}>{todayStats.completed}</Text>
@@ -259,8 +286,8 @@ export default function HomeScreen() {
               </Pressable>
             </View>
             <View style={styles.upcomingList}>
-              {upcomingLessons.slice(0, 3).map((lesson) => (
-                <UpcomingLessonRow key={lesson.id} lesson={lesson} />
+              {upcomingLessons.slice(0, 3).map((group) => (
+                <UpcomingLessonRow key={group.session_id || group.lessons[0].id} group={group} />
               ))}
             </View>
           </View>
@@ -304,17 +331,39 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Parent: Assignments placeholder */}
+        {/* Parent: Assignments section */}
         {!isTutor && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Assignments</Text>
-            <View style={styles.emptyCard}>
-              <Ionicons name="document-text-outline" size={40} color={colors.neutral.textMuted} />
-              <Text style={styles.emptyTitle}>No assignments yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Worksheets from your tutor will appear here
-              </Text>
-            </View>
+            {assignmentsLoading ? (
+              <View style={styles.loadingCard}>
+                <ActivityIndicator color={colors.piano.primary} />
+              </View>
+            ) : pendingAssignments.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="document-text-outline" size={40} color={colors.neutral.textMuted} />
+                <Text style={styles.emptyTitle}>No assignments yet</Text>
+                <Text style={styles.emptySubtitle}>
+                  Worksheets from your tutor will appear here
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.assignmentsContainer}>
+                {pendingAssignments.slice(0, 5).map((assignment) => (
+                  <AssignmentCard key={assignment.id} assignment={assignment} />
+                ))}
+                {pendingAssignments.length > 5 && (
+                  <Pressable
+                    style={styles.moreButton}
+                    onPress={() => router.push('/(tabs)/worksheets')}
+                  >
+                    <Text style={styles.moreButtonText}>
+                      +{pendingAssignments.length - 5} more assignments
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -324,13 +373,16 @@ export default function HomeScreen() {
 
 // Lesson Card Component
 function LessonCard({ lesson }: { lesson: ScheduledLessonWithStudent }) {
-  const subjectColor = getSubjectColor(lesson.subject);
+  const subjectColor = getSubjectColor(lesson.subject as Subject);
   const lessonTime = new Date(lesson.scheduled_at);
   const timeString = lessonTime.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
   });
+
+  const emoji = subjectEmojis[lesson.subject as Subject] || '📖';
+  const displayName = subjectNames[lesson.subject as Subject] || lesson.subject;
 
   return (
     <Pressable
@@ -348,11 +400,9 @@ function LessonCard({ lesson }: { lesson: ScheduledLessonWithStudent }) {
       <View style={styles.lessonInfo}>
         <Text style={styles.lessonStudent}>{lesson.student.name}</Text>
         <View style={styles.lessonSubject}>
-          <Text style={{ fontSize: 14 }}>
-            {lesson.subject === 'piano' ? '🎹' : '➗'}
-          </Text>
+          <Text style={{ fontSize: 14 }}>{emoji}</Text>
           <Text style={[styles.lessonSubjectText, { color: subjectColor.primary }]}>
-            {lesson.subject === 'piano' ? 'Piano' : 'Math'}
+            {displayName}
           </Text>
         </View>
       </View>
@@ -366,10 +416,12 @@ function LessonCard({ lesson }: { lesson: ScheduledLessonWithStudent }) {
   );
 }
 
-// Upcoming Lesson Row
-function UpcomingLessonRow({ lesson }: { lesson: ScheduledLessonWithStudent }) {
-  const subjectColor = getSubjectColor(lesson.subject);
-  const lessonDate = new Date(lesson.scheduled_at);
+// Upcoming Lesson Row - now handles grouped sessions
+function UpcomingLessonRow({ group }: { group: GroupedLesson }) {
+  const isGrouped = group.session_id !== null && group.lessons.length > 1;
+  const primarySubject = group.subjects[0] as Subject;
+  const subjectColor = getSubjectColor(primarySubject);
+  const lessonDate = new Date(group.scheduled_at);
   const dayName = lessonDate.toLocaleDateString('en-US', { weekday: 'short' });
   const timeString = lessonDate.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -377,18 +429,83 @@ function UpcomingLessonRow({ lesson }: { lesson: ScheduledLessonWithStudent }) {
     hour12: true,
   });
 
+  // For grouped sessions, show multiple emojis or a group indicator
+  const displayEmojis = isGrouped
+    ? group.subjects.slice(0, 2).map(s => subjectEmojis[s as Subject] || '📖').join('')
+    : subjectEmojis[primarySubject] || '📖';
+
+  // Display student names
+  const studentDisplay = isGrouped
+    ? group.student_names.join(' & ')
+    : group.student_names[0];
+
+  // Display subjects for grouped sessions
+  const subjectDisplay = isGrouped
+    ? group.subjects.map(s => subjectNames[s as Subject] || s).join(', ')
+    : null;
+
   return (
-    <View style={styles.upcomingRow}>
-      <View style={[styles.upcomingDot, { backgroundColor: subjectColor.primary }]} />
+    <View style={[styles.upcomingRow, isGrouped && styles.upcomingRowGrouped]}>
+      {isGrouped ? (
+        <View style={[styles.upcomingDotGrouped, { backgroundColor: subjectColor.primary }]}>
+          <Ionicons name="people" size={10} color={colors.neutral.white} />
+        </View>
+      ) : (
+        <View style={[styles.upcomingDot, { backgroundColor: subjectColor.primary }]} />
+      )}
       <View style={styles.upcomingInfo}>
-        <Text style={styles.upcomingStudent}>{lesson.student.name}</Text>
+        <Text style={styles.upcomingStudent} numberOfLines={1}>{studentDisplay}</Text>
         <Text style={styles.upcomingTime}>
           {dayName} at {timeString}
+          {subjectDisplay && <Text style={styles.upcomingSubjects}> · {subjectDisplay}</Text>}
         </Text>
       </View>
-      <Text style={{ fontSize: 16 }}>
-        {lesson.subject === 'piano' ? '🎹' : '➗'}
-      </Text>
+      <Text style={{ fontSize: 16 }}>{displayEmojis}</Text>
+    </View>
+  );
+}
+
+// Assignment Card Component
+function AssignmentCard({ assignment }: { assignment: AssignmentWithStudent }) {
+  const worksheetTypeMap: Record<string, { name: string; emoji: string; color: string }> = {
+    piano_naming: { name: 'Piano Naming', emoji: '🎹', color: colors.piano.primary },
+    piano_drawing: { name: 'Piano Drawing', emoji: '✏️', color: colors.piano.primary },
+    math: { name: 'Math', emoji: '➗', color: colors.math.primary },
+  };
+
+  const typeInfo = worksheetTypeMap[assignment.worksheet_type] || {
+    name: assignment.worksheet_type,
+    emoji: '📄',
+    color: colors.primary.main,
+  };
+
+  const dueDate = assignment.due_date ? new Date(assignment.due_date) : null;
+  const isOverdue = dueDate && dueDate < new Date();
+  const dueDateString = dueDate
+    ? dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null;
+
+  return (
+    <View style={[styles.assignmentCard, isOverdue && styles.assignmentCardOverdue]}>
+      <View style={[styles.assignmentTypeIcon, { backgroundColor: typeInfo.color + '20' }]}>
+        <Text style={{ fontSize: 20 }}>{typeInfo.emoji}</Text>
+      </View>
+      <View style={styles.assignmentInfo}>
+        <Text style={styles.assignmentType}>{typeInfo.name}</Text>
+        <Text style={styles.assignmentStudent}>{assignment.student.name}</Text>
+      </View>
+      {dueDate && (
+        <View style={[styles.assignmentDue, isOverdue && styles.assignmentDueOverdue]}>
+          <Ionicons
+            name={isOverdue ? 'alert-circle' : 'calendar-outline'}
+            size={12}
+            color={isOverdue ? colors.status.error : colors.neutral.textSecondary}
+          />
+          <Text style={[styles.assignmentDueText, isOverdue && styles.assignmentDueTextOverdue]}>
+            {dueDateString}
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -615,10 +732,13 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.neutral.borderLight,
   },
   upcomingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     marginRight: spacing.md,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   upcomingInfo: {
     flex: 1,
@@ -631,6 +751,21 @@ const styles = StyleSheet.create({
   upcomingTime: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
+  },
+  upcomingSubjects: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+  },
+  upcomingRowGrouped: {
+    backgroundColor: colors.piano.subtle,
+  },
+  upcomingDotGrouped: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionsGrid: {
     flexDirection: 'row',
@@ -657,5 +792,62 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.medium,
     color: colors.neutral.text,
     textAlign: 'center',
+  },
+  // Assignment styles
+  assignmentsContainer: {
+    gap: spacing.sm,
+  },
+  assignmentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  assignmentCardOverdue: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.status.error,
+  },
+  assignmentTypeIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  assignmentInfo: {
+    flex: 1,
+  },
+  assignmentType: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  assignmentStudent: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    marginTop: 2,
+  },
+  assignmentDue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.neutral.borderLight,
+    borderRadius: borderRadius.sm,
+  },
+  assignmentDueOverdue: {
+    backgroundColor: colors.status.errorBg,
+  },
+  assignmentDueText: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    fontWeight: typography.weights.medium,
+  },
+  assignmentDueTextOverdue: {
+    color: colors.status.error,
   },
 });

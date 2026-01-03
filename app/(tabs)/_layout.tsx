@@ -48,7 +48,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: 'Love2Learn',
+          headerTitle: 'Love2Learn Tutoring',
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="home" color={color} size={size} />
           ),

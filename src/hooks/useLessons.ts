@@ -166,6 +166,63 @@ export function useUpcomingLessons(limit: number = 10): ListQueryState<Scheduled
 }
 
 /**
+ * Fetch upcoming lessons grouped by session (for home page display)
+ * @param limit - Maximum number of grouped lessons to return
+ * @returns List of upcoming grouped lessons
+ */
+export function useUpcomingGroupedLessons(limit: number = 10): ListQueryState<GroupedLesson> {
+  const [data, setData] = useState<GroupedLesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchLessons = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const now = new Date().toISOString();
+
+      // Fetch more lessons than limit to account for grouping
+      const { data: lessons, error: fetchError } = await supabase
+        .from('scheduled_lessons')
+        .select(`
+          *,
+          student:students(
+            *,
+            parent:parents(*)
+          )
+        `)
+        .gte('scheduled_at', now)
+        .eq('status', 'scheduled')
+        .order('scheduled_at', { ascending: true })
+        .limit(limit * 3); // Fetch more to account for grouping
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      // Group the lessons by session
+      const grouped = groupLessonsBySession((lessons as ScheduledLessonWithStudent[]) || []);
+
+      // Limit to requested number of groups
+      setData(grouped.slice(0, limit));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch upcoming lessons');
+      setError(errorMessage);
+      console.error('useUpcomingGroupedLessons error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [limit]);
+
+  useEffect(() => {
+    fetchLessons();
+  }, [fetchLessons]);
+
+  return { data, loading, error, refetch: fetchLessons };
+}
+
+/**
  * Fetch a single lesson by ID with student info
  * @param id - Lesson UUID
  * @returns Single lesson with student data, loading state, and error

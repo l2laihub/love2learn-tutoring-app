@@ -3,7 +3,7 @@
  * Displays and manages students and their parent relationships
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -46,7 +46,26 @@ import {
   CreateParentInput,
   UpdateParentInput,
 } from '../../src/types/database';
-import { colors, spacing, typography, borderRadius } from '../../src/theme';
+import { colors, spacing, typography, borderRadius, getSubjectColor, Subject } from '../../src/theme';
+
+// Subject configuration for filters
+const ALL_SUBJECTS: Subject[] = ['piano', 'math', 'reading', 'speech', 'english'];
+const subjectEmojis: Record<Subject, string> = {
+  piano: '🎹',
+  math: '➗',
+  reading: '📚',
+  speech: '🗣️',
+  english: '📝',
+};
+const subjectNames: Record<Subject, string> = {
+  piano: 'Piano',
+  math: 'Math',
+  reading: 'Reading',
+  speech: 'Speech',
+  english: 'English',
+};
+
+type DisplayMode = 'list' | 'grouped';
 
 type ViewMode = 'students' | 'parents';
 
@@ -80,6 +99,8 @@ export default function StudentsScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('students');
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedSubjects, setSelectedSubjects] = useState<Subject[]>([]);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
 
   // Modal state
   const [studentModalVisible, setStudentModalVisible] = useState(false);
@@ -95,16 +116,85 @@ export default function StudentsScreen() {
     setRefreshing(false);
   }, [refetchStudents, refetchParents]);
 
+  // Get active subjects (subjects that have at least one student)
+  const activeSubjects = useMemo(() => {
+    const subjectSet = new Set<Subject>();
+    students.forEach(student => {
+      (student.subjects || []).forEach(subject => {
+        if (ALL_SUBJECTS.includes(subject as Subject)) {
+          subjectSet.add(subject as Subject);
+        }
+      });
+    });
+    return ALL_SUBJECTS.filter(s => subjectSet.has(s));
+  }, [students]);
+
+  // Toggle subject filter
+  const toggleSubjectFilter = useCallback((subject: Subject) => {
+    setSelectedSubjects(prev =>
+      prev.includes(subject)
+        ? prev.filter(s => s !== subject)
+        : [...prev, subject]
+    );
+  }, []);
+
+  // Clear all filters
+  const clearFilters = useCallback(() => {
+    setSelectedSubjects([]);
+    setSearchQuery('');
+  }, []);
+
   // Filter and search students
-  const filteredStudents = students.filter((student) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesName = student.name.toLowerCase().includes(query);
-      const matchesParent = student.parent?.name?.toLowerCase().includes(query);
-      if (!matchesName && !matchesParent) return false;
-    }
-    return true;
-  });
+  const filteredStudents = useMemo(() => {
+    return students.filter((student) => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesName = student.name.toLowerCase().includes(query);
+        const matchesParent = student.parent?.name?.toLowerCase().includes(query);
+        if (!matchesName && !matchesParent) return false;
+      }
+
+      // Subject filter
+      if (selectedSubjects.length > 0) {
+        const studentSubjects = student.subjects || [];
+        const hasMatchingSubject = selectedSubjects.some(subject =>
+          studentSubjects.includes(subject)
+        );
+        if (!hasMatchingSubject) return false;
+      }
+
+      return true;
+    });
+  }, [students, searchQuery, selectedSubjects]);
+
+  // Group students by subject for grouped view
+  const groupedStudents = useMemo(() => {
+    const groups: Record<Subject, StudentWithParent[]> = {} as Record<Subject, StudentWithParent[]>;
+
+    // Initialize groups for active subjects only
+    activeSubjects.forEach(subject => {
+      groups[subject] = [];
+    });
+
+    // Distribute students to their subject groups
+    filteredStudents.forEach(student => {
+      const studentSubjects = student.subjects || [];
+      studentSubjects.forEach(subject => {
+        if (groups[subject as Subject]) {
+          // Avoid duplicates
+          if (!groups[subject as Subject].find(s => s.id === student.id)) {
+            groups[subject as Subject].push(student);
+          }
+        }
+      });
+    });
+
+    // Filter out empty groups and sort by count
+    return Object.entries(groups)
+      .filter(([_, students]) => students.length > 0)
+      .sort((a, b) => b[1].length - a[1].length) as [Subject, StudentWithParent[]][];
+  }, [filteredStudents, activeSubjects]);
 
   // Filter and search parents
   const filteredParents = parents.filter((parent) => {
@@ -412,6 +502,96 @@ export default function StudentsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Subject Filters - Only show for students view */}
+        {viewMode === 'students' && activeSubjects.length > 0 && (
+          <View style={styles.filtersSection}>
+            <View style={styles.filtersHeader}>
+              <Text style={styles.filtersLabel}>Filter by Subject</Text>
+              <View style={styles.displayModeToggle}>
+                <TouchableOpacity
+                  style={[styles.displayModeButton, displayMode === 'list' && styles.displayModeButtonActive]}
+                  onPress={() => setDisplayMode('list')}
+                >
+                  <Ionicons
+                    name="list"
+                    size={16}
+                    color={displayMode === 'list' ? colors.piano.primary : colors.neutral.textMuted}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.displayModeButton, displayMode === 'grouped' && styles.displayModeButtonActive]}
+                  onPress={() => setDisplayMode('grouped')}
+                >
+                  <Ionicons
+                    name="grid"
+                    size={16}
+                    color={displayMode === 'grouped' ? colors.piano.primary : colors.neutral.textMuted}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterChipsContainer}
+            >
+              {/* All filter chip */}
+              <TouchableOpacity
+                style={[
+                  styles.filterChip,
+                  selectedSubjects.length === 0 && styles.filterChipActive,
+                ]}
+                onPress={clearFilters}
+              >
+                <Text style={[
+                  styles.filterChipText,
+                  selectedSubjects.length === 0 && styles.filterChipTextActive,
+                ]}>
+                  All ({students.length})
+                </Text>
+              </TouchableOpacity>
+
+              {/* Subject filter chips */}
+              {activeSubjects.map((subject) => {
+                const isSelected = selectedSubjects.includes(subject);
+                const subjectColor = getSubjectColor(subject);
+                const count = students.filter(s => (s.subjects || []).includes(subject)).length;
+
+                return (
+                  <TouchableOpacity
+                    key={subject}
+                    style={[
+                      styles.filterChip,
+                      isSelected && { backgroundColor: subjectColor.primary },
+                    ]}
+                    onPress={() => toggleSubjectFilter(subject)}
+                  >
+                    <Text style={styles.filterChipEmoji}>{subjectEmojis[subject]}</Text>
+                    <Text style={[
+                      styles.filterChipText,
+                      isSelected && styles.filterChipTextActive,
+                    ]}>
+                      {subjectNames[subject]} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Active filter indicator */}
+            {(selectedSubjects.length > 0 || searchQuery) && (
+              <View style={styles.activeFiltersRow}>
+                <Text style={styles.activeFiltersText}>
+                  Showing {filteredStudents.length} of {students.length} students
+                </Text>
+                <TouchableOpacity onPress={clearFilters}>
+                  <Text style={styles.clearFiltersText}>Clear filters</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Content */}
         {isLoading ? (
           <View style={styles.loadingContainer}>
@@ -419,19 +599,20 @@ export default function StudentsScreen() {
             <Text style={styles.loadingText}>Loading...</Text>
           </View>
         ) : viewMode === 'students' ? (
-          // Students List
+          // Students Display
           <View style={styles.section}>
             {filteredStudents.length === 0 ? (
               <EmptyState
                 icon="people-outline"
-                title={searchQuery ? 'No students found' : 'No students yet'}
+                title={searchQuery || selectedSubjects.length > 0 ? 'No students found' : 'No students yet'}
                 description={
-                  searchQuery
-                    ? 'Try a different search term'
+                  searchQuery || selectedSubjects.length > 0
+                    ? 'Try adjusting your filters'
                     : 'Tap the + button to add your first student'
                 }
               />
-            ) : (
+            ) : displayMode === 'list' ? (
+              // List View
               filteredStudents.map((student) => (
                 <TouchableOpacity
                   key={student.id}
@@ -447,6 +628,43 @@ export default function StudentsScreen() {
                   />
                 </TouchableOpacity>
               ))
+            ) : (
+              // Grouped View
+              groupedStudents.map(([subject, subjectStudents]) => {
+                const subjectColor = getSubjectColor(subject);
+                return (
+                  <View key={subject} style={styles.subjectGroup}>
+                    <View style={[styles.subjectGroupHeader, { borderLeftColor: subjectColor.primary }]}>
+                      <Text style={styles.subjectGroupEmoji}>{subjectEmojis[subject]}</Text>
+                      <Text style={[styles.subjectGroupTitle, { color: subjectColor.primary }]}>
+                        {subjectNames[subject]}
+                      </Text>
+                      <View style={[styles.subjectGroupBadge, { backgroundColor: subjectColor.subtle }]}>
+                        <Text style={[styles.subjectGroupCount, { color: subjectColor.primary }]}>
+                          {subjectStudents.length}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.subjectGroupStudents}>
+                      {subjectStudents.map((student) => (
+                        <TouchableOpacity
+                          key={`${subject}-${student.id}`}
+                          onLongPress={() => handleStudentLongPress(student)}
+                          activeOpacity={0.7}
+                        >
+                          <StudentCard
+                            name={student.name}
+                            grade={parseInt(student.grade_level) || 0}
+                            subjects={student.subjects || []}
+                            parentName={student.parent?.name || 'Unknown'}
+                            onPress={() => handleStudentPress(student.id)}
+                          />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })
             )}
           </View>
         ) : (
@@ -710,5 +928,117 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     color: colors.neutral.textMuted,
     marginTop: 4,
+  },
+  // Filter styles
+  filtersSection: {
+    marginBottom: spacing.lg,
+  },
+  filtersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  filtersLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  displayModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.md,
+    padding: 2,
+  },
+  displayModeButton: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+  },
+  displayModeButtonActive: {
+    backgroundColor: colors.piano.subtle,
+  },
+  filterChipsContainer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.surface,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  filterChipEmoji: {
+    fontSize: 14,
+  },
+  filterChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  filterChipTextActive: {
+    color: colors.neutral.white,
+  },
+  activeFiltersRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+  },
+  activeFiltersText: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+  },
+  clearFiltersText: {
+    fontSize: typography.sizes.xs,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  // Grouped view styles
+  subjectGroup: {
+    marginBottom: spacing.lg,
+  },
+  subjectGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.md,
+    borderLeftWidth: 4,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  subjectGroupEmoji: {
+    fontSize: 20,
+  },
+  subjectGroupTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    flex: 1,
+  },
+  subjectGroupBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  subjectGroupCount: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+  },
+  subjectGroupStudents: {
+    gap: spacing.sm,
   },
 });
