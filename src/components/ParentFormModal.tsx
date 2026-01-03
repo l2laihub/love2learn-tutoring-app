@@ -3,7 +3,7 @@
  * Modal form for creating and editing parents
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
-import { colors, spacing, typography } from '../theme';
+import { colors, spacing, typography, borderRadius } from '../theme';
 import { Parent, CreateParentInput, UpdateParentInput } from '../types/database';
 
 interface ParentFormModalProps {
@@ -43,6 +43,12 @@ export function ParentFormModal({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
 
+  // Confirmation dialog state (for web platform)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+
+  // Track original values to detect actual changes
+  const originalValues = useRef({ name: '', email: '', phone: '' });
+
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -53,12 +59,21 @@ export function ParentFormModal({
         setName(parent.name);
         setEmail(parent.email);
         setPhone(parent.phone || '');
+        // Store original values for change detection
+        originalValues.current = {
+          name: parent.name,
+          email: parent.email,
+          phone: parent.phone || '',
+        };
       } else {
         setName('');
         setEmail('');
         setPhone('');
+        // Store original values for change detection
+        originalValues.current = { name: '', email: '', phone: '' };
       }
       setErrors({});
+      setShowConfirmDialog(false);
     }
   }, [visible, parent]);
 
@@ -121,19 +136,39 @@ export function ParentFormModal({
     }
   };
 
+  // Check if form has unsaved changes
+  const hasChanges = (): boolean => {
+    const orig = originalValues.current;
+    return (
+      name !== orig.name ||
+      email !== orig.email ||
+      phone !== orig.phone
+    );
+  };
+
   const handleClose = () => {
-    if (name || email || phone) {
-      Alert.alert(
-        'Discard Changes?',
-        'You have unsaved changes. Are you sure you want to discard them?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Discard', style: 'destructive', onPress: onClose },
-        ]
-      );
+    if (hasChanges()) {
+      // On web, Alert.alert doesn't work well, so use a custom dialog
+      if (Platform.OS === 'web') {
+        setShowConfirmDialog(true);
+      } else {
+        Alert.alert(
+          'Discard Changes?',
+          'You have unsaved changes. Are you sure you want to discard them?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Discard', style: 'destructive', onPress: onClose },
+          ]
+        );
+      }
     } else {
       onClose();
     }
+  };
+
+  const handleConfirmDiscard = () => {
+    setShowConfirmDialog(false);
+    onClose();
   };
 
   return (
@@ -221,6 +256,32 @@ export function ParentFormModal({
             style={styles.saveButton}
           />
         </View>
+
+        {/* Confirmation Dialog for Web */}
+        {showConfirmDialog && (
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmDialog}>
+              <Text style={styles.confirmTitle}>Discard Changes?</Text>
+              <Text style={styles.confirmMessage}>
+                You have unsaved changes. Are you sure you want to discard them?
+              </Text>
+              <View style={styles.confirmButtons}>
+                <TouchableOpacity
+                  style={styles.confirmButtonCancel}
+                  onPress={() => setShowConfirmDialog(false)}
+                >
+                  <Text style={styles.confirmButtonCancelText}>Keep Editing</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.confirmButtonDiscard}
+                  onPress={handleConfirmDiscard}
+                >
+                  <Text style={styles.confirmButtonDiscardText}>Discard</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -287,6 +348,75 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     flex: 2,
+  },
+
+  // Confirmation Dialog Styles
+  confirmOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  confirmDialog: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    width: '85%',
+    maxWidth: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  confirmTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  confirmMessage: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  confirmButtonCancel: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    alignItems: 'center',
+  },
+  confirmButtonCancelText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  confirmButtonDiscard: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.status.error,
+    alignItems: 'center',
+  },
+  confirmButtonDiscardText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: '#FFFFFF',
   },
 });
 

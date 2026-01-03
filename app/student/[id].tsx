@@ -8,7 +8,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useStudent, useUpdateStudent } from '../../src/hooks/useStudents';
+import { useStudent, useUpdateStudent, useDeleteStudent } from '../../src/hooks/useStudents';
 import { useParents } from '../../src/hooks/useParents';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
@@ -19,7 +19,9 @@ export default function StudentDetailScreen() {
   const { data: student, loading, error, refetch } = useStudent(id || null);
   const { data: parents } = useParents();
   const { mutate: updateStudent, loading: updating } = useUpdateStudent();
+  const { mutate: deleteStudent, loading: deleting } = useDeleteStudent();
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleEditStudent = () => {
     setEditModalVisible(true);
@@ -57,6 +59,40 @@ export default function StudentDetailScreen() {
       Linking.openURL(`mailto:${student.parent.email}`).catch(() => {
         Alert.alert('Error', 'Unable to open email app');
       });
+    }
+  };
+
+  const handleDeleteStudent = () => {
+    if (Platform.OS === 'web') {
+      setShowDeleteConfirm(true);
+    } else {
+      Alert.alert(
+        'Delete Student',
+        `Are you sure you want to delete ${student?.name}? This action cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: confirmDelete,
+          },
+        ]
+      );
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!id) return;
+    setShowDeleteConfirm(false);
+    const success = await deleteStudent(id);
+    if (success) {
+      router.back();
+    } else {
+      if (Platform.OS === 'web') {
+        alert('Failed to delete student. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to delete student. Please try again.');
+      }
     }
   };
 
@@ -108,6 +144,15 @@ export default function StudentDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
+      {/* Header with Back Button */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={colors.neutral.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Student Details</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
       <ScrollView contentContainerStyle={styles.content}>
         {/* Profile Section */}
         <View style={styles.profileSection}>
@@ -221,12 +266,51 @@ export default function StudentDetailScreen() {
           </View>
         </View>
 
-        {/* Edit Button */}
-        <TouchableOpacity style={styles.editButton} onPress={handleEditStudent}>
-          <Ionicons name="create-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.editButtonText}>Edit Student</Text>
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.editButton} onPress={handleEditStudent}>
+            <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.editButtonText}>Edit Student</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDeleteStudent}
+            disabled={deleting}
+          >
+            <Ionicons name="trash-outline" size={20} color={colors.status.error} />
+            <Text style={styles.deleteButtonText}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
+
+      {/* Delete Confirmation Dialog for Web */}
+      {showDeleteConfirm && (
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmDialog}>
+            <Ionicons name="warning" size={48} color={colors.status.error} style={styles.confirmIcon} />
+            <Text style={styles.confirmTitle}>Delete Student?</Text>
+            <Text style={styles.confirmMessage}>
+              Are you sure you want to delete {student.name}? This action cannot be undone.
+            </Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={styles.confirmButtonCancel}
+                onPress={() => setShowDeleteConfirm(false)}
+              >
+                <Text style={styles.confirmButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmButtonDelete}
+                onPress={confirmDelete}
+              >
+                <Text style={styles.confirmButtonDeleteText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Edit Student Modal */}
       <StudentFormModal
@@ -245,6 +329,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.neutral.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  backButton: {
+    padding: spacing.sm,
+  },
+  headerTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  headerSpacer: {
+    width: 40,
   },
   content: {
     padding: spacing.base,
@@ -435,7 +540,14 @@ const styles = StyleSheet.create({
     color: colors.neutral.border,
     marginTop: spacing.xs,
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+  },
   editButton: {
+    flex: 1,
     backgroundColor: colors.piano.primary,
     borderRadius: borderRadius.lg,
     height: 52,
@@ -443,8 +555,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.sm,
-    marginBottom: spacing.xl,
     shadowColor: colors.piano.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -454,6 +564,97 @@ const styles = StyleSheet.create({
   editButtonText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
+    color: '#FFFFFF',
+  },
+  deleteButton: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.status.error,
+  },
+  deleteButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.status.error,
+  },
+
+  // Confirmation Dialog Styles
+  confirmOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  confirmDialog: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    width: '85%',
+    maxWidth: 320,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  confirmIcon: {
+    marginBottom: spacing.md,
+  },
+  confirmTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  confirmMessage: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    width: '100%',
+  },
+  confirmButtonCancel: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    alignItems: 'center',
+  },
+  confirmButtonCancelText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  confirmButtonDelete: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.status.error,
+    alignItems: 'center',
+  },
+  confirmButtonDeleteText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
     color: '#FFFFFF',
   },
 });
