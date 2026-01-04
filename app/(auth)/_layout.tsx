@@ -23,6 +23,13 @@ export default function AuthLayout() {
           title: 'Register',
         }}
       />
+      <Stack.Screen
+        name="onboarding"
+        options={{
+          title: 'Onboarding',
+          gestureEnabled: false, // Prevent swiping back during onboarding
+        }}
+      />
     </Stack>
   );
 }

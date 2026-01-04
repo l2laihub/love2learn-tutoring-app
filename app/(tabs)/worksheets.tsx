@@ -21,12 +21,15 @@ import * as Sharing from 'expo-sharing';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
-import { useAssignments, useCreateAssignment } from '../../src/hooks/useAssignments';
+import { useAssignments, useCreateAssignment, useCompleteAssignment } from '../../src/hooks/useAssignments';
 import { WorksheetGeneratorModal, WorksheetConfig } from '../../src/components/WorksheetGeneratorModal';
 import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent } from '../../src/types/database';
 import { generatePianoWorksheet } from '../../src/services/pianoWorksheetGenerator';
 
 type TabType = 'generate' | 'assigned';
+
+// Filter options for parent view
+type FilterOption = 'all' | 'pending' | 'completed';
 
 // Piano quick templates
 const PIANO_TEMPLATES = [
@@ -49,11 +52,63 @@ export default function WorksheetsScreen() {
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: assignments, loading: assignmentsLoading, refetch: refetchAssignments } = useAssignments();
   const { mutate: createAssignment } = useCreateAssignment();
+  const { mutate: completeAssignment, loading: completingAssignment } = useCompleteAssignment();
   const [activeTab, setActiveTab] = useState<TabType>('generate');
   const [showGenerator, setShowGenerator] = useState(false);
   const [presetSubject, setPresetSubject] = useState<TutoringSubject | undefined>();
+  const [statusFilter, setStatusFilter] = useState<FilterOption>('all');
+  const [selectedChild, setSelectedChild] = useState<string | null>(null);
 
   const isTutor = userRole === 'tutor';
+
+  // For parents, always start on assigned tab
+  React.useEffect(() => {
+    if (!isTutor) {
+      setActiveTab('assigned');
+    }
+  }, [isTutor]);
+
+  // Get unique children for parent filter (from assignments)
+  const childrenFromAssignments = React.useMemo(() => {
+    const uniqueStudents = new Map<string, { id: string; name: string }>();
+    assignments.forEach(a => {
+      if (a.student) {
+        uniqueStudents.set(a.student.id, { id: a.student.id, name: a.student.name });
+      }
+    });
+    return Array.from(uniqueStudents.values());
+  }, [assignments]);
+
+  // Filtered assignments for parent view
+  const filteredAssignments = React.useMemo(() => {
+    let filtered = assignments;
+
+    // Filter by status
+    if (statusFilter === 'pending') {
+      filtered = filtered.filter(a => a.status !== 'completed');
+    } else if (statusFilter === 'completed') {
+      filtered = filtered.filter(a => a.status === 'completed');
+    }
+
+    // Filter by child
+    if (selectedChild) {
+      filtered = filtered.filter(a => a.student_id === selectedChild);
+    }
+
+    return filtered;
+  }, [assignments, statusFilter, selectedChild]);
+
+  // Handle marking assignment as complete
+  const handleMarkComplete = async (assignmentId: string) => {
+    try {
+      await completeAssignment(assignmentId);
+      await refetchAssignments();
+      Alert.alert('Success', 'Worksheet marked as completed!');
+    } catch (error) {
+      console.error('Error completing assignment:', error);
+      Alert.alert('Error', 'Failed to mark worksheet as complete. Please try again.');
+    }
+  };
 
   const handleOpenGenerator = (subject?: TutoringSubject) => {
     setPresetSubject(subject);
@@ -214,45 +269,123 @@ export default function WorksheetsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      {/* Tab Bar */}
-      <View style={styles.tabBar}>
-        <Pressable
-          style={[styles.tab, activeTab === 'generate' && styles.tabActive]}
-          onPress={() => setActiveTab('generate')}
-        >
-          <Ionicons
-            name="sparkles"
-            size={20}
-            color={activeTab === 'generate' ? colors.piano.primary : colors.neutral.textMuted}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'generate' && styles.tabTextActive,
-            ]}
+      {/* Tab Bar - Only show for tutors */}
+      {isTutor && (
+        <View style={styles.tabBar}>
+          <Pressable
+            style={[styles.tab, activeTab === 'generate' && styles.tabActive]}
+            onPress={() => setActiveTab('generate')}
           >
-            Generate
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, activeTab === 'assigned' && styles.tabActive]}
-          onPress={() => setActiveTab('assigned')}
-        >
-          <Ionicons
-            name="document-text"
-            size={20}
-            color={activeTab === 'assigned' ? colors.piano.primary : colors.neutral.textMuted}
-          />
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'assigned' && styles.tabTextActive,
-            ]}
+            <Ionicons
+              name="sparkles"
+              size={20}
+              color={activeTab === 'generate' ? colors.piano.primary : colors.neutral.textMuted}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'generate' && styles.tabTextActive,
+              ]}
+            >
+              Generate
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'assigned' && styles.tabActive]}
+            onPress={() => setActiveTab('assigned')}
           >
-            Assigned
-          </Text>
-        </Pressable>
-      </View>
+            <Ionicons
+              name="document-text"
+              size={20}
+              color={activeTab === 'assigned' ? colors.piano.primary : colors.neutral.textMuted}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'assigned' && styles.tabTextActive,
+              ]}
+            >
+              Assigned
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* Parent Header with Filters */}
+      {!isTutor && (
+        <View style={styles.parentHeader}>
+          <Text style={styles.parentHeaderTitle}>Worksheets</Text>
+
+          {/* Child Filter */}
+          {childrenFromAssignments.length > 1 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.childFilter}
+              contentContainerStyle={styles.childFilterContent}
+            >
+              <Pressable
+                style={[
+                  styles.filterChip,
+                  selectedChild === null && styles.filterChipActive,
+                ]}
+                onPress={() => setSelectedChild(null)}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedChild === null && styles.filterChipTextActive,
+                  ]}
+                >
+                  All Kids
+                </Text>
+              </Pressable>
+              {childrenFromAssignments.map(child => (
+                <Pressable
+                  key={child.id}
+                  style={[
+                    styles.filterChip,
+                    selectedChild === child.id && styles.filterChipActive,
+                  ]}
+                  onPress={() => setSelectedChild(child.id)}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      selectedChild === child.id && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {child.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Status Filter */}
+          <View style={styles.statusFilter}>
+            {(['all', 'pending', 'completed'] as FilterOption[]).map(filter => (
+              <Pressable
+                key={filter}
+                style={[
+                  styles.statusChip,
+                  statusFilter === filter && styles.statusChipActive,
+                ]}
+                onPress={() => setStatusFilter(filter)}
+              >
+                <Text
+                  style={[
+                    styles.statusChipText,
+                    statusFilter === filter && styles.statusChipTextActive,
+                  ]}
+                >
+                  {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       <ScrollView
         style={styles.content}
@@ -383,7 +516,7 @@ export default function WorksheetsScreen() {
                 <ActivityIndicator size="large" color={colors.piano.primary} />
                 <Text style={styles.loadingText}>Loading worksheets...</Text>
               </View>
-            ) : assignments.length === 0 ? (
+            ) : (isTutor ? assignments : filteredAssignments).length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconContainer}>
                   <Ionicons
@@ -392,11 +525,17 @@ export default function WorksheetsScreen() {
                     color={colors.neutral.border}
                   />
                 </View>
-                <Text style={styles.emptyTitle}>No Assigned Worksheets</Text>
+                <Text style={styles.emptyTitle}>
+                  {!isTutor && (statusFilter !== 'all' || selectedChild)
+                    ? 'No Matching Worksheets'
+                    : 'No Assigned Worksheets'}
+                </Text>
                 <Text style={styles.emptySubtitle}>
                   {isTutor
                     ? 'Generate a worksheet and assign it to a student to track their progress.'
-                    : 'Your assigned worksheets will appear here.'}
+                    : !isTutor && (statusFilter !== 'all' || selectedChild)
+                      ? 'Try adjusting your filters to see more worksheets.'
+                      : 'Your assigned worksheets will appear here once your tutor assigns them.'}
                 </Text>
                 {isTutor && (
                   <Pressable
@@ -413,20 +552,78 @@ export default function WorksheetsScreen() {
                     <Text style={styles.emptyButtonText}>Generate Worksheet</Text>
                   </Pressable>
                 )}
+                {!isTutor && (statusFilter !== 'all' || selectedChild) && (
+                  <Pressable
+                    style={styles.emptyButton}
+                    onPress={() => {
+                      setStatusFilter('all');
+                      setSelectedChild(null);
+                    }}
+                  >
+                    <Ionicons
+                      name="refresh"
+                      size={18}
+                      color={colors.neutral.white}
+                    />
+                    <Text style={styles.emptyButtonText}>Clear Filters</Text>
+                  </Pressable>
+                )}
               </View>
             ) : (
               <View style={styles.assignmentsList}>
-                {assignments.map((assignment: AssignmentWithStudent) => (
+                {(isTutor ? assignments : filteredAssignments).map((assignment: AssignmentWithStudent) => (
                   <Pressable
                     key={assignment.id}
                     style={styles.assignmentCard}
                     onPress={() => {
-                      // TODO: Open worksheet detail/preview
-                      Alert.alert(
-                        getWorksheetTypeName(assignment.worksheet_type),
-                        `Assigned to: ${assignment.student?.name || 'Unknown'}\nStatus: ${assignment.status}\nAssigned: ${formatDate(assignment.assigned_at)}`,
-                        [{ text: 'OK' }]
-                      );
+                      if (isTutor) {
+                        // Tutor: show details
+                        Alert.alert(
+                          getWorksheetTypeName(assignment.worksheet_type),
+                          `Assigned to: ${assignment.student?.name || 'Unknown'}\nStatus: ${assignment.status}\nAssigned: ${formatDate(assignment.assigned_at)}`,
+                          [{ text: 'OK' }]
+                        );
+                      } else {
+                        // Parent: show action options
+                        const options = [{ text: 'Close', style: 'cancel' as const }];
+
+                        // Add print option if PDF exists
+                        if (assignment.pdf_url) {
+                          options.push({
+                            text: 'Print',
+                            style: 'default' as const,
+                            onPress: async () => {
+                              try {
+                                const canShare = await Sharing.isAvailableAsync();
+                                if (canShare) {
+                                  await Sharing.shareAsync(assignment.pdf_url!, {
+                                    mimeType: 'application/pdf',
+                                    dialogTitle: 'Print Worksheet',
+                                  });
+                                }
+                              } catch (error) {
+                                console.error('Error sharing worksheet:', error);
+                                Alert.alert('Error', 'Unable to open worksheet for printing.');
+                              }
+                            },
+                          } as any);
+                        }
+
+                        // Add mark complete option if not already completed
+                        if (assignment.status !== 'completed') {
+                          options.push({
+                            text: 'Mark as Done',
+                            style: 'default' as const,
+                            onPress: () => handleMarkComplete(assignment.id),
+                          } as any);
+                        }
+
+                        Alert.alert(
+                          getWorksheetTypeName(assignment.worksheet_type),
+                          `For: ${assignment.student?.name || 'Unknown'}\nAssigned: ${formatDate(assignment.assigned_at)}${assignment.due_date ? `\nDue: ${formatDate(assignment.due_date)}` : ''}`,
+                          options
+                        );
+                      }
                     }}
                   >
                     <View
@@ -778,5 +975,67 @@ const styles = StyleSheet.create({
   },
   statusTextCompleted: {
     color: colors.status.success,
+  },
+  // Parent view styles
+  parentHeader: {
+    backgroundColor: colors.neutral.white,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  parentHeaderTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginBottom: spacing.md,
+  },
+  childFilter: {
+    marginBottom: spacing.sm,
+  },
+  childFilterContent: {
+    gap: spacing.sm,
+  },
+  filterChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.neutral.background,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  filterChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  filterChipTextActive: {
+    color: colors.neutral.white,
+  },
+  statusFilter: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  statusChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.neutral.background,
+  },
+  statusChipActive: {
+    backgroundColor: colors.piano.subtle,
+  },
+  statusChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textMuted,
+  },
+  statusChipTextActive: {
+    color: colors.piano.primary,
   },
 });

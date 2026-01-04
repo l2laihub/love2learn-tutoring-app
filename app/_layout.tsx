@@ -14,7 +14,7 @@ function LoadingScreen() {
 }
 
 function RootLayoutNav() {
-  const { isAuthenticated, isLoading } = useAuthContext();
+  const { isAuthenticated, isLoading, isParent, parent } = useAuthContext();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
 
@@ -23,6 +23,7 @@ function RootLayoutNav() {
     if (!navigationState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    const inOnboarding = segments[1] === 'onboarding';
 
     if (isLoading) {
       // Still loading auth state, don't navigate yet
@@ -32,11 +33,22 @@ function RootLayoutNav() {
     if (!isAuthenticated && !inAuthGroup) {
       // Redirect to login if not authenticated and not already on auth screens
       router.replace('/(auth)/login');
-    } else if (isAuthenticated && inAuthGroup) {
-      // Redirect to main app if authenticated and on auth screens
-      router.replace('/(tabs)');
+    } else if (isAuthenticated && inAuthGroup && !inOnboarding) {
+      // Check if parent needs onboarding
+      if (isParent && parent && !parent.onboarding_completed_at) {
+        // Redirect to onboarding flow
+        router.replace('/(auth)/onboarding/welcome');
+      } else {
+        // Redirect to main app if authenticated and on auth screens (not onboarding)
+        router.replace('/(tabs)');
+      }
+    } else if (isAuthenticated && !inAuthGroup) {
+      // User is authenticated and in main app - check if parent needs onboarding
+      if (isParent && parent && !parent.onboarding_completed_at) {
+        router.replace('/(auth)/onboarding/welcome');
+      }
     }
-  }, [isAuthenticated, isLoading, segments, navigationState?.key]);
+  }, [isAuthenticated, isLoading, isParent, parent, segments, navigationState?.key]);
 
   // Show loading screen while checking auth
   if (isLoading) {

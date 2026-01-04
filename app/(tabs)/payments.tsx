@@ -26,12 +26,15 @@ import {
   useMarkPaymentPaid,
   useOverduePayments,
   useDeletePayment,
+  useMonthlyLessonSummary,
+  useQuickInvoice,
 } from '../../src/hooks/usePayments';
 import { useParents } from '../../src/hooks/useParents';
 import { PaymentWithParent, CreatePaymentInput, UpdatePaymentInput } from '../../src/types/database';
 import { PaymentFormModal, PaymentFormData } from '../../src/components/PaymentFormModal';
 import { GenerateInvoiceModal } from '../../src/components/GenerateInvoiceModal';
 import { RateSettingsModal } from '../../src/components/RateSettingsModal';
+import { MonthlyPaymentSummary } from '../../src/components/MonthlyPaymentSummary';
 
 export default function PaymentsScreen() {
   const { isTutor, parent } = useAuthContext();
@@ -48,12 +51,18 @@ export default function PaymentsScreen() {
   const { summary, refetch: refetchSummary } = usePaymentSummary(selectedMonth);
   const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
   const { data: parents, loading: parentsLoading } = useParents();
+  const {
+    data: monthlyLessonSummary,
+    loading: lessonSummaryLoading,
+    refetch: refetchLessonSummary,
+  } = useMonthlyLessonSummary(selectedMonth);
 
   // Mutations
   const createPayment = useCreatePayment();
   const updatePayment = useUpdatePayment();
   const markPaid = useMarkPaymentPaid();
   const deletePayment = useDeletePayment();
+  const quickInvoice = useQuickInvoice();
 
   // Filter payments for parents (only show their own)
   const displayPayments = useMemo(() => {
@@ -80,8 +89,19 @@ export default function PaymentsScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetch(), refetchSummary(), refetchOverdue()]);
+    await Promise.all([refetch(), refetchSummary(), refetchOverdue(), refetchLessonSummary()]);
     setRefreshing(false);
+  };
+
+  // Quick invoice generation for a family
+  const handleQuickInvoice = async (parentId: string) => {
+    const payment = await quickInvoice.generateQuickInvoice(parentId, selectedMonth);
+    if (payment) {
+      Alert.alert('Success', 'Invoice generated successfully!');
+      await handleRefresh();
+    } else if (quickInvoice.error) {
+      Alert.alert('Error', quickInvoice.error.message);
+    }
   };
 
   const handleCreatePayment = async (data: PaymentFormData) => {
@@ -221,26 +241,36 @@ export default function PaymentsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {/* Summary Cards */}
+        {/* Monthly Lesson Summary (Hybrid Approach) - Tutor only */}
+        {isTutor && (
+          <MonthlyPaymentSummary
+            summary={monthlyLessonSummary}
+            loading={lessonSummaryLoading}
+            onGenerateInvoice={handleQuickInvoice}
+            compact={false}
+          />
+        )}
+
+        {/* Legacy Summary Cards - now as secondary info */}
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
             <Ionicons name="wallet-outline" size={24} color={colors.status.success} />
             <Text style={styles.summaryAmount}>
               ${summary.totalPaid.toFixed(2)}
             </Text>
-            <Text style={styles.summaryLabel}>Collected</Text>
+            <Text style={styles.summaryLabel}>Invoiced Collected</Text>
           </View>
           <View style={styles.summaryCard}>
             <Ionicons name="time-outline" size={24} color={colors.status.error} />
             <Text style={[styles.summaryAmount, { color: colors.status.error }]}>
               ${summary.totalOutstanding.toFixed(2)}
             </Text>
-            <Text style={styles.summaryLabel}>Outstanding</Text>
+            <Text style={styles.summaryLabel}>Invoiced Outstanding</Text>
           </View>
         </View>
 
         {/* Status Breakdown */}
-        {isTutor && (
+        {isTutor && summary.totalFamilies > 0 && (
           <View style={styles.statusBreakdown}>
             <View style={styles.statusItem}>
               <View style={[styles.statusDot, { backgroundColor: colors.status.success }]} />

@@ -32,6 +32,7 @@ import {
 } from '../../src/hooks/useLessons';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useAuthContext } from '../../src/contexts/AuthContext';
+import { useTutorSettings, getSubjectRateConfig } from '../../src/hooks/useTutorSettings';
 import {
   ScheduledLessonWithStudent,
   CreateScheduledLessonInput,
@@ -100,6 +101,7 @@ export default function CalendarScreen() {
   // Fetch data - now using grouped lessons
   const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
   const { data: students, loading: studentsLoading } = useStudents();
+  const { data: tutorSettings } = useTutorSettings();
   const createLesson = useCreateLesson();
   const createGroupedLesson = useCreateGroupedLesson();
   const updateLesson = useUpdateLesson();
@@ -363,20 +365,54 @@ export default function CalendarScreen() {
       }
     }
 
+    // For combined sessions with multiple subjects, use each subject's base duration
+    // from tutor settings instead of dividing equally.
+    // Example: Piano (30min base) + Reading (60min base) = each student gets their
+    // subject's standard duration, and the total session time is calculated automatically.
+
+    // Check if all lessons have the same subject (same-subject scenario)
+    const uniqueSubjects = [...new Set(sessionData.lessons.map(l => l.subject))];
+    const isSingleSubjectSession = uniqueSubjects.length === 1;
+
     // Create a session for each date
     for (const date of datesToCreate) {
+      let lessonInputs;
+      let calculatedTotalDuration: number;
+
+      if (isSingleSubjectSession) {
+        // Same subject for all students: divide total session time equally
+        // (e.g., 60min Piano session / 2 students = 30min each)
+        const perStudentDuration = Math.floor(sessionData.duration_min / sessionData.lessons.length);
+        calculatedTotalDuration = sessionData.duration_min;
+
+        lessonInputs = sessionData.lessons.map(lesson => ({
+          student_id: lesson.student_id,
+          subject: lesson.subject,
+          scheduled_at: date.toISOString(),
+          duration_min: perStudentDuration,
+        }));
+      } else {
+        // Multi-subject session: use each subject's base duration from tutor settings
+        // (e.g., Piano=30min, Reading=60min → each student gets their subject's duration)
+        lessonInputs = sessionData.lessons.map(lesson => {
+          const rateConfig = getSubjectRateConfig(tutorSettings, lesson.subject);
+          return {
+            student_id: lesson.student_id,
+            subject: lesson.subject,
+            scheduled_at: date.toISOString(),
+            duration_min: rateConfig.base_duration,
+          };
+        });
+
+        // Calculate total session duration as sum of all individual lesson durations
+        calculatedTotalDuration = lessonInputs.reduce((sum, l) => sum + l.duration_min, 0);
+      }
+
       const sessionInput = {
         scheduled_at: date.toISOString(),
-        duration_min: sessionData.duration_min,
+        duration_min: calculatedTotalDuration,
         notes: sessionData.notes,
       };
-
-      const lessonInputs = sessionData.lessons.map(lesson => ({
-        student_id: lesson.student_id,
-        subject: lesson.subject,
-        scheduled_at: date.toISOString(),
-        duration_min: sessionData.duration_min,
-      }));
 
       await createGroupedLesson.mutate(sessionInput, lessonInputs);
     }
@@ -497,7 +533,9 @@ export default function CalendarScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <Text style={styles.title}>Lesson Calendar</Text>
+          <Text style={styles.title}>
+            {isTutor ? 'Lesson Calendar' : 'My Schedule'}
+          </Text>
           {isTutor && (
             <View style={styles.headerButtons}>
               <Pressable

@@ -568,8 +568,8 @@ export function LessonDetailModal({
           )}
         </View>
 
-        {/* Actions - only show for scheduled lessons */}
-        {displayData.status === 'scheduled' && (
+        {/* Actions - only show for scheduled lessons (tutor only) */}
+        {displayData.status === 'scheduled' && isTutor && (
           <View style={styles.actions}>
             <Pressable style={styles.editButton} onPress={onEdit}>
               <Ionicons name="create-outline" size={20} color={colors.neutral.textSecondary} />
@@ -589,6 +589,16 @@ export function LessonDetailModal({
               <Ionicons name="checkmark-circle" size={20} color={colors.neutral.white} />
               <Text style={styles.completeButtonText}>Complete</Text>
             </Pressable>
+          </View>
+        )}
+
+        {/* Parent view - read-only info for scheduled lessons */}
+        {displayData.status === 'scheduled' && !isTutor && (
+          <View style={styles.parentInfoBar}>
+            <Ionicons name="information-circle-outline" size={20} color={colors.status.info} />
+            <Text style={styles.parentInfoText}>
+              Contact your tutor to reschedule or cancel this lesson
+            </Text>
           </View>
         )}
 
@@ -1001,6 +1011,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.status.error,
+  },
+  // Parent view info bar
+  parentInfoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.base,
+    backgroundColor: colors.status.infoBg,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+  },
+  parentInfoText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.status.info,
   },
 });
 

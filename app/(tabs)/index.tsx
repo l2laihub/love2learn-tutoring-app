@@ -403,6 +403,30 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Parent: My Children section */}
+        {!isTutor && students.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>My Children</Text>
+            <View style={styles.childrenGrid}>
+              {students.map((student) => (
+                <View key={student.id} style={styles.childCard}>
+                  <View style={styles.childAvatar}>
+                    <Ionicons name="person" size={20} color={colors.piano.primary} />
+                  </View>
+                  <Text style={styles.childName} numberOfLines={1}>{student.name}</Text>
+                  <View style={styles.childSubjects}>
+                    {student.subjects?.slice(0, 3).map((subject, idx) => (
+                      <Text key={subject} style={styles.childSubjectEmoji}>
+                        {subjectEmojis[subject as Subject] || '📖'}
+                      </Text>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Parent: Assignments section */}
         {!isTutor && (
           <View style={styles.section}>
@@ -970,5 +994,44 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.status.error,
     fontWeight: typography.weights.medium,
+  },
+  // Parent: My Children section styles
+  childrenGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  childCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    minWidth: 100,
+    flex: 1,
+    maxWidth: '48%',
+    ...shadows.sm,
+  },
+  childAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.piano.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  childName: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  childSubjects: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  childSubjectEmoji: {
+    fontSize: 14,
   },
 });

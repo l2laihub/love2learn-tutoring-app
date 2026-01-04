@@ -9,15 +9,14 @@ import {
   Payment,
   PaymentWithParent,
   PaymentWithDetails,
-  PaymentLesson,
   CreatePaymentInput,
   UpdatePaymentInput,
   ListQueryState,
   QueryState,
   PaymentStatus,
-  ScheduledLessonWithStudent,
   TutoringSubject,
   SubjectRates,
+  TutorSettings,
 } from '../types/database';
 
 /**
@@ -589,37 +588,6 @@ export function useDeletePayment() {
 // ============================================================================
 
 /**
- * Calculate the hourly rate for a student's subject
- * Uses subject-specific rate if available, otherwise falls back to default hourly rate
- */
-function getStudentSubjectRate(
-  hourlyRate: number,
-  subjectRates: SubjectRates | null | undefined,
-  subject: TutoringSubject
-): number {
-  if (subjectRates && subject in subjectRates) {
-    const rate = subjectRates[subject as keyof SubjectRates];
-    if (rate !== undefined && rate > 0) {
-      return rate;
-    }
-  }
-  return hourlyRate || 50; // Default to $50/hour if no rate set
-}
-
-/**
- * Calculate the amount for a lesson based on duration and hourly rate
- */
-function calculateLessonAmount(
-  durationMin: number,
-  hourlyRate: number,
-  subjectRates: SubjectRates | null | undefined,
-  subject: TutoringSubject
-): number {
-  const rate = getStudentSubjectRate(hourlyRate, subjectRates, subject);
-  return (durationMin / 60) * rate;
-}
-
-/**
  * Lesson with student info including rates for invoice calculation
  */
 export interface LessonForInvoice {
@@ -635,6 +603,7 @@ export interface LessonForInvoice {
   calculated_amount: number;
   session_id: string | null; // If set, this is a combined session
   is_combined_session: boolean;
+  override_amount: number | null; // Manual override for edge cases
 }
 
 /**
@@ -706,12 +675,11 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       const defaultRate = tutorSettings?.default_rate || 45;
       const defaultBaseDuration = tutorSettings?.default_base_duration || 60;
       const tutorSubjectRates = (tutorSettings?.subject_rates as SubjectRates) || {};
-      const combinedSessionRate = tutorSettings?.combined_session_rate || 40;
 
-      // Get completed lessons for these students in the month (include session_id)
+      // Get completed lessons for these students in the month (include session_id and override_amount)
       const { data: lessons, error: lessonsError } = await supabase
         .from('scheduled_lessons')
-        .select('id, student_id, subject, scheduled_at, duration_min, session_id')
+        .select('id, student_id, subject, scheduled_at, duration_min, session_id, override_amount')
         .in('student_id', studentIds)
         .eq('status', 'completed')
         .gte('scheduled_at', monthStart)
@@ -749,38 +717,48 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       };
 
       // Filter out already invoiced lessons and calculate amounts
+      // Combined sessions now use duration-based subject rates (same as regular lessons)
       const uninvoicedLessons: LessonForInvoice[] = lessons
         .filter(lesson => !invoicedLessonIds.has(lesson.id))
         .map(lesson => {
           const student = studentMap.get(lesson.student_id);
           const isCombinedSession = lesson.session_id !== null;
 
-          // For combined sessions, use flat rate; for single lessons, use duration-based rate
-          let calculatedAmount: number;
+          // If override_amount is set, use it directly
+          if (lesson.override_amount !== null && lesson.override_amount !== undefined) {
+            return {
+              id: lesson.id,
+              student_id: lesson.student_id,
+              student_name: student?.name || 'Unknown',
+              subject: lesson.subject as TutoringSubject,
+              scheduled_at: lesson.scheduled_at,
+              duration_min: lesson.duration_min,
+              rate: 0,
+              base_duration: 0,
+              rate_display: 'Override',
+              calculated_amount: lesson.override_amount,
+              session_id: lesson.session_id,
+              is_combined_session: isCombinedSession,
+              override_amount: lesson.override_amount,
+            };
+          }
+
+          // Use duration-based subject rates for ALL lessons (including combined sessions)
           let rate: number;
           let baseDuration: number;
-          let rateDisplay: string;
 
-          if (isCombinedSession) {
-            // Flat rate per student for combined sessions
-            calculatedAmount = combinedSessionRate;
-            rate = combinedSessionRate;
-            baseDuration = 0; // Not applicable for flat rate
-            rateDisplay = `$${combinedSessionRate}/session`;
+          const subjectRateConfig = tutorSubjectRates[lesson.subject as keyof SubjectRates];
+          if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
+            rate = subjectRateConfig.rate;
+            baseDuration = subjectRateConfig.base_duration;
           } else {
-            // Use tutor subject rates first, then default
-            const subjectRateConfig = tutorSubjectRates[lesson.subject as keyof SubjectRates];
-            if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
-              rate = subjectRateConfig.rate;
-              baseDuration = subjectRateConfig.base_duration;
-            } else {
-              rate = defaultRate;
-              baseDuration = defaultBaseDuration;
-            }
-            // Calculate: (lesson duration / base duration) * rate
-            calculatedAmount = (lesson.duration_min / baseDuration) * rate;
-            rateDisplay = formatRateDisplay(rate, baseDuration);
+            rate = defaultRate;
+            baseDuration = defaultBaseDuration;
           }
+
+          // Calculate: (lesson duration / base duration) * rate
+          const calculatedAmount = (lesson.duration_min / baseDuration) * rate;
+          const rateDisplay = formatRateDisplay(rate, baseDuration);
 
           return {
             id: lesson.id,
@@ -795,6 +773,7 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
             calculated_amount: Math.round(calculatedAmount * 100) / 100, // Round to 2 decimal places
             session_id: lesson.session_id,
             is_combined_session: isCombinedSession,
+            override_amount: null,
           };
         });
 
@@ -1028,4 +1007,651 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
   }, [fetchPayment]);
 
   return { data, loading, error, refetch: fetchPayment };
+}
+
+// ============================================================================
+// MONTHLY LESSON SUMMARY (Hybrid Payment Approach)
+// ============================================================================
+
+/**
+ * Individual lesson detail with rate calculation breakdown
+ */
+export interface LessonDetail {
+  id: string;
+  student_id: string;
+  student_name: string;
+  subject: TutoringSubject;
+  scheduled_at: string;
+  duration_min: number;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  payment_status: 'none' | 'invoiced' | 'paid';
+  is_combined_session: boolean;
+  session_id: string | null;
+  // Rate calculation details
+  rate: number;
+  base_duration: number;
+  rate_display: string;
+  calculated_amount: number;
+  calculation_formula: string; // e.g., "30min / 30min * $35 = $35"
+  // Override for edge cases (Option B)
+  override_amount: number | null; // When set, overrides calculated amount
+}
+
+/**
+ * Summary of a family's lessons for a month
+ */
+export interface FamilyLessonSummary {
+  parent_id: string;
+  parent_name: string;
+  // Lesson counts
+  scheduled_count: number;  // Scheduled lessons (not yet completed)
+  completed_count: number;  // Completed lessons (not yet invoiced)
+  invoiced_count: number;   // Invoiced lessons (in pending/partial payment)
+  paid_count: number;       // Paid lessons (in paid payment)
+  cancelled_count: number;  // Cancelled lessons
+  // Amount calculations
+  expected_amount: number;  // All scheduled + completed (potential earnings)
+  billable_amount: number;  // Completed but not invoiced (ready to invoice)
+  invoiced_amount: number;  // Amount in pending/partial payments
+  collected_amount: number; // Amount in paid payments
+  // Combined session tracking
+  combined_session_count: number;
+  combined_session_amount: number;
+  // Detailed lesson breakdown
+  lessons: LessonDetail[];
+}
+
+/**
+ * Overall monthly summary across all families
+ */
+export interface MonthlyLessonSummary {
+  month: string;
+  families: FamilyLessonSummary[];
+  totals: {
+    scheduled_count: number;
+    completed_count: number;
+    invoiced_count: number;
+    paid_count: number;
+    cancelled_count: number;
+    expected_amount: number;
+    billable_amount: number;
+    invoiced_amount: number;
+    collected_amount: number;
+    combined_session_count: number;
+    combined_session_amount: number;
+  };
+}
+
+/**
+ * Rate calculation result with breakdown details
+ */
+interface RateCalculationResult {
+  amount: number;
+  rate: number;
+  baseDuration: number;
+  rateDisplay: string;
+  formula: string;
+}
+
+/**
+ * Calculate lesson amount based on tutor settings
+ * Supports duration-based rates for all lessons (including combined sessions)
+ * Combined sessions now use the same subject rate calculation as regular lessons
+ * Override amount can be provided to manually set the price for edge cases
+ * Returns detailed breakdown for transparency
+ */
+function calculateLessonAmountWithDetails(
+  tutorSettings: TutorSettings | null,
+  subject: TutoringSubject,
+  durationMin: number,
+  isCombinedSession: boolean,
+  overrideAmount?: number | null
+): RateCalculationResult {
+  const defaultRate = 45;
+  const defaultBaseDuration = 60;
+
+  // If override amount is set, use it directly
+  if (overrideAmount !== undefined && overrideAmount !== null) {
+    return {
+      amount: overrideAmount,
+      rate: 0,
+      baseDuration: 0,
+      rateDisplay: 'Override',
+      formula: `Manual override = $${overrideAmount.toFixed(2)}`,
+    };
+  }
+
+  // Use duration-based subject rates for ALL lessons (including combined sessions)
+  let rate: number;
+  let baseDuration: number;
+  let rateSource: string;
+
+  const subjectRates = tutorSettings?.subject_rates;
+  if (subjectRates && subject in subjectRates) {
+    const rateConfig = subjectRates[subject as keyof SubjectRates];
+    if (rateConfig && rateConfig.rate > 0 && rateConfig.base_duration > 0) {
+      rate = rateConfig.rate;
+      baseDuration = rateConfig.base_duration;
+      rateSource = `${subject} rate`;
+    } else {
+      rate = tutorSettings?.default_rate ?? defaultRate;
+      baseDuration = tutorSettings?.default_base_duration ?? defaultBaseDuration;
+      rateSource = 'default rate';
+    }
+  } else {
+    rate = tutorSettings?.default_rate ?? defaultRate;
+    baseDuration = tutorSettings?.default_base_duration ?? defaultBaseDuration;
+    rateSource = 'default rate';
+  }
+
+  const amount = (durationMin / baseDuration) * rate;
+  const rateDisplay = baseDuration === 60 ? `$${rate}/hr` : `$${rate}/${baseDuration}min`;
+  const sessionType = isCombinedSession ? ' (combined session)' : '';
+  const formula = `${durationMin}min / ${baseDuration}min × $${rate} = $${amount.toFixed(2)} (${rateSource}${sessionType})`;
+
+  return {
+    amount,
+    rate,
+    baseDuration,
+    rateDisplay,
+    formula,
+  };
+}
+
+/**
+ * Simple amount calculation (for backward compatibility)
+ */
+function calculateLessonAmountFromSettings(
+  tutorSettings: TutorSettings | null,
+  subject: TutoringSubject,
+  durationMin: number,
+  isCombinedSession: boolean,
+  overrideAmount?: number | null
+): number {
+  return calculateLessonAmountWithDetails(tutorSettings, subject, durationMin, isCombinedSession, overrideAmount).amount;
+}
+
+/**
+ * Hook for fetching monthly lesson summary with expected/completed/invoiced/paid tracking
+ * This is the core hook for the hybrid payment approach
+ *
+ * @param month - Optional Date object (defaults to current month)
+ * @returns Monthly summary with per-family breakdowns
+ */
+export function useMonthlyLessonSummary(month?: Date) {
+  const [data, setData] = useState<MonthlyLessonSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const targetMonth = month || new Date();
+  const monthStart = getMonthStart(targetMonth);
+  const monthEnd = getMonthEnd(targetMonth);
+
+  const fetchSummary = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // 1. Fetch tutor settings for rate calculation
+      const { data: tutorSettings } = await supabase
+        .from('tutor_settings')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      // 2. Fetch all parents with students
+      const { data: parents, error: parentsError } = await supabase
+        .from('parents')
+        .select('id, name, students(id, name)');
+
+      if (parentsError) throw new Error(parentsError.message);
+      if (!parents || parents.length === 0) {
+        setData({
+          month: monthStart,
+          families: [],
+          totals: {
+            scheduled_count: 0,
+            completed_count: 0,
+            invoiced_count: 0,
+            paid_count: 0,
+            cancelled_count: 0,
+            expected_amount: 0,
+            billable_amount: 0,
+            invoiced_amount: 0,
+            collected_amount: 0,
+            combined_session_count: 0,
+            combined_session_amount: 0,
+          },
+        });
+        return;
+      }
+
+      // Create parent-to-students map
+      const parentMap = new Map<string, { name: string; studentIds: string[] }>();
+      const studentToParentMap = new Map<string, string>();
+
+      parents.forEach((parent: { id: string; name: string; students: { id: string; name: string }[] }) => {
+        const studentIds = parent.students?.map((s: { id: string }) => s.id) || [];
+        parentMap.set(parent.id, { name: parent.name, studentIds });
+        studentIds.forEach((sid: string) => studentToParentMap.set(sid, parent.id));
+      });
+
+      const allStudentIds = Array.from(studentToParentMap.keys());
+
+      if (allStudentIds.length === 0) {
+        setData({
+          month: monthStart,
+          families: [],
+          totals: {
+            scheduled_count: 0,
+            completed_count: 0,
+            invoiced_count: 0,
+            paid_count: 0,
+            cancelled_count: 0,
+            expected_amount: 0,
+            billable_amount: 0,
+            invoiced_amount: 0,
+            collected_amount: 0,
+            combined_session_count: 0,
+            combined_session_amount: 0,
+          },
+        });
+        return;
+      }
+
+      // 3. Fetch all lessons for this month (including override_amount for edge cases)
+      const { data: lessons, error: lessonsError } = await supabase
+        .from('scheduled_lessons')
+        .select('id, student_id, subject, scheduled_at, duration_min, status, session_id, override_amount')
+        .in('student_id', allStudentIds)
+        .gte('scheduled_at', monthStart)
+        .lte('scheduled_at', monthEnd + 'T23:59:59.999Z');
+
+      if (lessonsError) throw new Error(lessonsError.message);
+
+      // 4. Fetch all payments for this month with linked lessons
+      const { data: payments, error: paymentsError } = await supabase
+        .from('payments')
+        .select(`
+          id, parent_id, amount_due, amount_paid, status,
+          payment_lessons:payment_lessons(lesson_id, amount)
+        `)
+        .eq('month', monthStart);
+
+      if (paymentsError) throw new Error(paymentsError.message);
+
+      // Create maps for payment status lookup
+      const invoicedLessonIds = new Set<string>();
+      const paidLessonIds = new Set<string>();
+      const lessonPaymentAmounts = new Map<string, number>();
+
+      (payments || []).forEach((payment: {
+        id: string;
+        parent_id: string;
+        status: PaymentStatus;
+        payment_lessons: { lesson_id: string; amount: number }[]
+      }) => {
+        (payment.payment_lessons || []).forEach((pl: { lesson_id: string; amount: number }) => {
+          lessonPaymentAmounts.set(pl.lesson_id, pl.amount);
+          if (payment.status === 'paid') {
+            paidLessonIds.add(pl.lesson_id);
+          } else {
+            invoicedLessonIds.add(pl.lesson_id);
+          }
+        });
+      });
+
+      // 5. Calculate per-family summaries
+      const familySummaries = new Map<string, FamilyLessonSummary>();
+
+      // Create student id to name mapping
+      const studentIdToName = new Map<string, string>();
+      parents.forEach((parent: { id: string; name: string; students: { id: string; name: string }[] }) => {
+        (parent.students || []).forEach((s: { id: string; name: string }) => {
+          studentIdToName.set(s.id, s.name);
+        });
+      });
+
+      // Initialize summaries for all parents
+      parentMap.forEach((parentInfo, parentId) => {
+        familySummaries.set(parentId, {
+          parent_id: parentId,
+          parent_name: parentInfo.name,
+          scheduled_count: 0,
+          completed_count: 0,
+          invoiced_count: 0,
+          paid_count: 0,
+          cancelled_count: 0,
+          expected_amount: 0,
+          billable_amount: 0,
+          invoiced_amount: 0,
+          collected_amount: 0,
+          combined_session_count: 0,
+          combined_session_amount: 0,
+          lessons: [],
+        });
+      });
+
+      // Track combined sessions to avoid double counting
+      const processedSessionIds = new Set<string>();
+
+      // Process each lesson
+      (lessons || []).forEach((lesson: {
+        id: string;
+        student_id: string;
+        subject: TutoringSubject;
+        scheduled_at: string;
+        duration_min: number;
+        status: 'scheduled' | 'completed' | 'cancelled';
+        session_id: string | null;
+        override_amount: number | null;
+      }) => {
+        const parentId = studentToParentMap.get(lesson.student_id);
+        if (!parentId) return;
+
+        const summary = familySummaries.get(parentId);
+        if (!summary) return;
+
+        const isCombinedSession = lesson.session_id !== null;
+        const rateCalc = calculateLessonAmountWithDetails(
+          tutorSettings as TutorSettings | null,
+          lesson.subject,
+          lesson.duration_min,
+          isCombinedSession,
+          lesson.override_amount
+        );
+        const amount = rateCalc.amount;
+
+        // Determine payment status
+        let paymentStatus: 'none' | 'invoiced' | 'paid' = 'none';
+        if (paidLessonIds.has(lesson.id)) {
+          paymentStatus = 'paid';
+        } else if (invoicedLessonIds.has(lesson.id)) {
+          paymentStatus = 'invoiced';
+        }
+
+        // Add lesson detail
+        const lessonDetail: LessonDetail = {
+          id: lesson.id,
+          student_id: lesson.student_id,
+          student_name: studentIdToName.get(lesson.student_id) || 'Unknown',
+          subject: lesson.subject,
+          scheduled_at: lesson.scheduled_at,
+          duration_min: lesson.duration_min,
+          status: lesson.status,
+          payment_status: paymentStatus,
+          is_combined_session: isCombinedSession,
+          session_id: lesson.session_id,
+          rate: rateCalc.rate,
+          base_duration: rateCalc.baseDuration,
+          rate_display: rateCalc.rateDisplay,
+          calculated_amount: Math.round(amount * 100) / 100,
+          calculation_formula: rateCalc.formula,
+          override_amount: lesson.override_amount,
+        };
+        summary.lessons.push(lessonDetail);
+
+        // Track combined sessions
+        if (isCombinedSession && !processedSessionIds.has(lesson.session_id!)) {
+          processedSessionIds.add(lesson.session_id!);
+          summary.combined_session_count++;
+        }
+
+        if (isCombinedSession) {
+          summary.combined_session_amount += amount;
+        }
+
+        // Categorize by status and payment state
+        if (lesson.status === 'cancelled') {
+          summary.cancelled_count++;
+        } else if (lesson.status === 'scheduled') {
+          summary.scheduled_count++;
+          summary.expected_amount += amount;
+        } else if (lesson.status === 'completed') {
+          if (paidLessonIds.has(lesson.id)) {
+            summary.paid_count++;
+            summary.collected_amount += lessonPaymentAmounts.get(lesson.id) || amount;
+          } else if (invoicedLessonIds.has(lesson.id)) {
+            summary.invoiced_count++;
+            summary.invoiced_amount += lessonPaymentAmounts.get(lesson.id) || amount;
+          } else {
+            summary.completed_count++;
+            summary.billable_amount += amount;
+          }
+          // Expected includes all non-cancelled lessons
+          summary.expected_amount += amount;
+        }
+      });
+
+      // Sort lessons by scheduled_at within each family
+      familySummaries.forEach((summary) => {
+        summary.lessons.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+      });
+
+      // 6. Calculate totals
+      const totals = {
+        scheduled_count: 0,
+        completed_count: 0,
+        invoiced_count: 0,
+        paid_count: 0,
+        cancelled_count: 0,
+        expected_amount: 0,
+        billable_amount: 0,
+        invoiced_amount: 0,
+        collected_amount: 0,
+        combined_session_count: 0,
+        combined_session_amount: 0,
+      };
+
+      const familyArray = Array.from(familySummaries.values());
+      familyArray.forEach((family) => {
+        totals.scheduled_count += family.scheduled_count;
+        totals.completed_count += family.completed_count;
+        totals.invoiced_count += family.invoiced_count;
+        totals.paid_count += family.paid_count;
+        totals.cancelled_count += family.cancelled_count;
+        totals.expected_amount += family.expected_amount;
+        totals.billable_amount += family.billable_amount;
+        totals.invoiced_amount += family.invoiced_amount;
+        totals.collected_amount += family.collected_amount;
+        totals.combined_session_count += family.combined_session_count;
+        totals.combined_session_amount += family.combined_session_amount;
+      });
+
+      // Round amounts to 2 decimal places
+      totals.expected_amount = Math.round(totals.expected_amount * 100) / 100;
+      totals.billable_amount = Math.round(totals.billable_amount * 100) / 100;
+      totals.invoiced_amount = Math.round(totals.invoiced_amount * 100) / 100;
+      totals.collected_amount = Math.round(totals.collected_amount * 100) / 100;
+      totals.combined_session_amount = Math.round(totals.combined_session_amount * 100) / 100;
+
+      familyArray.forEach((family) => {
+        family.expected_amount = Math.round(family.expected_amount * 100) / 100;
+        family.billable_amount = Math.round(family.billable_amount * 100) / 100;
+        family.invoiced_amount = Math.round(family.invoiced_amount * 100) / 100;
+        family.collected_amount = Math.round(family.collected_amount * 100) / 100;
+        family.combined_session_amount = Math.round(family.combined_session_amount * 100) / 100;
+      });
+
+      // Filter out families with no lessons
+      const activeFamilies = familyArray.filter(
+        (f) =>
+          f.scheduled_count > 0 ||
+          f.completed_count > 0 ||
+          f.invoiced_count > 0 ||
+          f.paid_count > 0 ||
+          f.cancelled_count > 0
+      );
+
+      setData({
+        month: monthStart,
+        families: activeFamilies,
+        totals,
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch monthly summary');
+      setError(errorMessage);
+      console.error('useMonthlyLessonSummary error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [monthStart, monthEnd]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { data, loading, error, refetch: fetchSummary };
+}
+
+/**
+ * Hook for quick invoice generation for a specific family
+ * Generates invoice for all completed but uninvoiced lessons
+ */
+export function useQuickInvoice() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const generateQuickInvoice = useCallback(async (
+    parentId: string,
+    month: Date
+  ): Promise<Payment | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const monthStart = getMonthStart(month);
+      const monthEnd = getMonthEnd(month);
+
+      // Check if payment already exists for this month
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .maybeSingle();
+
+      if (existingPayment) {
+        throw new Error('A payment record already exists for this family and month');
+      }
+
+      // Get tutor settings
+      const { data: tutorSettings } = await supabase
+        .from('tutor_settings')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      // Get student IDs for this parent
+      const { data: students, error: studentsError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('parent_id', parentId);
+
+      if (studentsError) throw new Error(studentsError.message);
+      if (!students || students.length === 0) {
+        throw new Error('No students found for this parent');
+      }
+
+      const studentIds = students.map((s: { id: string }) => s.id);
+
+      // Get completed lessons that aren't invoiced (include override_amount)
+      const { data: lessons, error: lessonsError } = await supabase
+        .from('scheduled_lessons')
+        .select('id, student_id, subject, duration_min, session_id, override_amount')
+        .in('student_id', studentIds)
+        .eq('status', 'completed')
+        .gte('scheduled_at', monthStart)
+        .lte('scheduled_at', monthEnd + 'T23:59:59.999Z');
+
+      if (lessonsError) throw new Error(lessonsError.message);
+      if (!lessons || lessons.length === 0) {
+        throw new Error('No uninvoiced lessons found for this month');
+      }
+
+      // Get already invoiced lessons
+      const { data: invoicedLessons } = await supabase
+        .from('payment_lessons')
+        .select('lesson_id')
+        .in('lesson_id', lessons.map((l: { id: string }) => l.id));
+
+      const invoicedLessonIds = new Set((invoicedLessons || []).map((il: { lesson_id: string }) => il.lesson_id));
+
+      // Filter to uninvoiced lessons and calculate amounts
+      const uninvoicedLessons = lessons.filter((l: { id: string }) => !invoicedLessonIds.has(l.id));
+
+      if (uninvoicedLessons.length === 0) {
+        throw new Error('All completed lessons are already invoiced');
+      }
+
+      const lessonAmounts = uninvoicedLessons.map((lesson: {
+        id: string;
+        subject: TutoringSubject;
+        duration_min: number;
+        session_id: string | null;
+        override_amount: number | null;
+      }) => ({
+        lesson_id: lesson.id,
+        amount: calculateLessonAmountFromSettings(
+          tutorSettings as TutorSettings | null,
+          lesson.subject,
+          lesson.duration_min,
+          lesson.session_id !== null,
+          lesson.override_amount
+        ),
+      }));
+
+      const totalAmount = lessonAmounts.reduce((sum: number, l: { amount: number }) => sum + l.amount, 0);
+      const roundedTotal = Math.round(totalAmount * 100) / 100;
+
+      // Create payment
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .insert({
+          parent_id: parentId,
+          month: monthStart,
+          amount_due: roundedTotal,
+          amount_paid: 0,
+          status: 'unpaid' as PaymentStatus,
+          notes: `Quick invoice for ${uninvoicedLessons.length} lesson(s)`,
+        })
+        .select()
+        .single();
+
+      if (paymentError) throw new Error(paymentError.message);
+
+      // Link lessons to payment
+      const paymentLessons = lessonAmounts.map((la: { lesson_id: string; amount: number }) => ({
+        payment_id: payment.id,
+        lesson_id: la.lesson_id,
+        amount: Math.round(la.amount * 100) / 100,
+      }));
+
+      const { error: linkError } = await supabase
+        .from('payment_lessons')
+        .insert(paymentLessons);
+
+      if (linkError) {
+        // Rollback payment on link failure
+        await supabase.from('payments').delete().eq('id', payment.id);
+        throw new Error(`Failed to link lessons: ${linkError.message}`);
+      }
+
+      return payment;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to generate quick invoice');
+      setError(errorMessage);
+      console.error('useQuickInvoice error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, generateQuickInvoice, reset };
 }

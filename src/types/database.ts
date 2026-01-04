@@ -14,37 +14,58 @@ export type Json =
 // User role type - tutor has admin access, parent has limited access
 export type UserRole = 'parent' | 'tutor';
 
+// Parent notification preferences
+export interface ParentNotificationPreferences {
+  lesson_reminders: boolean;
+  lesson_reminders_hours_before?: number;
+  worksheet_assigned: boolean;
+  payment_due: boolean;
+  lesson_notes: boolean;
+}
+
+// Parent preferences stored as JSONB
+export interface ParentPreferences {
+  notifications: ParentNotificationPreferences;
+  contact_preference: 'email' | 'phone' | 'text';
+}
+
 export type Database = {
   public: {
     Tables: {
       parents: {
         Row: {
           id: string;
-          user_id: string;
+          user_id: string | null;
           name: string;
           email: string;
           phone: string | null;
           role: UserRole;
+          onboarding_completed_at: string | null;
+          preferences: ParentPreferences | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
-          user_id: string;
+          user_id?: string | null;
           name: string;
           email: string;
           phone?: string | null;
           role?: UserRole;
+          onboarding_completed_at?: string | null;
+          preferences?: ParentPreferences | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
-          user_id?: string;
+          user_id?: string | null;
           name?: string;
           email?: string;
           phone?: string | null;
           role?: UserRole;
+          onboarding_completed_at?: string | null;
+          preferences?: ParentPreferences | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -420,6 +441,7 @@ export type Database = {
           status: 'scheduled' | 'completed' | 'cancelled';
           notes: string | null;
           session_id: string | null;
+          override_amount: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -432,6 +454,7 @@ export type Database = {
           status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
           session_id?: string | null;
+          override_amount?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -444,6 +467,7 @@ export type Database = {
           status?: 'scheduled' | 'completed' | 'cancelled';
           notes?: string | null;
           session_id?: string | null;
+          override_amount?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -701,6 +725,73 @@ export type WorksheetType = 'piano_naming' | 'piano_drawing' | 'math';
 // Lesson duration in minutes (supports custom durations from 15-240 minutes)
 export type LessonDuration = number;
 
+// Lesson request status
+export type LessonRequestStatus = 'pending' | 'approved' | 'rejected' | 'scheduled';
+
+// Tutor availability slot
+export interface TutorAvailability {
+  id: string;
+  tutor_id: string;
+  day_of_week: number | null; // 0=Sunday, 6=Saturday
+  start_time: string;
+  end_time: string;
+  is_recurring: boolean;
+  specific_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Lesson request from parent
+export interface LessonRequest {
+  id: string;
+  parent_id: string;
+  student_id: string;
+  subject: string;
+  preferred_date: string;
+  preferred_time: string | null;
+  preferred_duration: number;
+  notes: string | null;
+  status: LessonRequestStatus;
+  tutor_response: string | null;
+  scheduled_lesson_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Lesson request with student info
+export interface LessonRequestWithStudent extends LessonRequest {
+  student: Student;
+}
+
+// Input types for tutor availability
+export interface CreateTutorAvailabilityInput {
+  tutor_id: string;
+  day_of_week?: number | null;
+  start_time: string;
+  end_time: string;
+  is_recurring?: boolean;
+  specific_date?: string | null;
+  notes?: string | null;
+}
+
+// Input types for lesson requests
+export interface CreateLessonRequestInput {
+  parent_id: string;
+  student_id: string;
+  subject: string;
+  preferred_date: string;
+  preferred_time?: string | null;
+  preferred_duration?: number;
+  notes?: string | null;
+}
+
+export interface UpdateLessonRequestInput {
+  status?: LessonRequestStatus;
+  tutor_response?: string | null;
+  scheduled_lesson_id?: string | null;
+}
+
 // Piano levels
 export type PianoLevel = 'beginner' | 'intermediate' | 'advanced';
 
@@ -751,6 +842,7 @@ export interface ScheduledLesson {
   status: TutoringLessonStatus;
   notes: string | null;
   session_id: string | null; // Links to lesson_sessions for grouped lessons
+  override_amount: number | null; // Manual price override for edge cases
   created_at: string;
   updated_at: string;
 }
@@ -938,6 +1030,7 @@ export interface UpdateScheduledLessonInput {
   duration_min?: number;
   status?: TutoringLessonStatus;
   notes?: string | null;
+  override_amount?: number | null;
   updated_at?: string;
 }
 

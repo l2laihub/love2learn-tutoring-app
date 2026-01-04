@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/theme';
+import { useAuthContext } from '../../src/contexts/AuthContext';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -17,6 +18,7 @@ function TabIcon({ name, color, size }: TabIconProps) {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { isTutor, isParent } = useAuthContext();
 
   return (
     <Tabs
@@ -48,7 +50,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: 'Love2Learn Tutoring',
+          headerTitle: isParent ? 'Parent Dashboard' : 'Love2Learn Tutoring',
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="home" color={color} size={size} />
           ),
@@ -57,8 +59,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="calendar"
         options={{
-          title: 'Calendar',
-          headerTitle: 'Lesson Calendar',
+          title: isParent ? 'Schedule' : 'Calendar',
+          headerTitle: isParent ? 'Lesson Schedule' : 'Lesson Calendar',
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="calendar" color={color} size={size} />
           ),
@@ -72,13 +74,15 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="people" color={color} size={size} />
           ),
+          // Hide Students tab for parents
+          href: isParent ? null : undefined,
         }}
       />
       <Tabs.Screen
         name="worksheets"
         options={{
           title: 'Worksheets',
-          headerTitle: 'AI Worksheets',
+          headerTitle: isParent ? 'My Worksheets' : 'AI Worksheets',
           tabBarActiveTintColor: colors.secondary.main,
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="document-text" color={color} size={size} />
@@ -93,6 +97,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="card" color={color} size={size} />
           ),
+          // Hide Payments tab for parents
+          href: isParent ? null : undefined,
         }}
       />
     </Tabs>
