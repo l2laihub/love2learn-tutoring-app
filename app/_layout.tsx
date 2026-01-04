@@ -74,6 +74,22 @@ function RootLayoutNav() {
           headerBackTitle: 'Back',
         }}
       />
+      <Stack.Screen
+        name="agreement"
+        options={{
+          headerShown: true,
+          headerTitle: 'Service Agreement',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
+        name="profile"
+        options={{
+          headerShown: true,
+          headerTitle: 'My Profile',
+          headerBackTitle: 'Back',
+        }}
+      />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
     </Stack>
   );

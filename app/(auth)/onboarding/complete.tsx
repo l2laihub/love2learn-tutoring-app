@@ -37,7 +37,7 @@ const FEATURES: FeatureItem[] = [
 ];
 
 export default function CompleteScreen() {
-  const { parent } = useAuthContext();
+  const { parent, refreshParent } = useAuthContext();
   const firstName = parent?.name?.split(' ')[0] ?? '';
 
   // Animation values
@@ -71,7 +71,9 @@ export default function CompleteScreen() {
     ]).start();
   }, [checkScale, contentOpacity, featureTranslateY]);
 
-  const handleGoToDashboard = () => {
+  const handleGoToDashboard = async () => {
+    // Refresh parent data to update onboarding_completed_at in context
+    await refreshParent();
     // Navigate to main tabs and reset navigation stack
     router.replace('/(tabs)');
   };

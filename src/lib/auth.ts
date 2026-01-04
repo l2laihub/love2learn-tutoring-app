@@ -24,6 +24,8 @@ export interface AuthState {
   parent: Parent | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Refresh parent data from database */
+  refreshParent: () => Promise<void>;
 }
 
 /**
@@ -298,6 +300,14 @@ export function useAuth(): AuthState {
     setParent(parentData);
   }, []);
 
+  // Function to refresh parent data (useful after onboarding completion)
+  const refreshParent = useCallback(async () => {
+    if (user?.id) {
+      console.log('[useAuth] Refreshing parent data');
+      await fetchParent(user.id);
+    }
+  }, [user?.id, fetchParent]);
+
   useEffect(() => {
     // Get initial session with timeout to prevent hanging
     const initializeAuth = async () => {
@@ -384,6 +394,7 @@ export function useAuth(): AuthState {
     parent,
     isLoading,
     isAuthenticated: !!session && !!user,
+    refreshParent,
   };
 }
 

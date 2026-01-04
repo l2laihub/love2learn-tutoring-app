@@ -28,7 +28,7 @@ interface UseOnboardingReturn {
 }
 
 export function useOnboarding(): UseOnboardingReturn {
-  const { parent, isParent } = useAuthContext();
+  const { parent, isParent, refreshParent } = useAuthContext();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -95,6 +95,10 @@ export function useOnboarding(): UseOnboardingReturn {
       }
 
       console.log('[useOnboarding] Onboarding completed successfully');
+
+      // Refresh parent data in context so navigation guards see the updated state
+      await refreshParent();
+
       return true;
     } catch (err) {
       console.error('[useOnboarding] Unexpected error:', err);

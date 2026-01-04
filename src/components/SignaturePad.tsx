@@ -231,6 +231,69 @@ const WebSignaturePad: React.FC<SignaturePadProps> = ({
   );
 };
 
+// Base64 encoding for React Native (btoa is not available)
+const base64Encode = (str: string): string => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let output = '';
+
+  // Convert to UTF-8
+  const utf8Str = unescape(encodeURIComponent(str));
+
+  for (let i = 0; i < utf8Str.length; i += 3) {
+    const char1 = utf8Str.charCodeAt(i);
+    const char2 = i + 1 < utf8Str.length ? utf8Str.charCodeAt(i + 1) : 0;
+    const char3 = i + 2 < utf8Str.length ? utf8Str.charCodeAt(i + 2) : 0;
+
+    const enc1 = char1 >> 2;
+    const enc2 = ((char1 & 3) << 4) | (char2 >> 4);
+    let enc3 = ((char2 & 15) << 2) | (char3 >> 6);
+    let enc4 = char3 & 63;
+
+    if (i + 1 >= utf8Str.length) {
+      enc3 = 64;
+      enc4 = 64;
+    } else if (i + 2 >= utf8Str.length) {
+      enc4 = 64;
+    }
+
+    output += chars.charAt(enc1) + chars.charAt(enc2) + chars.charAt(enc3) + chars.charAt(enc4);
+  }
+
+  return output;
+};
+
+// Helper function to generate SVG data URL from paths
+const generateSvgDataUrl = (
+  paths: Point[][],
+  width: number,
+  height: number,
+  strokeColor: string,
+  strokeWidth: number,
+  backgroundColor: string
+): string => {
+  // Build SVG path data
+  const pathData = paths
+    .filter(path => path.length >= 2)
+    .map(path => {
+      let d = `M ${path[0].x.toFixed(1)} ${path[0].y.toFixed(1)}`;
+      for (let i = 1; i < path.length; i++) {
+        d += ` L ${path[i].x.toFixed(1)} ${path[i].y.toFixed(1)}`;
+      }
+      return d;
+    })
+    .join(' ');
+
+  // Create SVG string
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="100%" height="100%" fill="${backgroundColor}"/>
+    <path d="${pathData}" stroke="${strokeColor}" stroke-width="${strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  // Convert to base64 data URL
+  const base64 = base64Encode(svg);
+  return `data:image/svg+xml;base64,${base64}`;
+};
+
 // Native (iOS/Android) implementation using PanResponder
 const NativeSignaturePad: React.FC<SignaturePadProps> = ({
   onSignatureChange,
@@ -248,6 +311,39 @@ const NativeSignaturePad: React.FC<SignaturePadProps> = ({
   const containerRef = useRef<View>(null);
   const [containerLayout, setContainerLayout] = useState({ width: 0, height: 0 });
 
+  // Use refs to track state in PanResponder callbacks (avoids stale closure issues)
+  const currentPathRef = useRef<Point[]>([]);
+  const pathsRef = useRef<Point[][]>([]);
+  const onSignatureChangeRef = useRef(onSignatureChange);
+  const onSignatureEndRef = useRef(onSignatureEnd);
+  const widthRef = useRef(propWidth || Dimensions.get('window').width - 48);
+  const heightRef = useRef(height);
+  const strokeColorRef = useRef(strokeColor);
+  const strokeWidthRef = useRef(strokeWidth);
+  const backgroundColorRef = useRef(backgroundColor);
+
+  // Keep refs in sync with state and props
+  useEffect(() => {
+    currentPathRef.current = currentPath;
+  }, [currentPath]);
+
+  useEffect(() => {
+    pathsRef.current = paths;
+  }, [paths]);
+
+  useEffect(() => {
+    onSignatureChangeRef.current = onSignatureChange;
+    onSignatureEndRef.current = onSignatureEnd;
+  }, [onSignatureChange, onSignatureEnd]);
+
+  useEffect(() => {
+    widthRef.current = propWidth || Dimensions.get('window').width - 48;
+    heightRef.current = height;
+    strokeColorRef.current = strokeColor;
+    strokeWidthRef.current = strokeWidth;
+    backgroundColorRef.current = backgroundColor;
+  }, [propWidth, height, strokeColor, strokeWidth, backgroundColor]);
+
   const width = propWidth || Dimensions.get('window').width - 48;
 
   const hasSignature = paths.length > 0 || currentPath.length > 0;
@@ -258,20 +354,36 @@ const NativeSignaturePad: React.FC<SignaturePadProps> = ({
       onMoveShouldSetPanResponder: () => !disabled,
       onPanResponderGrant: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
-        setCurrentPath([{ x: locationX, y: locationY }]);
+        const newPath = [{ x: locationX, y: locationY }];
+        currentPathRef.current = newPath;
+        setCurrentPath(newPath);
       },
       onPanResponderMove: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
-        setCurrentPath((prev) => [...prev, { x: locationX, y: locationY }]);
+        const newPoint = { x: locationX, y: locationY };
+        currentPathRef.current = [...currentPathRef.current, newPoint];
+        setCurrentPath(currentPathRef.current);
       },
       onPanResponderRelease: () => {
-        if (currentPath.length > 0) {
-          setPaths((prev) => [...prev, currentPath]);
+        if (currentPathRef.current.length > 0) {
+          const newPaths = [...pathsRef.current, currentPathRef.current];
+          pathsRef.current = newPaths;
+          setPaths(newPaths);
+          currentPathRef.current = [];
           setCurrentPath([]);
-          // Note: In a real implementation, you'd generate the base64 image here
-          // For now, we'll pass a placeholder indicating signature was made
-          onSignatureChange?.('signature-captured');
-          onSignatureEnd?.('signature-captured');
+
+          // Generate SVG data URL from all paths
+          const svgDataUrl = generateSvgDataUrl(
+            newPaths,
+            widthRef.current,
+            heightRef.current,
+            strokeColorRef.current,
+            strokeWidthRef.current,
+            backgroundColorRef.current
+          );
+
+          onSignatureChangeRef.current?.(svgDataUrl);
+          onSignatureEndRef.current?.(svgDataUrl);
         }
       },
     })
@@ -280,6 +392,8 @@ const NativeSignaturePad: React.FC<SignaturePadProps> = ({
   const clearSignature = () => {
     setPaths([]);
     setCurrentPath([]);
+    pathsRef.current = [];
+    currentPathRef.current = [];
     onSignatureChange?.(null);
   };
 

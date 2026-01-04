@@ -3,10 +3,12 @@
  * Displays the tutoring service agreement terms and conditions
  *
  * This is the legal content that parents must review and sign
+ * Content can be loaded from database templates or use default fallback
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { supabase } from '../lib/supabase';
 
 export interface AgreementContentProps {
   /** Version of the agreement */
@@ -15,13 +17,25 @@ export interface AgreementContentProps {
   tutorName?: string;
   /** Whether to show version info */
   showVersion?: boolean;
+  /** Custom content to display (overrides database fetch) */
+  content?: string;
+  /** Agreement type to fetch from database */
+  agreementType?: string;
 }
 
-// Agreement content - can be customized per deployment
+export interface AgreementTemplateInfo {
+  id: string;
+  name: string;
+  version: string;
+  content: string;
+  agreementType: string;
+}
+
+// Fallback agreement content when database is unavailable
 export const AGREEMENT_VERSION = '1.0';
 export const AGREEMENT_EFFECTIVE_DATE = 'January 2026';
 
-export const getAgreementText = (tutorName: string = 'Love to Learn Academy'): string => {
+export const getDefaultAgreementText = (tutorName: string = 'Love to Learn Academy'): string => {
   return `
 TUTORING SERVICES AGREEMENT
 
@@ -128,19 +142,104 @@ Effective Date: ${AGREEMENT_EFFECTIVE_DATE}
 `.trim();
 };
 
+// Hook to fetch active agreement template from database
+export function useActiveAgreementTemplate(agreementType: string = 'tutoring_services') {
+  const [template, setTemplate] = useState<AgreementTemplateInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchTemplate() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const { data, error: rpcError } = await supabase.rpc('get_active_agreement_template', {
+          p_agreement_type: agreementType,
+        });
+
+        if (rpcError) {
+          console.warn('Failed to fetch template from database, using default:', rpcError.message);
+          // Use default template on error
+          setTemplate({
+            id: 'default',
+            name: 'Tutoring Services Agreement',
+            version: AGREEMENT_VERSION,
+            content: getDefaultAgreementText(),
+            agreementType: agreementType,
+          });
+        } else if (data && data.length > 0) {
+          const row = data[0];
+          setTemplate({
+            id: row.template_id,
+            name: row.template_name,
+            version: row.template_version,
+            content: row.template_content,
+            agreementType: agreementType,
+          });
+        } else {
+          // No template found, use default
+          setTemplate({
+            id: 'default',
+            name: 'Tutoring Services Agreement',
+            version: AGREEMENT_VERSION,
+            content: getDefaultAgreementText(),
+            agreementType: agreementType,
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching agreement template:', err);
+        // Use default on any error
+        setTemplate({
+          id: 'default',
+          name: 'Tutoring Services Agreement',
+          version: AGREEMENT_VERSION,
+          content: getDefaultAgreementText(),
+          agreementType: agreementType,
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchTemplate();
+  }, [agreementType]);
+
+  return { template, loading, error };
+}
+
+// Legacy function for backward compatibility
+export const getAgreementText = getDefaultAgreementText;
+
 const AgreementContent: React.FC<AgreementContentProps> = ({
-  version = AGREEMENT_VERSION,
+  version,
   tutorName = 'Love to Learn Academy',
   showVersion = true,
+  content,
+  agreementType = 'tutoring_services',
 }) => {
-  const agreementText = getAgreementText(tutorName);
+  const { template, loading } = useActiveAgreementTemplate(agreementType);
+
+  // Use provided content, or fetched template content, or fallback to default
+  const agreementText = content || template?.content || getDefaultAgreementText(tutorName);
+  const displayVersion = version || template?.version || AGREEMENT_VERSION;
+
   const sections = agreementText.split('\n\n');
+
+  if (loading && !content) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="small" color="#3D9CA8" />
+        <Text style={styles.loadingText}>Loading agreement...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       {showVersion && (
         <View style={styles.versionBadge}>
-          <Text style={styles.versionText}>Version {version}</Text>
+          <Text style={styles.versionText}>Version {displayVersion}</Text>
         </View>
       )}
 
@@ -182,7 +281,17 @@ const AgreementContent: React.FC<AgreementContentProps> = ({
 
 export const AgreementScrollView: React.FC<AgreementContentProps & {
   onScrollEnd?: () => void;
-}> = ({ onScrollEnd, ...props }) => {
+  onTemplateLoaded?: (template: AgreementTemplateInfo) => void;
+}> = ({ onScrollEnd, onTemplateLoaded, ...props }) => {
+  const { template, loading } = useActiveAgreementTemplate(props.agreementType);
+
+  // Notify parent when template is loaded
+  useEffect(() => {
+    if (template && onTemplateLoaded) {
+      onTemplateLoaded(template);
+    }
+  }, [template, onTemplateLoaded]);
+
   const handleScroll = (event: any) => {
     const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
     const isAtEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 50;
@@ -192,6 +301,15 @@ export const AgreementScrollView: React.FC<AgreementContentProps & {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingScrollContainer}>
+        <ActivityIndicator size="large" color="#3D9CA8" />
+        <Text style={styles.loadingText}>Loading agreement...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.scrollView}
@@ -199,7 +317,7 @@ export const AgreementScrollView: React.FC<AgreementContentProps & {
       onScroll={handleScroll}
       scrollEventThrottle={16}
     >
-      <AgreementContent {...props} />
+      <AgreementContent {...props} content={template?.content} version={template?.version} />
     </ScrollView>
   );
 };
@@ -207,6 +325,20 @@ export const AgreementScrollView: React.FC<AgreementContentProps & {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
+  },
+  loadingContainer: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  loadingScrollContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#4A6572',
   },
   scrollView: {
     flex: 1,

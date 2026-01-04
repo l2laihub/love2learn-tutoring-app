@@ -399,6 +399,64 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.actionLabel}>Worksheets</Text>
               </Pressable>
+
+              <Pressable
+                style={styles.actionCard}
+                onPress={() => router.push('/admin')}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: '#E8EAF6' }]}>
+                  <Ionicons name="settings" size={24} color="#5C6BC0" />
+                </View>
+                <Text style={styles.actionLabel}>Admin Panel</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Parent: Quick Actions */}
+        {!isTutor && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.parentActionsGrid}>
+              <Pressable
+                style={styles.parentActionCard}
+                onPress={() => router.push('/profile')}
+              >
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.primary.subtle }]}>
+                  <Ionicons name="person-circle" size={24} color={colors.primary.main} />
+                </View>
+                <Text style={styles.parentActionLabel}>My Profile</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.parentActionCard}
+                onPress={() => router.push('/agreement')}
+              >
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.status.successBg }]}>
+                  <Ionicons name="document-text" size={24} color={colors.status.success} />
+                </View>
+                <Text style={styles.parentActionLabel}>View Agreement</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.parentActionCard}
+                onPress={() => router.push('/(tabs)/calendar')}
+              >
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.accent.subtle }]}>
+                  <Ionicons name="calendar" size={24} color={colors.accent.main} />
+                </View>
+                <Text style={styles.parentActionLabel}>Schedule</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.parentActionCard}
+                onPress={() => router.push('/(tabs)/worksheets')}
+              >
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.status.infoBg }]}>
+                  <Ionicons name="document" size={24} color={colors.status.info} />
+                </View>
+                <Text style={styles.parentActionLabel}>Worksheets</Text>
+              </Pressable>
             </View>
           </View>
         )}
@@ -406,7 +464,12 @@ export default function HomeScreen() {
         {/* Parent: My Children section */}
         {!isTutor && students.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Children</Text>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>My Children</Text>
+              <Pressable onPress={() => router.push('/profile')}>
+                <Text style={styles.seeAllText}>View all</Text>
+              </Pressable>
+            </View>
             <View style={styles.childrenGrid}>
               {students.map((student) => (
                 <View key={student.id} style={styles.childCard}>
@@ -415,7 +478,7 @@ export default function HomeScreen() {
                   </View>
                   <Text style={styles.childName} numberOfLines={1}>{student.name}</Text>
                   <View style={styles.childSubjects}>
-                    {student.subjects?.slice(0, 3).map((subject, idx) => (
+                    {student.subjects?.slice(0, 3).map((subject) => (
                       <Text key={subject} style={styles.childSubjectEmoji}>
                         {subjectEmojis[subject as Subject] || '📖'}
                       </Text>
@@ -994,6 +1057,35 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.status.error,
     fontWeight: typography.weights.medium,
+  },
+  // Parent: Quick Actions styles
+  parentActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  parentActionCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    minWidth: '22%',
+    flex: 1,
+    ...shadows.sm,
+  },
+  parentActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  parentActionLabel: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    textAlign: 'center',
   },
   // Parent: My Children section styles
   childrenGrid: {

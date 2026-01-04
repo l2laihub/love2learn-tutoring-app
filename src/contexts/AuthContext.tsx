@@ -32,6 +32,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, name: string, invitationToken?: string) => Promise<AuthResponse<Session>>;
   signOut: () => Promise<AuthResponse>;
   resetPassword: (email: string) => Promise<AuthResponse>;
+  // Parent data refresh
+  refreshParent: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);

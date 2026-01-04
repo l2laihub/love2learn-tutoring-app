@@ -22,7 +22,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/lib/supabase';
 import { useParentAgreement } from '../../../src/hooks/useParentAgreement';
-import { AgreementScrollView, AGREEMENT_VERSION, getAgreementText } from '../../../src/components/AgreementContent';
+import { AgreementScrollView, AGREEMENT_VERSION, AgreementTemplateInfo } from '../../../src/components/AgreementContent';
 import SignaturePad from '../../../src/components/SignaturePad';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -44,6 +44,7 @@ export default function AgreementScreen() {
   const [signedName, setSignedName] = useState('');
   const [signatureData, setSignatureData] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<'read' | 'sign'>('read');
+  const [templateInfo, setTemplateInfo] = useState<AgreementTemplateInfo | null>(null);
 
   // Hook for agreement operations
   const {
@@ -99,6 +100,11 @@ export default function AgreementScreen() {
     setSignatureData(data);
   }, []);
 
+  // Handle template loaded
+  const handleTemplateLoaded = useCallback((template: AgreementTemplateInfo) => {
+    setTemplateInfo(template);
+  }, []);
+
   // Proceed to signing step
   const handleProceedToSign = () => {
     if (!agreedToTerms) {
@@ -134,10 +140,13 @@ export default function AgreementScreen() {
     }
 
     try {
+      // Use the template version from database, or fallback to default
+      const agreementVersion = templateInfo?.version || AGREEMENT_VERSION;
+
       // Create the agreement record
       const agreement = await createAgreement({
         parentId: parentInfo.id,
-        agreementVersion: AGREEMENT_VERSION,
+        agreementVersion: agreementVersion,
         agreementType: 'tutoring_services',
         expiresInDays: 0, // No expiration for signed agreements
       });
@@ -262,6 +271,7 @@ export default function AgreementScreen() {
           <AgreementScrollView
             tutorName="Love to Learn Academy"
             onScrollEnd={handleScrollEnd}
+            onTemplateLoaded={handleTemplateLoaded}
           />
         </View>
 
