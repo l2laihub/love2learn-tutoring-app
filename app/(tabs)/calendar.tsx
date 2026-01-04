@@ -365,35 +365,43 @@ export default function CalendarScreen() {
       }
     }
 
-    // For combined sessions with multiple subjects, use each subject's base duration
-    // from tutor settings instead of dividing equally.
-    // Example: Piano (30min base) + Reading (60min base) = each student gets their
-    // subject's standard duration, and the total session time is calculated automatically.
+    // Determine how to calculate per-lesson duration:
+    //
+    // Scenario A: Each student takes ONE subject (different or same)
+    //   - Long Bui (Piano) + An Bui (Speech) in 60min session → 30min each
+    //   - Divide total session time by number of lessons
+    //
+    // Scenario B: Same student takes MULTIPLE subjects
+    //   - Lauren Vu (Piano + Reading) in one session
+    //   - Use each subject's base duration from tutor settings
+    //   - Piano=30min, Reading=60min → Lauren gets 30min Piano + 60min Reading
+    //
+    // Check if any student has multiple subjects (Scenario B)
+    const studentSubjectCounts = new Map<string, number>();
+    sessionData.lessons.forEach(lesson => {
+      const count = studentSubjectCounts.get(lesson.student_id) || 0;
+      studentSubjectCounts.set(lesson.student_id, count + 1);
+    });
+    const hasStudentWithMultipleSubjects = Array.from(studentSubjectCounts.values()).some(count => count > 1);
 
-    // Check if all lessons have the same subject (same-subject scenario)
-    const uniqueSubjects = [...new Set(sessionData.lessons.map(l => l.subject))];
-    const isSingleSubjectSession = uniqueSubjects.length === 1;
+    // Debug logging
+    console.log('=== Combined Session Creation Debug ===');
+    console.log('Session duration_min:', sessionData.duration_min);
+    console.log('Number of lessons:', sessionData.lessons.length);
+    console.log('Lessons:', sessionData.lessons.map(l => ({ student_id: l.student_id, subject: l.subject })));
+    console.log('Student subject counts:', Object.fromEntries(studentSubjectCounts));
+    console.log('Has student with multiple subjects (Scenario B):', hasStudentWithMultipleSubjects);
+    console.log('Per-lesson duration (Scenario A):', Math.floor(sessionData.duration_min / sessionData.lessons.length));
 
     // Create a session for each date
     for (const date of datesToCreate) {
       let lessonInputs;
       let calculatedTotalDuration: number;
 
-      if (isSingleSubjectSession) {
-        // Same subject for all students: divide total session time equally
-        // (e.g., 60min Piano session / 2 students = 30min each)
-        const perStudentDuration = Math.floor(sessionData.duration_min / sessionData.lessons.length);
-        calculatedTotalDuration = sessionData.duration_min;
-
-        lessonInputs = sessionData.lessons.map(lesson => ({
-          student_id: lesson.student_id,
-          subject: lesson.subject,
-          scheduled_at: date.toISOString(),
-          duration_min: perStudentDuration,
-        }));
-      } else {
-        // Multi-subject session: use each subject's base duration from tutor settings
-        // (e.g., Piano=30min, Reading=60min → each student gets their subject's duration)
+      if (hasStudentWithMultipleSubjects) {
+        // Scenario B: Student(s) taking multiple subjects
+        // Use each subject's base duration from tutor settings
+        // (e.g., Piano=30min, Reading=60min → each subject gets its standard duration)
         lessonInputs = sessionData.lessons.map(lesson => {
           const rateConfig = getSubjectRateConfig(tutorSettings, lesson.subject);
           return {
@@ -406,6 +414,19 @@ export default function CalendarScreen() {
 
         // Calculate total session duration as sum of all individual lesson durations
         calculatedTotalDuration = lessonInputs.reduce((sum, l) => sum + l.duration_min, 0);
+      } else {
+        // Scenario A: Each student takes one subject
+        // Divide total session time equally among all lessons
+        // (e.g., 60min session / 2 students = 30min each, regardless of subject)
+        const perLessonDuration = Math.floor(sessionData.duration_min / sessionData.lessons.length);
+        calculatedTotalDuration = sessionData.duration_min;
+
+        lessonInputs = sessionData.lessons.map(lesson => ({
+          student_id: lesson.student_id,
+          subject: lesson.subject,
+          scheduled_at: date.toISOString(),
+          duration_min: perLessonDuration,
+        }));
       }
 
       const sessionInput = {
@@ -413,6 +434,15 @@ export default function CalendarScreen() {
         duration_min: calculatedTotalDuration,
         notes: sessionData.notes,
       };
+
+      // Debug: Log what we're about to create
+      console.log('=== Creating Session ===');
+      console.log('Session input:', sessionInput);
+      console.log('Lesson inputs:', lessonInputs.map(l => ({
+        student_id: l.student_id,
+        subject: l.subject,
+        duration_min: l.duration_min
+      })));
 
       await createGroupedLesson.mutate(sessionInput, lessonInputs);
     }

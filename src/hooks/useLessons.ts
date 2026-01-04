@@ -999,9 +999,10 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
 
     const firstLesson = sessionLessons[0];
 
-    // For grouped sessions, all lessons share the same time slot and duration
-    // Use the first lesson's duration (they should all be the same for a session)
-    const sessionDuration = firstLesson.duration_min;
+    // For grouped sessions, calculate total session duration as sum of all lesson durations
+    // This handles both same-subject sessions (equal split) and multi-subject sessions
+    // E.g., Long Bui (30min Piano) + An Bui (30min Speech) = 60min total session
+    const sessionDuration = sessionLessons.reduce((sum, lesson) => sum + lesson.duration_min, 0);
 
     // Get unique student names and subjects
     const studentNames = [...new Set(sessionLessons.map(l => l.student.name))];

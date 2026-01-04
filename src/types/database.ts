@@ -42,6 +42,10 @@ export type Database = {
           role: UserRole;
           onboarding_completed_at: string | null;
           preferences: ParentPreferences | null;
+          invitation_token: string | null;
+          invitation_sent_at: string | null;
+          invitation_expires_at: string | null;
+          invitation_accepted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -54,6 +58,10 @@ export type Database = {
           role?: UserRole;
           onboarding_completed_at?: string | null;
           preferences?: ParentPreferences | null;
+          invitation_token?: string | null;
+          invitation_sent_at?: string | null;
+          invitation_expires_at?: string | null;
+          invitation_accepted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -66,6 +74,10 @@ export type Database = {
           role?: UserRole;
           onboarding_completed_at?: string | null;
           preferences?: ParentPreferences | null;
+          invitation_token?: string | null;
+          invitation_sent_at?: string | null;
+          invitation_expires_at?: string | null;
+          invitation_accepted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

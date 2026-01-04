@@ -41,6 +41,11 @@ import {
   useDeleteParent,
 } from '../../src/hooks/useParents';
 import {
+  useSendParentInvitation,
+  getInvitationStatusText,
+  formatInvitationSentTime,
+} from '../../src/hooks/useParentInvitation';
+import {
   Student,
   Parent,
   StudentWithParent,
@@ -97,6 +102,9 @@ export default function StudentsScreen() {
   const { mutate: createParent, loading: createParentLoading } = useCreateParent();
   const { mutate: updateParent, loading: updateParentLoading } = useUpdateParent();
   const { mutate: deleteParent, loading: deleteParentLoading } = useDeleteParent();
+
+  // Invitation hook
+  const { sendInvitation, loading: sendingInvite } = useSendParentInvitation();
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('students');
@@ -412,6 +420,52 @@ export default function StudentsScreen() {
         onPress: () => confirmDeleteParent(parent),
       },
     ]);
+  };
+
+  // Handle sending invitation to parent
+  const handleSendInvitation = async (parent: Parent) => {
+    console.log('[handleSendInvitation] Called for parent:', parent.id, parent.name);
+
+    // Check if parent already has an account
+    if (parent.user_id) {
+      console.log('[handleSendInvitation] Parent already has account');
+      Alert.alert('Already Registered', `${parent.name} already has an account.`);
+      return;
+    }
+
+    // Confirm before sending
+    const isResend = parent.invitation_sent_at != null;
+    const actionText = isResend ? 'Resend' : 'Send';
+
+    console.log('[handleSendInvitation] Showing confirmation dialog');
+    Alert.alert(
+      `${actionText} Invitation`,
+      `${actionText} an invitation email to ${parent.name} at ${parent.email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: actionText,
+          onPress: async () => {
+            console.log('[handleSendInvitation] User confirmed, sending invitation...');
+            const result = await sendInvitation(parent.id);
+            console.log('[handleSendInvitation] Result:', result);
+            if (result.success) {
+              Alert.alert(
+                'Invitation Sent',
+                `An invitation has been sent to ${parent.email}. The link will expire in 7 days.`
+              );
+              // Refresh parent data to update invitation status
+              refetchParents();
+            } else {
+              Alert.alert(
+                'Failed to Send',
+                result.error || 'An error occurred while sending the invitation.'
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   const confirmDeleteStudent = (student: Student) => {
@@ -908,38 +962,107 @@ export default function StudentsScreen() {
                 }
               />
             ) : (
-              filteredParents.map((parent) => (
-                <TouchableOpacity
-                  key={parent.id}
-                  style={styles.parentCard}
-                  onPress={() => handleParentPress(parent.id)}
-                  onLongPress={() => handleParentLongPress(parent)}
-                >
-                  <View style={styles.parentAvatar}>
-                    <Text style={styles.parentAvatarText}>
-                      {parent.name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join('')
-                        .substring(0, 2)
-                        .toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.parentInfo}>
-                    <Text style={styles.parentName}>{parent.name}</Text>
-                    <Text style={styles.parentEmail}>{parent.email}</Text>
-                    <Text style={styles.parentStudentCount}>
-                      {parent.students?.length ?? 0} student
-                      {(parent.students?.length ?? 0) !== 1 ? 's' : ''}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={20}
-                    color={colors.neutral.textMuted}
-                  />
-                </TouchableOpacity>
-              ))
+              filteredParents.map((parent) => {
+                // Determine invitation status
+                const hasAccount = parent.user_id != null;
+                const invitationSent = parent.invitation_sent_at != null;
+                const invitationExpired = parent.invitation_expires_at
+                  ? new Date(parent.invitation_expires_at) < new Date()
+                  : false;
+                const invitationAccepted = parent.invitation_accepted_at != null;
+
+                // Get status display
+                let statusText = '';
+                let statusColor = colors.neutral.textMuted;
+                let statusBgColor = colors.neutral.surface;
+
+                if (hasAccount || invitationAccepted) {
+                  statusText = 'Account Active';
+                  statusColor = colors.status.success;
+                  statusBgColor = '#E8F5E9';
+                } else if (invitationSent && !invitationExpired) {
+                  const expiresAt = new Date(parent.invitation_expires_at!);
+                  const daysLeft = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                  statusText = `Invited (${daysLeft}d left)`;
+                  statusColor = colors.status.warning;
+                  statusBgColor = '#FFF8E1';
+                } else if (invitationSent && invitationExpired) {
+                  statusText = 'Invitation Expired';
+                  statusColor = colors.status.error;
+                  statusBgColor = '#FFEBEE';
+                } else {
+                  statusText = 'Not Invited';
+                  statusColor = colors.neutral.textMuted;
+                  statusBgColor = colors.neutral.background;
+                }
+
+                const showInviteButton = !hasAccount && !invitationAccepted;
+                const inviteButtonText = invitationSent ? 'Resend' : 'Invite';
+
+                return (
+                  <TouchableOpacity
+                    key={parent.id}
+                    style={styles.parentCard}
+                    onPress={() => handleParentPress(parent.id)}
+                    onLongPress={() => handleParentLongPress(parent)}
+                  >
+                    <View style={styles.parentAvatar}>
+                      <Text style={styles.parentAvatarText}>
+                        {parent.name
+                          .split(' ')
+                          .map((n) => n[0])
+                          .join('')
+                          .substring(0, 2)
+                          .toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.parentInfo}>
+                      <Text style={styles.parentName}>{parent.name}</Text>
+                      <Text style={styles.parentEmail}>{parent.email}</Text>
+                      <View style={styles.parentMetaRow}>
+                        <Text style={styles.parentStudentCount}>
+                          {parent.students?.length ?? 0} student
+                          {(parent.students?.length ?? 0) !== 1 ? 's' : ''}
+                        </Text>
+                        <View style={[styles.statusBadge, { backgroundColor: statusBgColor }]}>
+                          <Text style={[styles.statusText, { color: statusColor }]}>
+                            {statusText}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    {showInviteButton ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.inviteButton,
+                          sendingInvite && styles.inviteButtonDisabled,
+                        ]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleSendInvitation(parent);
+                        }}
+                        disabled={sendingInvite}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        {sendingInvite ? (
+                          <ActivityIndicator size="small" color={colors.piano.primary} />
+                        ) : (
+                          <>
+                            <Ionicons name="mail-outline" size={16} color={colors.piano.primary} />
+                            <Text style={styles.inviteButtonText}>{inviteButtonText}</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    ) : (
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color={colors.neutral.textMuted}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })
             )}
           </View>
         )}
@@ -1207,7 +1330,40 @@ const styles = StyleSheet.create({
   parentStudentCount: {
     fontSize: typography.sizes.xs,
     color: colors.neutral.textMuted,
+  },
+  parentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 4,
+    gap: spacing.sm,
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  statusText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+  },
+  inviteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.piano.subtle,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  inviteButtonDisabled: {
+    opacity: 0.5,
+  },
+  inviteButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
   },
   // Filter styles
   filtersSection: {

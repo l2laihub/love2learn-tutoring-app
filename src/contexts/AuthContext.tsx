@@ -29,7 +29,7 @@ interface AuthContextType {
   isParent: boolean;
   // Auth methods
   signIn: (email: string, password: string) => Promise<AuthResponse<Session>>;
-  signUp: (email: string, password: string, name: string) => Promise<AuthResponse<Session>>;
+  signUp: (email: string, password: string, name: string, invitationToken?: string) => Promise<AuthResponse<Session>>;
   signOut: () => Promise<AuthResponse>;
   resetPassword: (email: string) => Promise<AuthResponse>;
 }

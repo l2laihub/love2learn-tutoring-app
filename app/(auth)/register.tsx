@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { Link, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/contexts/AuthContext';
+import { validateInvitationToken } from '../../src/hooks/useParentInvitation';
 
 type MessageType = 'error' | 'success' | 'info';
 
@@ -23,6 +24,9 @@ interface Message {
 }
 
 export default function RegisterScreen() {
+  // Get invitation token from URL params
+  const { token, email: invitedEmail } = useLocalSearchParams<{ token?: string; email?: string }>();
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,7 +37,54 @@ export default function RegisterScreen() {
   const [message, setMessage] = useState<Message | null>(null);
   const [registrationComplete, setRegistrationComplete] = useState(false);
 
+  // Invitation state
+  const [invitationToken, setInvitationToken] = useState<string | null>(null);
+  const [invitedParentName, setInvitedParentName] = useState<string | null>(null);
+  const [isValidatingToken, setIsValidatingToken] = useState(false);
+
   const { signUp } = useAuthContext();
+
+  // Validate invitation token on mount
+  useEffect(() => {
+    async function checkInvitation() {
+      if (token) {
+        setIsValidatingToken(true);
+        try {
+          const result = await validateInvitationToken(token);
+          if (result.isValid && result.email) {
+            setInvitationToken(token);
+            setEmail(result.email);
+            if (result.name) {
+              setName(result.name);
+              setInvitedParentName(result.name);
+            }
+            setMessage({
+              type: 'info',
+              text: `Welcome! You've been invited to join Love2Learn. Please complete your registration.`
+            });
+          } else {
+            setMessage({
+              type: 'error',
+              text: result.error || 'This invitation link is invalid or has expired. Please contact the tutor for a new invitation.'
+            });
+          }
+        } catch (error) {
+          console.error('Error validating token:', error);
+          setMessage({
+            type: 'error',
+            text: 'Failed to validate invitation. Please try again.'
+          });
+        } finally {
+          setIsValidatingToken(false);
+        }
+      } else if (invitedEmail) {
+        // If email is passed directly (without token), pre-fill it
+        setEmail(invitedEmail);
+      }
+    }
+
+    checkInvitation();
+  }, [token, invitedEmail]);
 
   const validateForm = (): boolean => {
     if (!name.trim()) {
@@ -74,10 +125,12 @@ export default function RegisterScreen() {
     setIsLoading(true);
 
     try {
+      // Pass invitation token if available (for linking to existing parent record)
       const { data: session, error: signUpError } = await signUp(
         email.trim(),
         password,
-        name.trim()
+        name.trim(),
+        invitationToken || undefined
       );
 
       if (signUpError) {
@@ -201,6 +254,18 @@ export default function RegisterScreen() {
     );
   }
 
+  // Show loading state while validating invitation token
+  if (isValidatingToken) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#FF6B6B" />
+          <Text style={styles.loadingText}>Validating invitation...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -223,8 +288,14 @@ export default function RegisterScreen() {
             <View style={styles.logoContainer}>
               <Ionicons name="heart" size={48} color="#FF6B6B" />
             </View>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Start your tutoring journey</Text>
+            <Text style={styles.title}>
+              {invitationToken ? 'Complete Registration' : 'Create Account'}
+            </Text>
+            <Text style={styles.subtitle}>
+              {invitationToken
+                ? `Welcome${invitedParentName ? `, ${invitedParentName}` : ''}! Set up your password to get started.`
+                : 'Start your tutoring journey'}
+            </Text>
           </View>
 
           {message && (
@@ -269,27 +340,35 @@ export default function RegisterScreen() {
               />
             </View>
 
-            <View style={styles.inputContainer}>
+            <View style={[
+              styles.inputContainer,
+              invitationToken && styles.inputContainerLocked
+            ]}>
               <Ionicons
                 name="mail-outline"
                 size={20}
-                color="#999"
+                color={invitationToken ? '#4CAF50' : '#999'}
                 style={styles.inputIcon}
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, invitationToken && styles.inputLocked]}
                 placeholder="Email"
                 placeholderTextColor="#999"
                 value={email}
                 onChangeText={(text) => {
-                  setEmail(text);
-                  setMessage(null);
+                  if (!invitationToken) {
+                    setEmail(text);
+                    setMessage(null);
+                  }
                 }}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
-                editable={!isLoading}
+                editable={!isLoading && !invitationToken}
               />
+              {invitationToken && (
+                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+              )}
             </View>
 
             <View style={styles.inputContainer}>
@@ -457,6 +536,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 16,
   },
+  inputContainerLocked: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
   inputIcon: {
     marginRight: 12,
   },
@@ -465,6 +549,9 @@ const styles = StyleSheet.create({
     height: 52,
     fontSize: 16,
     color: '#333',
+  },
+  inputLocked: {
+    color: '#2E7D32',
   },
   eyeIcon: {
     padding: 4,
@@ -574,5 +661,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FF6B6B',
     fontWeight: '500',
+  },
+  // Loading container for token validation
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
   },
 });

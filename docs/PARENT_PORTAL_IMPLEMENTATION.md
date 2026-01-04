@@ -27,6 +27,7 @@ This document outlines the implementation plan for the Parent Portal feature, en
 | Phase | Description | Status | Priority |
 |-------|-------------|--------|----------|
 | Phase 1 | Parent Onboarding Flow | ✅ Complete | High |
+| Phase 1.5 | Email Invitation System | ✅ Complete | High |
 | Phase 2 | Parent Calendar View | ✅ Complete | High |
 | Phase 3 | Parent Worksheets View | ✅ Complete | High |
 | Phase 4 | Profile & Settings | ✅ Complete | Medium |
@@ -101,6 +102,110 @@ app/_layout.tsx           # Added onboarding redirect logic
 app/(auth)/_layout.tsx    # Added onboarding screen route
 src/types/database.ts     # Added ParentPreferences types, updated Parent type
 ```
+
+---
+
+## Phase 1.5: Email Invitation System
+
+### Objective
+Enable tutors to send email invitations to imported parents, providing them with a secure registration link that automatically links their account to their existing parent record.
+
+### Tasks
+
+| Task | Description | Status | File(s) |
+|------|-------------|--------|---------|
+| 1.5.1 | Add invitation tracking columns to parents table | ✅ Complete | `supabase/migrations/20260103000010_parent_invitation.sql` |
+| 1.5.2 | Create Edge Function for sending invitations | ✅ Complete | `supabase/functions/send-parent-invite/index.ts` |
+| 1.5.3 | Create useParentInvitation hook | ✅ Complete | `src/hooks/useParentInvitation.ts` |
+| 1.5.4 | Add invitation UI to parent cards | ✅ Complete | `app/(tabs)/students.tsx` |
+| 1.5.5 | Update registration to handle invite tokens | ✅ Complete | `app/(auth)/register.tsx` |
+| 1.5.6 | Update auth functions for invitation token | ✅ Complete | `src/lib/auth.ts`, `src/contexts/AuthContext.tsx` |
+
+### Database Changes
+
+```sql
+-- Add invitation tracking to parents table
+ALTER TABLE parents
+ADD COLUMN invitation_token UUID,
+ADD COLUMN invitation_sent_at TIMESTAMPTZ,
+ADD COLUMN invitation_expires_at TIMESTAMPTZ,
+ADD COLUMN invitation_accepted_at TIMESTAMPTZ;
+
+-- Helper functions
+CREATE FUNCTION generate_parent_invitation(parent_id UUID) RETURNS UUID;
+CREATE FUNCTION validate_invitation_token(token UUID) RETURNS TABLE(...);
+CREATE FUNCTION accept_parent_invitation(token UUID, auth_user_id UUID) RETURNS UUID;
+
+-- Updated handle_new_user trigger to check for invitation_token in user metadata
+```
+
+### Flow
+
+```
+Tutor View (Students tab):
+  Parent Card → [Has Account?]
+    ├── YES → Shows "Account Active" badge
+    └── NO  → Shows "Invite" / "Resend" button
+              ↓
+              Tap Invite → Confirm dialog → Edge Function sends email
+              ↓
+              Email arrives with registration link:
+              love2learn://register?token=<UUID>&email=<parent_email>
+
+Parent Registration Flow:
+  Opens link → Register screen
+    ├── Validates token (shows error if expired/invalid)
+    ├── Pre-fills email (locked) and name from parent record
+    └── Parent sets password → Creates account → Auto-linked to children
+```
+
+### Files Created
+
+```
+supabase/
+├── migrations/
+│   └── 20260103000010_parent_invitation.sql  # Invitation columns + functions
+└── functions/
+    └── send-parent-invite/
+        └── index.ts                           # Edge Function for Resend email
+
+src/hooks/
+└── useParentInvitation.ts                     # Invitation hooks & helpers
+```
+
+### Files Modified
+
+```
+app/(tabs)/
+└── students.tsx          # Added invitation status badges + Send/Resend buttons
+
+app/(auth)/
+└── register.tsx          # Token validation, pre-fill email, locked input
+
+src/lib/
+└── auth.ts               # signUp accepts optional invitationToken
+
+src/contexts/
+└── AuthContext.tsx       # Updated signUp type signature
+
+src/types/
+└── database.ts           # Added invitation fields to Parent type
+```
+
+### Email Template Features
+- Personalized greeting with parent name
+- List of linked children
+- Clear call-to-action button
+- 7-day expiration notice
+- Tutor contact information
+- Responsive HTML design
+
+### Security Considerations
+- Tokens expire after 7 days
+- Only tutors can send invitations (Edge Function validates role)
+- Tokens are invalidated after use
+- Email must match the parent record
+- Token validation before pre-filling form data
 
 ---
 
@@ -307,6 +412,22 @@ src/
 - [ ] New parent (not imported) sees appropriate welcome message
 - [ ] Animations work on completion screen
 
+### Phase 1.5: Email Invitation
+- [ ] "Not Invited" status shows for parents without accounts
+- [ ] Send Invite button visible for non-registered parents
+- [ ] Invitation email sent successfully via Resend
+- [ ] Email contains correct parent name and children list
+- [ ] "Invited (Xd left)" status shows after sending
+- [ ] Resend button works for already-invited parents
+- [ ] "Invitation Expired" shows after 7 days
+- [ ] Registration link opens app with token parameter
+- [ ] Token validation shows error for expired tokens
+- [ ] Email field is pre-filled and locked for invited users
+- [ ] Name is pre-filled from parent record
+- [ ] Registration links account to existing parent record
+- [ ] "Account Active" status shows after registration
+- [ ] Invitation accepted_at timestamp is set
+
 ### Phase 2: Calendar
 - [ ] Parent sees only their children's lessons
 - [ ] Calendar displays correct dates/times
@@ -380,6 +501,16 @@ src/
   - Updated header titles for parent-friendly naming
   - Added "My Children" section to home screen
   - Added database types for new tables (TutorAvailability, LessonRequest)
+
+- **Phase 1.5 Email Invitation System Complete:**
+  - Created invitation tracking migration with columns and helper functions
+  - Created send-parent-invite Edge Function using Resend API
+  - Built useParentInvitation hook for sending invites and checking status
+  - Added invitation status badges and Send/Resend buttons to parent cards
+  - Updated registration screen to validate tokens and pre-fill email
+  - Modified auth.ts to pass invitation_token to Supabase during signup
+  - Updated AuthContext type signature for new signUp parameter
+  - Implemented token validation with clear error messages for expired/invalid tokens
 
 ---
 

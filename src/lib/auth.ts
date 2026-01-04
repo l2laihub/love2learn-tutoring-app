@@ -72,15 +72,28 @@ export async function signIn(
  * @param email - User's email address
  * @param password - User's password
  * @param name - User's full name
+ * @param invitationToken - Optional invitation token for linking to existing parent record
  * @returns AuthResponse with session data or error
  */
 export async function signUp(
   email: string,
   password: string,
-  name: string
+  name: string,
+  invitationToken?: string
 ): Promise<AuthResponse<Session>> {
   try {
     const normalizedEmail = email.trim().toLowerCase();
+
+    // Build user metadata
+    const userData: Record<string, string> = {
+      name: name.trim(),
+    };
+
+    // Include invitation token if provided
+    // The handle_new_user trigger will use this to link the auth user to existing parent record
+    if (invitationToken) {
+      userData.invitation_token = invitationToken;
+    }
 
     // Create auth user
     // The parent record is created automatically via database trigger (handle_new_user)
@@ -88,9 +101,7 @@ export async function signUp(
       email: normalizedEmail,
       password,
       options: {
-        data: {
-          name: name.trim(),
-        },
+        data: userData,
       },
     });
 
