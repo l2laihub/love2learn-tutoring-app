@@ -9,12 +9,14 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { validateInvitationToken } from '../../src/hooks/useParentInvitation';
+import { colors, typography, spacing, borderRadius, shadows } from '../../src/theme';
 
 type MessageType = 'error' | 'success' | 'info';
 
@@ -187,11 +189,11 @@ export default function RegisterScreen() {
   const getMessageStyle = (type: MessageType) => {
     switch (type) {
       case 'error':
-        return { bg: '#FFEBEE', color: '#F44336', icon: 'alert-circle' as const };
+        return { bg: colors.status.errorBg, color: colors.status.error, icon: 'alert-circle' as const };
       case 'success':
-        return { bg: '#E8F5E9', color: '#4CAF50', icon: 'checkmark-circle' as const };
+        return { bg: colors.status.successBg, color: colors.status.success, icon: 'checkmark-circle' as const };
       case 'info':
-        return { bg: '#E3F2FD', color: '#2196F3', icon: 'information-circle' as const };
+        return { bg: colors.status.infoBg, color: colors.status.info, icon: 'information-circle' as const };
     }
   };
 
@@ -201,7 +203,7 @@ export default function RegisterScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.successContainer}>
           <View style={styles.successIconContainer}>
-            <Ionicons name="mail" size={64} color="#4CAF50" />
+            <Ionicons name="mail" size={64} color={colors.status.success} />
           </View>
           <Text style={styles.successTitle}>Check Your Email</Text>
           <Text style={styles.successText}>
@@ -259,7 +261,7 @@ export default function RegisterScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#FF6B6B" />
+          <ActivityIndicator size="large" color={colors.primary.main} />
           <Text style={styles.loadingText}>Validating invitation...</Text>
         </View>
       </SafeAreaView>
@@ -281,12 +283,16 @@ export default function RegisterScreen() {
             onPress={handleBack}
             disabled={isLoading}
           >
-            <Ionicons name="arrow-back" size={24} color="#333" />
+            <Ionicons name="arrow-back" size={24} color={colors.neutral.text} />
           </TouchableOpacity>
 
           <View style={styles.header}>
             <View style={styles.logoContainer}>
-              <Ionicons name="heart" size={48} color="#FF6B6B" />
+              <Image
+                source={require('../../assets/icon.png')}
+                style={styles.logo}
+                resizeMode="contain"
+              />
             </View>
             <Text style={styles.title}>
               {invitationToken ? 'Complete Registration' : 'Create Account'}
@@ -322,13 +328,13 @@ export default function RegisterScreen() {
               <Ionicons
                 name="person-outline"
                 size={20}
-                color="#999"
+                color={colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Full Name"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.neutral.textMuted}
                 value={name}
                 onChangeText={(text) => {
                   setName(text);
@@ -347,13 +353,13 @@ export default function RegisterScreen() {
               <Ionicons
                 name="mail-outline"
                 size={20}
-                color={invitationToken ? '#4CAF50' : '#999'}
+                color={invitationToken ? colors.status.success : colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
                 style={[styles.input, invitationToken && styles.inputLocked]}
                 placeholder="Email"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.neutral.textMuted}
                 value={email}
                 onChangeText={(text) => {
                   if (!invitationToken) {
@@ -367,7 +373,7 @@ export default function RegisterScreen() {
                 editable={!isLoading && !invitationToken}
               />
               {invitationToken && (
-                <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+                <Ionicons name="checkmark-circle" size={20} color={colors.status.success} />
               )}
             </View>
 
@@ -375,13 +381,13 @@ export default function RegisterScreen() {
               <Ionicons
                 name="lock-closed-outline"
                 size={20}
-                color="#999"
+                color={colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Password"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.neutral.textMuted}
                 value={password}
                 onChangeText={(text) => {
                   setPassword(text);
@@ -399,7 +405,7 @@ export default function RegisterScreen() {
                 <Ionicons
                   name={showPassword ? 'eye-outline' : 'eye-off-outline'}
                   size={20}
-                  color="#999"
+                  color={colors.neutral.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -408,13 +414,13 @@ export default function RegisterScreen() {
               <Ionicons
                 name="lock-closed-outline"
                 size={20}
-                color="#999"
+                color={colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
                 style={styles.input}
                 placeholder="Confirm Password"
-                placeholderTextColor="#999"
+                placeholderTextColor={colors.neutral.textMuted}
                 value={confirmPassword}
                 onChangeText={(text) => {
                   setConfirmPassword(text);
@@ -432,7 +438,7 @@ export default function RegisterScreen() {
                 <Ionicons
                   name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
                   size={20}
-                  color="#999"
+                  color={colors.neutral.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -474,204 +480,209 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.neutral.white,
   },
   keyboardView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
+    padding: spacing.xl,
   },
   backButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.base,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.xl,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FFF0F0',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.primary.subtle,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.base,
+    ...shadows.md,
+  },
+  logo: {
+    width: 70,
+    height: 70,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 8,
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
   },
   messageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
+    padding: spacing.md,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.base,
   },
   messageText: {
-    fontSize: 14,
-    marginLeft: 8,
+    fontSize: typography.sizes.sm,
+    marginLeft: spacing.sm,
     flex: 1,
   },
   form: {
-    marginBottom: 32,
+    marginBottom: spacing['2xl'],
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    marginBottom: 16,
-    paddingHorizontal: 16,
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    marginBottom: spacing.base,
+    paddingHorizontal: spacing.base,
+    borderWidth: 1,
+    borderColor: colors.neutral.borderLight,
   },
   inputContainerLocked: {
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.status.successBg,
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: colors.status.success,
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: spacing.md,
   },
   input: {
     flex: 1,
     height: 52,
-    fontSize: 16,
-    color: '#333',
+    fontSize: typography.sizes.base,
+    color: colors.neutral.text,
   },
   inputLocked: {
-    color: '#2E7D32',
+    color: colors.secondary.dark,
   },
   eyeIcon: {
-    padding: 4,
+    padding: spacing.xs,
   },
   passwordHint: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 24,
-    marginTop: -8,
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginBottom: spacing.xl,
+    marginTop: -spacing.sm,
   },
   registerButton: {
-    backgroundColor: '#FF6B6B',
-    borderRadius: 12,
+    backgroundColor: colors.accent.main,
+    borderRadius: borderRadius.md,
     height: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FF6B6B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    ...shadows.md,
   },
   registerButtonDisabled: {
-    backgroundColor: '#FFAAA8',
-    shadowOpacity: 0.1,
+    backgroundColor: colors.accent.light,
   },
   registerButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.textInverse,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 'auto',
-    paddingBottom: 24,
+    paddingBottom: spacing.xl,
   },
   footerText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
   },
   loginLink: {
-    fontSize: 14,
-    color: '#FF6B6B',
-    fontWeight: '600',
+    fontSize: typography.sizes.sm,
+    color: colors.primary.main,
+    fontWeight: typography.weights.semibold,
   },
   // Success state styles
   successContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: spacing.xl,
   },
   successIconContainer: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#E8F5E9',
+    backgroundColor: colors.status.successBg,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.xl,
+    ...shadows.md,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginBottom: spacing.md,
   },
   successText: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
     textAlign: 'center',
   },
   emailText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 8,
-    marginBottom: 16,
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginTop: spacing.sm,
+    marginBottom: spacing.base,
   },
   successHint: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
     textAlign: 'center',
-    marginBottom: 32,
-    paddingHorizontal: 16,
+    marginBottom: spacing['2xl'],
+    paddingHorizontal: spacing.base,
   },
   signInButton: {
-    backgroundColor: '#FF6B6B',
-    borderRadius: 12,
+    backgroundColor: colors.accent.main,
+    borderRadius: borderRadius.md,
     height: 52,
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: spacing.base,
+    ...shadows.md,
   },
   signInButtonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.textInverse,
   },
   resendButton: {
-    padding: 12,
+    padding: spacing.md,
   },
   resendButtonText: {
-    fontSize: 14,
-    color: '#FF6B6B',
-    fontWeight: '500',
+    fontSize: typography.sizes.sm,
+    color: colors.primary.main,
+    fontWeight: typography.weights.medium,
   },
   // Loading container for token validation
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: spacing.xl,
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
+    marginTop: spacing.base,
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
   },
 });

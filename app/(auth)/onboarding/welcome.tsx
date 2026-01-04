@@ -3,7 +3,7 @@
  * First step of parent onboarding - shows welcome message and linked children
  */
 
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +45,11 @@ export default function WelcomeScreen() {
       >
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <Ionicons name="heart" size={56} color={colors.primary.main} />
+          <Image
+            source={require('../../../assets/icon.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
         </View>
 
         {/* Welcome Message */}
@@ -183,6 +187,11 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing.xl,
     marginTop: spacing.xl,
+    ...shadows.md,
+  },
+  logo: {
+    width: 70,
+    height: 70,
   },
   title: {
     fontSize: typography.sizes['2xl'],

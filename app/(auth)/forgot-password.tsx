@@ -12,7 +12,7 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../src/theme';
@@ -24,14 +24,13 @@ interface Message {
   text: string;
 }
 
-export default function LoginScreen() {
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
 
-  const { signIn } = useAuthContext();
+  const { resetPassword } = useAuthContext();
 
   const getMessageStyle = (type: MessageType) => {
     switch (type) {
@@ -44,16 +43,11 @@ export default function LoginScreen() {
     }
   };
 
-  const validateForm = (): boolean => {
+  const validateEmail = (): boolean => {
     if (!email.trim()) {
-      setMessage({ type: 'error', text: 'Please enter your email' });
+      setMessage({ type: 'error', text: 'Please enter your email address' });
       return false;
     }
-    if (!password) {
-      setMessage({ type: 'error', text: 'Please enter your password' });
-      return false;
-    }
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
       setMessage({ type: 'error', text: 'Please enter a valid email address' });
@@ -62,45 +56,77 @@ export default function LoginScreen() {
     return true;
   };
 
-  const handleLogin = async () => {
+  const handleResetPassword = async () => {
     setMessage(null);
 
-    if (!validateForm()) {
+    if (!validateEmail()) {
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const { error: signInError } = await signIn(email.trim(), password);
+      const { error: resetError } = await resetPassword(email.trim());
 
-      if (signInError) {
-        // Handle specific error messages
-        if (signInError.message.includes('Invalid login credentials')) {
-          setMessage({ type: 'error', text: 'Invalid email or password. Please try again.' });
-        } else if (signInError.message.includes('Email not confirmed')) {
-          setMessage({
-            type: 'info',
-            text: 'Please verify your email before signing in. Check your inbox for the verification link.'
-          });
-        } else {
-          setMessage({ type: 'error', text: signInError.message });
-        }
+      if (resetError) {
+        setMessage({ type: 'error', text: resetError.message });
         return;
       }
 
-      // Success - show brief message then navigate
-      setMessage({ type: 'success', text: 'Welcome back! Signing you in...' });
-      setTimeout(() => {
-        router.replace('/(tabs)');
-      }, 500);
+      setEmailSent(true);
+      setMessage({
+        type: 'success',
+        text: `Password reset email sent to ${email.trim()}. Check your inbox for the reset link.`
+      });
     } catch (err) {
-      console.error('Login error:', err);
-      setMessage({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
+      console.error('Password reset error:', err);
+      setMessage({ type: 'error', text: 'Failed to send reset email. Please try again.' });
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleBack = () => {
+    router.back();
+  };
+
+  // Success state after email sent
+  if (emailSent) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.successContainer}>
+          <View style={styles.successIconContainer}>
+            <Ionicons name="mail-open" size={64} color={colors.primary.main} />
+          </View>
+          <Text style={styles.successTitle}>Check Your Email</Text>
+          <Text style={styles.successText}>
+            We've sent a password reset link to:
+          </Text>
+          <Text style={styles.emailText}>{email}</Text>
+          <Text style={styles.successHint}>
+            Click the link in the email to reset your password. If you don't see it, check your spam folder.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={styles.primaryButtonText}>Back to Sign In</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => {
+              setEmailSent(false);
+              setMessage(null);
+            }}
+          >
+            <Text style={styles.secondaryButtonText}>Try a different email</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -112,6 +138,14 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={handleBack}
+            disabled={isLoading}
+          >
+            <Ionicons name="arrow-back" size={24} color={colors.neutral.text} />
+          </TouchableOpacity>
+
           <View style={styles.header}>
             <View style={styles.logoContainer}>
               <Image
@@ -120,8 +154,10 @@ export default function LoginScreen() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.title}>Love2Learn</Text>
-            <Text style={styles.subtitle}>Welcome back!</Text>
+            <Text style={styles.title}>Forgot Password?</Text>
+            <Text style={styles.subtitle}>
+              No worries! Enter your email and we'll send you a link to reset your password.
+            </Text>
           </View>
 
           {message && (
@@ -164,71 +200,31 @@ export default function LoginScreen() {
                 keyboardType="email-address"
                 autoComplete="email"
                 editable={!isLoading}
+                autoFocus
               />
             </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={20}
-                color={colors.neutral.textMuted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                placeholderTextColor={colors.neutral.textMuted}
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  setMessage(null);
-                }}
-                secureTextEntry={!showPassword}
-                autoComplete="password"
-                editable={!isLoading}
-              />
-              <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                style={styles.eyeIcon}
-                disabled={isLoading}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                  size={20}
-                  color={colors.neutral.textMuted}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <Link href="/(auth)/forgot-password" asChild>
-              <TouchableOpacity
-                style={styles.forgotPassword}
-                disabled={isLoading}
-              >
-                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-              </TouchableOpacity>
-            </Link>
 
             <TouchableOpacity
-              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-              onPress={handleLogin}
+              style={[styles.resetButton, isLoading && styles.resetButtonDisabled]}
+              onPress={handleResetPassword}
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <ActivityIndicator color={colors.neutral.textInverse} />
               ) : (
-                <Text style={styles.loginButtonText}>Sign In</Text>
+                <Text style={styles.resetButtonText}>Send Reset Link</Text>
               )}
             </TouchableOpacity>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account? </Text>
-            <Link href="/(auth)/register" asChild>
-              <TouchableOpacity disabled={isLoading}>
-                <Text style={styles.registerLink}>Sign Up</Text>
-              </TouchableOpacity>
-            </Link>
+            <Text style={styles.footerText}>Remember your password? </Text>
+            <TouchableOpacity
+              onPress={() => router.replace('/(auth)/login')}
+              disabled={isLoading}
+            >
+              <Text style={styles.loginLink}>Sign In</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -247,7 +243,13 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: spacing.xl,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: spacing.base,
   },
   header: {
     alignItems: 'center',
@@ -276,6 +278,8 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: typography.sizes.base,
     color: colors.neutral.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.base,
   },
   messageContainer: {
     flexDirection: 'row',
@@ -297,7 +301,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.neutral.background,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.base,
+    marginBottom: spacing.xl,
     paddingHorizontal: spacing.base,
     borderWidth: 1,
     borderColor: colors.neutral.borderLight,
@@ -311,19 +315,7 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.neutral.text,
   },
-  eyeIcon: {
-    padding: spacing.xs,
-  },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: spacing.xl,
-  },
-  forgotPasswordText: {
-    fontSize: typography.sizes.sm,
-    color: colors.primary.main,
-    fontWeight: typography.weights.medium,
-  },
-  loginButton: {
+  resetButton: {
     backgroundColor: colors.accent.main,
     borderRadius: borderRadius.md,
     height: 52,
@@ -331,10 +323,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadows.md,
   },
-  loginButtonDisabled: {
+  resetButtonDisabled: {
     backgroundColor: colors.accent.light,
   },
-  loginButtonText: {
+  resetButtonText: {
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.textInverse,
@@ -343,14 +335,80 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 'auto',
   },
   footerText: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
   },
-  registerLink: {
+  loginLink: {
     fontSize: typography.sizes.sm,
     color: colors.primary.main,
     fontWeight: typography.weights.semibold,
+  },
+  // Success state styles
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  successIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.primary.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xl,
+    ...shadows.md,
+  },
+  successTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginBottom: spacing.md,
+  },
+  successText: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
+  },
+  emailText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginTop: spacing.sm,
+    marginBottom: spacing.base,
+  },
+  successHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+    marginBottom: spacing['2xl'],
+    paddingHorizontal: spacing.base,
+  },
+  primaryButton: {
+    backgroundColor: colors.accent.main,
+    borderRadius: borderRadius.md,
+    height: 52,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.base,
+    ...shadows.md,
+  },
+  primaryButtonText: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.textInverse,
+  },
+  secondaryButton: {
+    padding: spacing.md,
+  },
+  secondaryButtonText: {
+    fontSize: typography.sizes.sm,
+    color: colors.primary.main,
+    fontWeight: typography.weights.medium,
   },
 });

@@ -102,7 +102,7 @@ const ExpoSecureStoreAdapter = {
  * - Secure storage for auth token persistence
  * - Auto refresh token enabled
  * - Persistent sessions enabled
- * - URL detection for deep linking disabled (handled by Expo Router)
+ * - URL detection enabled for web (for password recovery flows)
  */
 let supabaseClient: SupabaseClient<Database>;
 
@@ -115,7 +115,8 @@ try {
         storage: ExpoSecureStoreAdapter,
         autoRefreshToken: true,
         persistSession: true,
-        detectSessionInUrl: false,
+        // Enable URL detection for web to handle password recovery redirects
+        detectSessionInUrl: Platform.OS === 'web',
       },
       global: {
         headers: {

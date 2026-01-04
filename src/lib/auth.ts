@@ -12,8 +12,25 @@ import {
   AuthError,
   AuthChangeEvent,
 } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { Parent } from '../types/database';
+
+/**
+ * Get the appropriate redirect URL based on platform
+ * For web, uses the current origin; for native, uses deep link
+ */
+function getPasswordResetRedirectUrl(): string {
+  if (Platform.OS === 'web') {
+    // For web, redirect to the reset-password page
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/(auth)/reset-password`;
+    }
+    return 'http://localhost:8081/(auth)/reset-password';
+  }
+  // For native apps, use deep link
+  return 'love2learn://reset-password';
+}
 
 /**
  * Auth state interface
@@ -186,10 +203,13 @@ export async function getCurrentUser(): Promise<AuthResponse<User>> {
  */
 export async function resetPassword(email: string): Promise<AuthResponse> {
   try {
+    const redirectUrl = getPasswordResetRedirectUrl();
+    console.log('[resetPassword] Using redirect URL:', redirectUrl);
+
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
       {
-        redirectTo: 'love2learn://reset-password',
+        redirectTo: redirectUrl,
       }
     );
 

@@ -4,11 +4,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AuthProvider, useAuthContext } from '../src/contexts/AuthContext';
+import { supabase } from '../src/lib/supabase';
+import { colors } from '../src/theme';
 
 function LoadingScreen() {
   return (
     <View style={styles.loadingContainer}>
-      <ActivityIndicator size="large" color="#FF6B6B" />
+      <ActivityIndicator size="large" color={colors.primary.main} />
     </View>
   );
 }
@@ -18,15 +20,36 @@ function RootLayoutNav() {
   const segments = useSegments();
   const navigationState = useRootNavigationState();
 
+  // Handle PASSWORD_RECOVERY event from Supabase auth
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        console.log('[RootLayout] PASSWORD_RECOVERY event detected, redirecting to reset-password');
+        // Redirect to reset password page when recovery link is clicked
+        router.replace('/(auth)/reset-password');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     // Wait for navigation to be ready
     if (!navigationState?.key) return;
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[1] === 'onboarding';
+    const inResetPassword = segments[1] === 'reset-password';
 
     if (isLoading) {
       // Still loading auth state, don't navigate yet
+      return;
+    }
+
+    // Don't redirect if user is on reset-password page (they have a valid recovery session)
+    if (inResetPassword) {
       return;
     }
 
@@ -111,6 +134,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.neutral.white,
   },
 });
