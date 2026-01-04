@@ -10,7 +10,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-app-name',
 };
 
 interface InviteRequest {
@@ -37,7 +37,7 @@ serve(async (req: Request) => {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const appUrl = Deno.env.get('APP_URL') || 'https://love2learn.app';
+    const appUrl = Deno.env.get('APP_URL') || 'https://app.lovetolearn.site';
 
     if (!resendApiKey) {
       throw new Error('RESEND_API_KEY is not configured');
@@ -140,9 +140,11 @@ serve(async (req: Request) => {
     }
 
     const invitationToken = tokenData;
+    console.log('Generated invitation token:', invitationToken);
 
     // Build registration URL with token
     const registrationUrl = `${appUrl}/register?token=${invitationToken}&email=${encodeURIComponent(parentData.email)}`;
+    console.log('Registration URL:', registrationUrl);
 
     // Format children list for email
     const childrenList = parentData.students?.map((child: any) => {
@@ -158,63 +160,79 @@ serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Love2Learn Tutoring <noreply@love2learn.app>',
+        from: 'Love to Learn Academy <noreply@app.lovetolearn.site>',
         to: [parentData.email],
-        subject: 'You\'re Invited to Love2Learn Parent Portal!',
+        subject: 'You\'re Invited to Love to Learn Academy Parent Portal!',
         html: `
           <!DOCTYPE html>
           <html>
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Welcome to Love2Learn</title>
+            <title>Welcome to Love to Learn Academy</title>
           </head>
-          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="text-align: center; margin-bottom: 30px;">
-              <h1 style="color: #FF6B6B; margin: 0;">Love2Learn</h1>
-              <p style="color: #666; font-size: 14px; margin-top: 5px;">Parent Portal</p>
-            </div>
+          <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1B3A4B; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F8FAFB;">
+            <div style="background: #FFFFFF; border-radius: 14px; padding: 30px; box-shadow: 0 4px 8px rgba(27, 58, 75, 0.08);">
 
-            <div style="background: linear-gradient(135deg, #FF6B6B 0%, #FF8E8E 100%); border-radius: 12px; padding: 30px; margin-bottom: 30px; color: white;">
-              <h2 style="margin: 0 0 10px 0;">Welcome, ${parentData.name}!</h2>
-              <p style="margin: 0; opacity: 0.9;">You've been invited to join the Love2Learn Parent Portal</p>
-            </div>
+              <!-- Header -->
+              <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #3D9CA8; margin: 0; font-size: 28px;">Love to Learn Academy</h1>
+                <p style="color: #4A6572; font-size: 14px; margin-top: 5px;">Parent Portal</p>
+              </div>
 
-            <p>Your tutor has set up access for you to:</p>
-            <ul style="padding-left: 20px;">
-              <li>View your children's lesson schedule</li>
-              <li>Track worksheet assignments</li>
-              <li>Print practice materials</li>
-              <li>Stay connected with their learning progress</li>
-            </ul>
+              <!-- Welcome Banner -->
+              <div style="background: linear-gradient(135deg, #3D9CA8 0%, #5FB3BC 100%); border-radius: 12px; padding: 30px; margin-bottom: 30px; color: white;">
+                <h2 style="margin: 0 0 10px 0; font-size: 24px;">Welcome, ${parentData.name}!</h2>
+                <p style="margin: 0; opacity: 0.95;">You've been invited to join the Love to Learn Academy Parent Portal</p>
+              </div>
 
-            <div style="background: #f8f9fa; border-radius: 8px; padding: 20px; margin: 25px 0;">
-              <h3 style="margin: 0 0 15px 0; color: #333;">Your Children:</h3>
-              <ul style="padding-left: 20px; margin: 0;">
-                ${childrenList}
+              <!-- Features List -->
+              <p style="color: #1B3A4B; font-size: 16px;">Your tutor has set up access for you to:</p>
+              <ul style="padding-left: 20px; color: #4A6572;">
+                <li style="margin-bottom: 8px;">View your children's lesson schedule</li>
+                <li style="margin-bottom: 8px;">Track worksheet assignments</li>
+                <li style="margin-bottom: 8px;">Print practice materials</li>
+                <li style="margin-bottom: 8px;">Stay connected with their learning progress</li>
               </ul>
+
+              <!-- Children Section -->
+              <div style="background: #F1F8E9; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #7CB342;">
+                <h3 style="margin: 0 0 15px 0; color: #5D8A2F; font-size: 16px;">🌱 Your Children:</h3>
+                <ul style="padding-left: 20px; margin: 0; color: #1B3A4B;">
+                  ${childrenList}
+                </ul>
+              </div>
+
+              <!-- CTA Button -->
+              <div style="text-align: center; margin: 35px 0;">
+                <a href="${registrationUrl}" style="display: inline-block; background: linear-gradient(135deg, #FF6B6B 0%, #FF8E8E 100%); color: white; text-decoration: none; padding: 16px 45px; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);">
+                  Set Up Your Account
+                </a>
+              </div>
+
+              <!-- Fallback Link -->
+              <p style="color: #8A9BA8; font-size: 13px; text-align: center;">
+                If the button doesn't work, copy and paste this link:<br>
+                <a href="${registrationUrl}" style="color: #3D9CA8; word-break: break-all;">${registrationUrl}</a>
+              </p>
+
+              <!-- Expiration Notice -->
+              <p style="color: #8A9BA8; font-size: 14px; text-align: center; margin-top: 20px;">
+                ⏰ This invitation expires in 7 days.
+              </p>
+
+              <hr style="border: none; border-top: 1px solid #E0E8EC; margin: 30px 0;">
+
+              <!-- Footer -->
+              <p style="color: #8A9BA8; font-size: 12px; text-align: center;">
+                If you didn't expect this invitation, you can safely ignore this email.<br>
+                Questions? Contact your tutor directly.
+              </p>
+
+              <p style="color: #8A9BA8; font-size: 12px; text-align: center; margin-top: 20px;">
+                &copy; ${new Date().getFullYear()} Love to Learn Academy
+              </p>
             </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${registrationUrl}" style="display: inline-block; background: #FF6B6B; color: white; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-weight: 600; font-size: 16px;">
-                Set Up Your Account
-              </a>
-            </div>
-
-            <p style="color: #666; font-size: 14px; text-align: center;">
-              This invitation expires in 7 days.
-            </p>
-
-            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-
-            <p style="color: #999; font-size: 12px; text-align: center;">
-              If you didn't expect this invitation, you can safely ignore this email.<br>
-              Questions? Contact your tutor directly.
-            </p>
-
-            <p style="color: #999; font-size: 12px; text-align: center; margin-top: 20px;">
-              &copy; ${new Date().getFullYear()} Love2Learn Tutoring
-            </p>
           </body>
           </html>
         `,

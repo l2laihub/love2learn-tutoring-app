@@ -33,7 +33,8 @@ export default function WelcomeScreen() {
   const hasChildren = students.length > 0;
 
   const handleContinue = () => {
-    router.push('/(auth)/onboarding/profile');
+    // Navigate to agreement screen for parents to sign
+    router.push('/(auth)/onboarding/agreement');
   };
 
   return (

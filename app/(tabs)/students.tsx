@@ -40,11 +40,7 @@ import {
   useUpdateParent,
   useDeleteParent,
 } from '../../src/hooks/useParents';
-import {
-  useSendParentInvitation,
-  getInvitationStatusText,
-  formatInvitationSentTime,
-} from '../../src/hooks/useParentInvitation';
+import { useSendParentInvitation } from '../../src/hooks/useParentInvitation';
 import {
   Student,
   Parent,
@@ -104,7 +100,8 @@ export default function StudentsScreen() {
   const { mutate: deleteParent, loading: deleteParentLoading } = useDeleteParent();
 
   // Invitation hook
-  const { sendInvitation, loading: sendingInvite } = useSendParentInvitation();
+  const { sendInvitation } = useSendParentInvitation();
+  const [sendingInviteForParentId, setSendingInviteForParentId] = useState<string | null>(null);
 
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>('students');
@@ -429,7 +426,11 @@ export default function StudentsScreen() {
     // Check if parent already has an account
     if (parent.user_id) {
       console.log('[handleSendInvitation] Parent already has account');
-      Alert.alert('Already Registered', `${parent.name} already has an account.`);
+      if (Platform.OS === 'web') {
+        window.alert(`${parent.name} already has an account.`);
+      } else {
+        Alert.alert('Already Registered', `${parent.name} already has an account.`);
+      }
       return;
     }
 
@@ -438,34 +439,60 @@ export default function StudentsScreen() {
     const actionText = isResend ? 'Resend' : 'Send';
 
     console.log('[handleSendInvitation] Showing confirmation dialog');
-    Alert.alert(
-      `${actionText} Invitation`,
-      `${actionText} an invitation email to ${parent.name} at ${parent.email}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: actionText,
-          onPress: async () => {
-            console.log('[handleSendInvitation] User confirmed, sending invitation...');
-            const result = await sendInvitation(parent.id);
-            console.log('[handleSendInvitation] Result:', result);
-            if (result.success) {
-              Alert.alert(
-                'Invitation Sent',
-                `An invitation has been sent to ${parent.email}. The link will expire in 7 days.`
-              );
-              // Refresh parent data to update invitation status
-              refetchParents();
-            } else {
-              Alert.alert(
-                'Failed to Send',
-                result.error || 'An error occurred while sending the invitation.'
-              );
-            }
+
+    // Helper to perform the actual send
+    const performSend = async () => {
+      console.log('[handleSendInvitation] User confirmed, sending invitation...');
+      setSendingInviteForParentId(parent.id);
+      try {
+        const result = await sendInvitation(parent.id);
+        console.log('[handleSendInvitation] Result:', result);
+        if (result.success) {
+          if (Platform.OS === 'web') {
+            window.alert(`Invitation sent to ${parent.email}. The link will expire in 7 days.`);
+          } else {
+            Alert.alert(
+              'Invitation Sent',
+              `An invitation has been sent to ${parent.email}. The link will expire in 7 days.`
+            );
+          }
+          refetchParents();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert(result.error || 'An error occurred while sending the invitation.');
+          } else {
+            Alert.alert(
+              'Failed to Send',
+              result.error || 'An error occurred while sending the invitation.'
+            );
+          }
+        }
+      } finally {
+        setSendingInviteForParentId(null);
+      }
+    };
+
+    // Handle web vs native confirmation
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `${actionText} an invitation email to ${parent.name} at ${parent.email}?`
+      );
+      if (confirmed) {
+        await performSend();
+      }
+    } else {
+      Alert.alert(
+        `${actionText} Invitation`,
+        `${actionText} an invitation email to ${parent.name} at ${parent.email}?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: actionText,
+            onPress: performSend,
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const confirmDeleteStudent = (student: Student) => {
@@ -971,15 +998,35 @@ export default function StudentsScreen() {
                   : false;
                 const invitationAccepted = parent.invitation_accepted_at != null;
 
+                // Determine agreement status
+                const agreementSigned = parent.agreement_signed_at != null;
+                const requiresAgreement = parent.requires_agreement !== false;
+
                 // Get status display
                 let statusText = '';
-                let statusColor = colors.neutral.textMuted;
-                let statusBgColor = colors.neutral.surface;
+                let statusColor: string = colors.neutral.textMuted;
+                let statusBgColor: string = colors.neutral.surface;
+
+                // Agreement status (shown as secondary badge for active accounts)
+                let agreementStatusText = '';
+                let agreementStatusColor: string = colors.neutral.textMuted;
+                let agreementStatusBgColor: string = colors.neutral.background;
 
                 if (hasAccount || invitationAccepted) {
                   statusText = 'Account Active';
                   statusColor = colors.status.success;
                   statusBgColor = '#E8F5E9';
+
+                  // Set agreement status for active accounts
+                  if (agreementSigned) {
+                    agreementStatusText = 'Agreement Signed';
+                    agreementStatusColor = colors.status.success;
+                    agreementStatusBgColor = '#E8F5E9';
+                  } else if (requiresAgreement) {
+                    agreementStatusText = 'Pending Agreement';
+                    agreementStatusColor = colors.status.warning;
+                    agreementStatusBgColor = '#FFF8E1';
+                  }
                 } else if (invitationSent && !invitationExpired) {
                   const expiresAt = new Date(parent.invitation_expires_at!);
                   const daysLeft = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -998,6 +1045,7 @@ export default function StudentsScreen() {
 
                 const showInviteButton = !hasAccount && !invitationAccepted;
                 const inviteButtonText = invitationSent ? 'Resend' : 'Invite';
+                const isSendingThisParent = sendingInviteForParentId === parent.id;
 
                 return (
                   <TouchableOpacity
@@ -1029,22 +1077,35 @@ export default function StudentsScreen() {
                             {statusText}
                           </Text>
                         </View>
+                        {agreementStatusText && (
+                          <View style={[styles.statusBadge, { backgroundColor: agreementStatusBgColor, marginLeft: 4 }]}>
+                            <Ionicons
+                              name={agreementSigned ? 'document-text' : 'document-text-outline'}
+                              size={10}
+                              color={agreementStatusColor}
+                              style={{ marginRight: 3 }}
+                            />
+                            <Text style={[styles.statusText, { color: agreementStatusColor }]}>
+                              {agreementSigned ? 'Signed' : 'Pending'}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                     </View>
                     {showInviteButton ? (
                       <TouchableOpacity
                         style={[
                           styles.inviteButton,
-                          sendingInvite && styles.inviteButtonDisabled,
+                          isSendingThisParent && styles.inviteButtonDisabled,
                         ]}
                         onPress={(e) => {
                           e.stopPropagation();
                           handleSendInvitation(parent);
                         }}
-                        disabled={sendingInvite}
+                        disabled={isSendingThisParent || sendingInviteForParentId !== null}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        {sendingInvite ? (
+                        {isSendingThisParent ? (
                           <ActivityIndicator size="small" color={colors.piano.primary} />
                         ) : (
                           <>

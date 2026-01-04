@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm Your Email - Love to Learn Academy</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1B3A4B; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F8FAFB;">
+  <div style="background: #FFFFFF; border-radius: 14px; padding: 30px; box-shadow: 0 4px 8px rgba(27, 58, 75, 0.08);">
+
+    <!-- Header -->
+    <div style="text-align: center; margin-bottom: 30px;">
+      <h1 style="color: #3D9CA8; margin: 0; font-size: 28px;">Love to Learn Academy</h1>
+      <p style="color: #4A6572; font-size: 14px; margin-top: 5px;">Parent Portal</p>
+    </div>
+
+    <!-- Welcome Banner -->
+    <div style="background: linear-gradient(135deg, #3D9CA8 0%, #5FB3BC 100%); border-radius: 12px; padding: 30px; margin-bottom: 30px; color: white;">
+      <h2 style="margin: 0 0 10px 0; font-size: 24px;">Welcome to the Family! 🎉</h2>
+      <p style="margin: 0; opacity: 0.95;">Please confirm your email to get started</p>
+    </div>
+
+    <!-- Message -->
+    <p style="color: #1B3A4B; font-size: 16px;">
+      Thank you for signing up for Love to Learn Academy! We're excited to have you join our learning community.
+    </p>
+
+    <p style="color: #4A6572; font-size: 16px;">
+      To complete your registration and access the Parent Portal, please confirm your email address by clicking the button below:
+    </p>
+
+    <!-- CTA Button -->
+    <div style="text-align: center; margin: 35px 0;">
+      <a href="{{ .ConfirmationURL }}" style="display: inline-block; background: linear-gradient(135deg, #FF6B6B 0%, #FF8E8E 100%); color: white; text-decoration: none; padding: 16px 45px; border-radius: 10px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);">
+        Confirm Email Address
+      </a>
+    </div>
+
+    <!-- Info Box -->
+    <div style="background: #E8F5F7; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #3D9CA8;">
+      <h3 style="margin: 0 0 10px 0; color: #2D7A84; font-size: 14px;">🔒 Why confirm your email?</h3>
+      <ul style="padding-left: 20px; margin: 0; color: #4A6572; font-size: 14px;">
+        <li style="margin-bottom: 6px;">Secure your account</li>
+        <li style="margin-bottom: 6px;">Receive important lesson updates</li>
+        <li style="margin-bottom: 6px;">Get worksheet notifications</li>
+      </ul>
+    </div>
+
+    <!-- Alternative Link -->
+    <p style="color: #8A9BA8; font-size: 13px; text-align: center;">
+      If the button doesn't work, copy and paste this link into your browser:<br>
+      <a href="{{ .ConfirmationURL }}" style="color: #3D9CA8; word-break: break-all;">{{ .ConfirmationURL }}</a>
+    </p>
+
+    <hr style="border: none; border-top: 1px solid #E0E8EC; margin: 30px 0;">
+
+    <!-- Footer -->
+    <p style="color: #8A9BA8; font-size: 12px; text-align: center;">
+      If you didn't create an account with Love to Learn Academy, you can safely ignore this email.
+    </p>
+
+    <p style="color: #8A9BA8; font-size: 12px; text-align: center; margin-top: 20px;">
+      &copy; {{ .CurrentYear }} Love to Learn Academy<br>
+      <span style="color: #4A6572;">Nurturing Growth, One Lesson at a Time</span>
+    </p>
+  </div>
+</body>
+</html>

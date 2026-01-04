@@ -46,6 +46,8 @@ export type Database = {
           invitation_sent_at: string | null;
           invitation_expires_at: string | null;
           invitation_accepted_at: string | null;
+          requires_agreement: boolean | null;
+          agreement_signed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -62,6 +64,8 @@ export type Database = {
           invitation_sent_at?: string | null;
           invitation_expires_at?: string | null;
           invitation_accepted_at?: string | null;
+          requires_agreement?: boolean | null;
+          agreement_signed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -78,6 +82,8 @@ export type Database = {
           invitation_sent_at?: string | null;
           invitation_expires_at?: string | null;
           invitation_accepted_at?: string | null;
+          requires_agreement?: boolean | null;
+          agreement_signed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -87,6 +93,77 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: true;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      parent_agreements: {
+        Row: {
+          id: string;
+          parent_id: string;
+          agreement_version: string;
+          agreement_type: string;
+          agreement_content: string;
+          signature_data: string | null;
+          signature_timestamp: string | null;
+          signed_by_name: string | null;
+          signed_by_email: string | null;
+          ip_address: string | null;
+          user_agent: string | null;
+          device_info: Json | null;
+          status: 'pending' | 'signed' | 'expired' | 'revoked';
+          created_at: string;
+          updated_at: string;
+          expires_at: string | null;
+          pdf_storage_path: string | null;
+          pdf_generated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          parent_id: string;
+          agreement_version?: string;
+          agreement_type?: string;
+          agreement_content: string;
+          signature_data?: string | null;
+          signature_timestamp?: string | null;
+          signed_by_name?: string | null;
+          signed_by_email?: string | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          device_info?: Json | null;
+          status?: 'pending' | 'signed' | 'expired' | 'revoked';
+          created_at?: string;
+          updated_at?: string;
+          expires_at?: string | null;
+          pdf_storage_path?: string | null;
+          pdf_generated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          parent_id?: string;
+          agreement_version?: string;
+          agreement_type?: string;
+          agreement_content?: string;
+          signature_data?: string | null;
+          signature_timestamp?: string | null;
+          signed_by_name?: string | null;
+          signed_by_email?: string | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          device_info?: Json | null;
+          status?: 'pending' | 'signed' | 'expired' | 'revoked';
+          created_at?: string;
+          updated_at?: string;
+          expires_at?: string | null;
+          pdf_storage_path?: string | null;
+          pdf_generated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'parent_agreements_parent_id_fkey';
+            columns: ['parent_id'];
+            isOneToOne: false;
+            referencedRelation: 'parents';
             referencedColumns: ['id'];
           }
         ];
@@ -679,7 +756,69 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      // Parent Invitation Functions
+      generate_parent_invitation: {
+        Args: { parent_id: string };
+        Returns: string;
+      };
+      validate_invitation_token: {
+        Args: { token: string };
+        Returns: {
+          parent_id: string;
+          email: string;
+          name: string;
+          is_valid: boolean;
+          error_message: string | null;
+        }[];
+      };
+      accept_parent_invitation: {
+        Args: { token: string; auth_user_id: string };
+        Returns: boolean;
+      };
+      // Parent Agreement Functions
+      create_parent_agreement: {
+        Args: {
+          p_parent_id: string;
+          p_agreement_content: string;
+          p_agreement_version?: string;
+          p_agreement_type?: string;
+          p_expires_in_days?: number;
+        };
+        Returns: string;
+      };
+      sign_parent_agreement: {
+        Args: {
+          p_agreement_id: string;
+          p_signature_data: string;
+          p_signed_by_name: string;
+          p_signed_by_email: string;
+          p_ip_address?: string | null;
+          p_user_agent?: string | null;
+          p_device_info?: Record<string, unknown> | null;
+        };
+        Returns: boolean;
+      };
+      has_valid_agreement: {
+        Args: {
+          p_parent_id: string;
+          p_agreement_type?: string;
+        };
+        Returns: boolean;
+      };
+      get_parent_agreement: {
+        Args: {
+          p_parent_id: string;
+          p_agreement_type?: string;
+        };
+        Returns: {
+          agreement_id: string;
+          agreement_version: string;
+          status: string;
+          signed_at: string | null;
+          signed_by_name: string | null;
+          expires_at: string | null;
+        }[];
+      };
     };
     Enums: {
       progress_status: 'not_started' | 'in_progress' | 'completed';

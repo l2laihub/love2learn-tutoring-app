@@ -67,3 +67,10 @@ export {
   useOverdueAssignments,
 } from './useAssignments';
 export type { AssignmentsFilterOptions } from './useAssignments';
+
+// Parent Agreement hooks
+export {
+  useParentAgreement,
+  useAgreementCheck,
+} from './useParentAgreement';
+export type { Agreement, SignAgreementParams, CreateAgreementParams } from './useParentAgreement';
