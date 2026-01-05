@@ -125,17 +125,29 @@ export default function AgreementScreen() {
   // Submit signed agreement
   const handleSubmitAgreement = async () => {
     if (!parentInfo) {
-      Alert.alert('Error', 'Parent information not available');
+      if (Platform.OS === 'web') {
+        window.alert('Parent information not available');
+      } else {
+        Alert.alert('Error', 'Parent information not available');
+      }
       return;
     }
 
     if (!signatureData) {
-      Alert.alert('Signature Required', 'Please provide your signature to complete the agreement.');
+      if (Platform.OS === 'web') {
+        window.alert('Please provide your signature to complete the agreement.');
+      } else {
+        Alert.alert('Signature Required', 'Please provide your signature to complete the agreement.');
+      }
       return;
     }
 
     if (!signedName.trim()) {
-      Alert.alert('Name Required', 'Please enter your full name to confirm the signature.');
+      if (Platform.OS === 'web') {
+        window.alert('Please enter your full name to confirm the signature.');
+      } else {
+        Alert.alert('Name Required', 'Please enter your full name to confirm the signature.');
+      }
       return;
     }
 
@@ -152,7 +164,11 @@ export default function AgreementScreen() {
       });
 
       if (!agreement) {
-        Alert.alert('Error', agreementError || 'Failed to create agreement. Please try again.');
+        if (Platform.OS === 'web') {
+          window.alert(agreementError || 'Failed to create agreement. Please try again.');
+        } else {
+          Alert.alert('Error', agreementError || 'Failed to create agreement. Please try again.');
+        }
         return;
       }
 
@@ -165,7 +181,11 @@ export default function AgreementScreen() {
       });
 
       if (!signed) {
-        Alert.alert('Error', agreementError || 'Failed to sign agreement. Please try again.');
+        if (Platform.OS === 'web') {
+          window.alert(agreementError || 'Failed to sign agreement. Please try again.');
+        } else {
+          Alert.alert('Error', agreementError || 'Failed to sign agreement. Please try again.');
+        }
         return;
       }
 
@@ -178,20 +198,32 @@ export default function AgreementScreen() {
         })
         .eq('id', parentInfo.id);
 
-      // Show success and navigate to next onboarding step
-      Alert.alert(
-        'Agreement Signed!',
-        'Thank you for signing the tutoring services agreement. Let\'s continue setting up your profile.',
-        [
-          {
-            text: 'Continue',
-            onPress: () => router.push('/(auth)/onboarding/profile'),
-          },
-        ]
-      );
+      // Navigate to next onboarding step
+      // On web, navigate directly; on mobile, show alert first
+      if (Platform.OS === 'web') {
+        // On web, show a brief message and navigate
+        window.alert('Agreement Signed! Thank you for signing the tutoring services agreement.');
+        router.push('/(auth)/onboarding/profile');
+      } else {
+        // On mobile, use Alert with callback
+        Alert.alert(
+          'Agreement Signed!',
+          'Thank you for signing the tutoring services agreement. Let\'s continue setting up your profile.',
+          [
+            {
+              text: 'Continue',
+              onPress: () => router.push('/(auth)/onboarding/profile'),
+            },
+          ]
+        );
+      }
     } catch (err: any) {
       console.error('Error submitting agreement:', err);
-      Alert.alert('Error', err.message || 'An unexpected error occurred');
+      if (Platform.OS === 'web') {
+        window.alert(err.message || 'An unexpected error occurred');
+      } else {
+        Alert.alert('Error', err.message || 'An unexpected error occurred');
+      }
     }
   };
 
