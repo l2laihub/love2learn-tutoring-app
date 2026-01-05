@@ -47,6 +47,7 @@ interface LessonDetailModalProps {
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
   onDelete?: () => Promise<void>;
   onDeleteSeries?: () => Promise<void>;
+  onRequestReschedule?: () => void; // For parents to request reschedule
   seriesCount?: number; // Number of lessons in the recurring series
   isTutor?: boolean; // Whether the current user is a tutor/admin
 }
@@ -62,6 +63,7 @@ export function LessonDetailModal({
   onUncomplete,
   onDelete,
   onDeleteSeries,
+  onRequestReschedule,
   seriesCount = 0,
   isTutor = false,
 }: LessonDetailModalProps) {
@@ -592,13 +594,22 @@ export function LessonDetailModal({
           </View>
         )}
 
-        {/* Parent view - read-only info for scheduled lessons */}
+        {/* Parent view - reschedule request button for scheduled lessons */}
         {displayData.status === 'scheduled' && !isTutor && (
-          <View style={styles.parentInfoBar}>
-            <Ionicons name="information-circle-outline" size={20} color={colors.status.info} />
-            <Text style={styles.parentInfoText}>
-              Contact your tutor to reschedule or cancel this lesson
-            </Text>
+          <View style={styles.parentActions}>
+            {onRequestReschedule ? (
+              <Pressable style={styles.rescheduleButton} onPress={onRequestReschedule}>
+                <Ionicons name="calendar-outline" size={20} color={colors.primary.main} />
+                <Text style={styles.rescheduleButtonText}>Request Reschedule</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.parentInfoBar}>
+                <Ionicons name="information-circle-outline" size={20} color={colors.status.info} />
+                <Text style={styles.parentInfoText}>
+                  Contact your tutor to reschedule or cancel this lesson
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -1012,20 +1023,40 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.medium,
     color: colors.status.error,
   },
-  // Parent view info bar
+  // Parent view info bar and actions
+  parentActions: {
+    backgroundColor: colors.neutral.white,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+  },
   parentInfoBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     padding: spacing.base,
     backgroundColor: colors.status.infoBg,
-    borderTopWidth: 1,
-    borderTopColor: colors.neutral.border,
   },
   parentInfoText: {
     flex: 1,
     fontSize: typography.sizes.sm,
     color: colors.status.info,
+  },
+  rescheduleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    margin: spacing.base,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primary.subtle,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: colors.primary.main,
+  },
+  rescheduleButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.primary.main,
   },
 });
 

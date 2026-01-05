@@ -36,7 +36,7 @@ interface AdminSidebarProps {
 export function AdminSidebar({ children }: AdminSidebarProps) {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
-  const { parent, signOut } = useAuthContext();
+  const { parent, user, signOut } = useAuthContext();
 
   const isActive = (href: string) => {
     if (href === '/admin') {
@@ -110,7 +110,7 @@ export function AdminSidebar({ children }: AdminSidebarProps) {
             </View>
             <View style={styles.userDetails}>
               <Text style={styles.userName} numberOfLines={1}>
-                {parent?.name || 'Admin'}
+                {parent?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Admin'}
               </Text>
               <Text style={styles.userRole}>Administrator</Text>
             </View>

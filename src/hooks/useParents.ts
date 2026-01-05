@@ -361,3 +361,47 @@ export function useSearchParents(searchTerm: string): ListQueryState<Parent> {
 
   return { data, loading, error, refetch: fetchParents };
 }
+
+/**
+ * Fetch the tutor (parent with role='tutor')
+ * In this single-tutor app model, there's one tutor who manages all clients
+ * @returns The tutor's parent profile
+ */
+export function useTutor(): QueryState<Parent> & { refetch: () => Promise<void> } {
+  const [data, setData] = useState<Parent | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchTutor = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: tutor, error: fetchError } = await supabase
+        .from('parents')
+        .select('*')
+        .eq('role', 'tutor')
+        .limit(1)
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      // tutor may be null if no tutor exists yet
+      setData(tutor as Parent | null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch tutor');
+      setError(errorMessage);
+      console.error('useTutor error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTutor();
+  }, [fetchTutor]);
+
+  return { data, loading, error, refetch: fetchTutor };
+}

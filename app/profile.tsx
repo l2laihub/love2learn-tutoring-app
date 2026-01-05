@@ -41,7 +41,7 @@ const subjectEmojis: Record<Subject, string> = {
 };
 
 export default function ProfileScreen() {
-  const { parent, signOut } = useAuthContext();
+  const { parent, signOut, isTutor } = useAuthContext();
   const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -216,6 +216,36 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Links</Text>
             <View style={styles.linksCard}>
+              {isTutor && (
+                <>
+                  <Pressable
+                    style={styles.linkRow}
+                    onPress={() => router.push('/availability')}
+                  >
+                    <View style={[styles.linkIcon, { backgroundColor: colors.primary.subtle }]}>
+                      <Ionicons name="time" size={20} color={colors.primary.main} />
+                    </View>
+                    <Text style={styles.linkLabel}>My Availability</Text>
+                    <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+                  </Pressable>
+
+                  <View style={styles.linkDivider} />
+
+                  <Pressable
+                    style={styles.linkRow}
+                    onPress={() => router.push('/requests')}
+                  >
+                    <View style={[styles.linkIcon, { backgroundColor: colors.status.warningBg }]}>
+                      <Ionicons name="git-pull-request" size={20} color={colors.status.warning} />
+                    </View>
+                    <Text style={styles.linkLabel}>Lesson Requests</Text>
+                    <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+                  </Pressable>
+
+                  <View style={styles.linkDivider} />
+                </>
+              )}
+
               <Pressable
                 style={styles.linkRow}
                 onPress={() => router.push('/agreement')}

@@ -23,6 +23,7 @@ export {
   useDeleteParent,
   useParentByUserId,
   useSearchParents,
+  useTutor,
 } from './useParents';
 
 // Lesson hooks
@@ -94,10 +95,27 @@ export {
   useWeeklyAvailability,
   useCheckAvailability,
   useAvailableSlotsForDate,
+  useBusySlotsForDate,
   DAY_NAMES,
   formatTimeDisplay,
 } from './useTutorAvailability';
 export type {
   UpdateTutorAvailabilityInput,
   AvailabilityFilterOptions,
+  BusySlot,
 } from './useTutorAvailability';
+
+// Lesson Request hooks
+export {
+  useLessonRequests,
+  usePendingLessonRequests,
+  useLessonRequest,
+  useCreateLessonRequest,
+  useUpdateLessonRequest,
+  useApproveLessonRequest,
+  useRejectLessonRequest,
+  useDeleteLessonRequest,
+  usePendingRequestsCount,
+  getRequestStatusInfo,
+} from './useLessonRequests';
+export type { LessonRequestsFilterOptions } from './useLessonRequests';

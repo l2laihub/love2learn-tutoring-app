@@ -34,6 +34,8 @@ const navItems: NavItem[] = [
 
 const secondaryNavItems: NavItem[] = [
   { name: 'Profile', href: '/profile', icon: 'person-outline', iconActive: 'person' },
+  { name: 'My Availability', href: '/availability', icon: 'time-outline', iconActive: 'time', tutorOnly: true },
+  { name: 'Lesson Requests', href: '/requests', icon: 'git-pull-request-outline', iconActive: 'git-pull-request', tutorOnly: true },
   { name: 'Admin', href: '/admin', icon: 'settings-outline', iconActive: 'settings', tutorOnly: true },
 ];
 
@@ -44,7 +46,7 @@ interface DesktopSidebarProps {
 export function DesktopSidebar({ children }: DesktopSidebarProps) {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
-  const { isTutor, isParent, parent, signOut } = useAuthContext();
+  const { isTutor, isParent, parent, user, signOut } = useAuthContext();
 
   const filteredNavItems = navItems.filter(item => {
     if (item.tutorOnly && !isTutor) return false;
@@ -146,7 +148,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
             </View>
             <View style={styles.userDetails}>
               <Text style={styles.userName} numberOfLines={1}>
-                {parent?.name || 'User'}
+                {parent?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}
               </Text>
               <Text style={styles.userRole}>
                 {isTutor ? 'Tutor' : 'Parent'}

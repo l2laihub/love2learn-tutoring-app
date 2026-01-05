@@ -43,6 +43,7 @@ import {
 } from '../../src/types/database';
 import { LessonFormModal, LessonFormData, SessionFormData } from '../../src/components/LessonFormModal';
 import { LessonDetailModal } from '../../src/components/LessonDetailModal';
+import { RescheduleRequestModal } from '../../src/components/RescheduleRequestModal';
 
 // Subject emoji mapping
 const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
@@ -89,12 +90,13 @@ const layoutConstants = {
 };
 
 export default function CalendarScreen() {
-  const { isTutor } = useAuthContext();
+  const { isTutor, parent } = useAuthContext();
   const responsive = useResponsive();
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(new Date()));
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<ScheduledLessonWithStudent | null>(null);
   const [selectedGroupedLesson, setSelectedGroupedLesson] = useState<GroupedLesson | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -541,6 +543,19 @@ export default function CalendarScreen() {
     setShowEditModal(true);
   };
 
+  // Handle reschedule request from parent
+  const handleRequestReschedule = () => {
+    setShowDetailModal(false);
+    setShowRescheduleModal(true);
+  };
+
+  // Handle successful reschedule request
+  const handleRescheduleSuccess = () => {
+    setShowRescheduleModal(false);
+    setSelectedLesson(null);
+    // Could show a success toast here
+  };
+
   // Check if a date is today
   const isToday = (date: Date): boolean => {
     const today = new Date();
@@ -960,9 +975,24 @@ export default function CalendarScreen() {
             ? handleDeleteLessonSeries
             : undefined
         }
+        onRequestReschedule={!isTutor ? handleRequestReschedule : undefined}
         seriesCount={isSessionSeries ? seriesSessionIds.length : seriesLessonIds.length}
         isTutor={isTutor}
       />
+
+      {/* Reschedule Request Modal (for parents) */}
+      {selectedLesson && parent && (
+        <RescheduleRequestModal
+          visible={showRescheduleModal}
+          lesson={selectedLesson}
+          parentId={parent.id}
+          onClose={() => {
+            setShowRescheduleModal(false);
+            setSelectedLesson(null);
+          }}
+          onSuccess={handleRescheduleSuccess}
+        />
+      )}
     </SafeAreaView>
   );
 }

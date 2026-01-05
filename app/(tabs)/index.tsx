@@ -447,6 +447,26 @@ export default function HomeScreen() {
 
               <Pressable
                 style={[styles.actionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/availability' as any)}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.primary.subtle }]}>
+                  <Ionicons name="time" size={24} color={colors.primary.main} />
+                </View>
+                <Text style={styles.actionLabel}>My Availability</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.actionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/requests' as any)}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: colors.status.warningBg }]}>
+                  <Ionicons name="git-pull-request" size={24} color={colors.status.warning} />
+                </View>
+                <Text style={styles.actionLabel}>Requests</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.actionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/admin' as any)}
               >
                 <View style={[styles.actionIcon, { backgroundColor: '#E8EAF6' }]}>
