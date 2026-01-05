@@ -41,6 +41,8 @@ export interface AuthState {
   parent: Parent | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /** Error type from parent query (null if successful) */
+  parentQueryError: 'timeout' | 'not_found' | 'query_error' | null;
   /** Refresh parent data from database */
   refreshParent: () => Promise<void>;
 }
@@ -262,40 +264,59 @@ export async function updatePassword(
 }
 
 /**
- * Get the parent record for the current user
+ * Result of parent query with error distinction
+ */
+export interface ParentQueryResult {
+  parent: Parent | null;
+  error: 'timeout' | 'not_found' | 'query_error' | null;
+}
+
+/**
+ * Get the parent record for the current user using RPC function.
+ * This uses a SECURITY DEFINER function to bypass RLS and avoid
+ * the circular dependency where RLS policy calls is_tutor() which
+ * queries parents table again.
  *
- * @param userId - The user's auth ID
- * @returns Parent record or null
+ * @param _userId - The user's auth ID (not used, kept for API compatibility)
+ * @returns ParentQueryResult with parent data and error type
  */
 export async function getParentByUserId(
-  userId: string
-): Promise<Parent | null> {
-  console.log('[getParentByUserId] Starting query for:', userId);
+  _userId: string
+): Promise<ParentQueryResult> {
+  console.log('[getParentByUserId] Using RPC function to get parent');
+
   try {
     // Add timeout to detect hanging queries
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Parent query timeout after 10s')), 10000);
+      setTimeout(() => reject(new Error('Parent query timeout after 5s')), 5000);
     });
 
-    const queryPromise = supabase
-      .from('parents')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
+    // Use RPC function that bypasses RLS to avoid circular dependency
+    const queryPromise = supabase.rpc('get_current_user_parent');
 
     const { data, error } = await Promise.race([queryPromise, timeoutPromise]) as Awaited<typeof queryPromise>;
 
-    console.log('[getParentByUserId] Query result:', { hasData: !!data, role: data?.role, error: error?.message });
+    console.log('[getParentByUserId] RPC result:', { hasData: !!data, dataLength: Array.isArray(data) ? data.length : 'not array', error: error?.message });
 
     if (error) {
-      console.error('[getParentByUserId] Error:', error);
-      return null;
+      console.error('[getParentByUserId] RPC error:', error);
+      return { parent: null, error: 'query_error' };
     }
 
-    return data;
+    // RPC returns an array, get the first record
+    const parentRecord = Array.isArray(data) && data.length > 0 ? data[0] : null;
+
+    if (!parentRecord) {
+      console.log('[getParentByUserId] No parent record found');
+      return { parent: null, error: 'not_found' };
+    }
+
+    console.log('[getParentByUserId] Found parent:', { role: parentRecord.role });
+    return { parent: parentRecord as Parent, error: null };
   } catch (error) {
     console.error('[getParentByUserId] Unexpected error:', error);
-    return null;
+    const isTimeout = error instanceof Error && error.message.includes('timeout');
+    return { parent: null, error: isTimeout ? 'timeout' : 'query_error' };
   }
 }
 
@@ -311,13 +332,15 @@ export function useAuth(): AuthState {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [parent, setParent] = useState<Parent | null>(null);
+  const [parentQueryError, setParentQueryError] = useState<'timeout' | 'not_found' | 'query_error' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchParent = useCallback(async (userId: string) => {
     console.log('[useAuth] Fetching parent for:', userId);
-    const parentData = await getParentByUserId(userId);
-    console.log('[useAuth] Parent result:', parentData?.role);
-    setParent(parentData);
+    const result = await getParentByUserId(userId);
+    console.log('[useAuth] Parent result:', result.parent?.role, 'error:', result.error);
+    setParent(result.parent);
+    setParentQueryError(result.error);
   }, []);
 
   // Function to refresh parent data (useful after onboarding completion)
@@ -358,6 +381,7 @@ export function useAuth(): AuthState {
         setSession(null);
         setUser(null);
         setParent(null);
+        setParentQueryError('timeout');
       } finally {
         setIsLoading(false);
         console.log('[useAuth] Auth initialization complete, isLoading set to false');
@@ -378,6 +402,7 @@ export function useAuth(): AuthState {
           await fetchParent(newSession.user.id);
         } else {
           setParent(null);
+          setParentQueryError(null);
         }
 
         // Handle specific auth events
@@ -388,6 +413,7 @@ export function useAuth(): AuthState {
           case 'SIGNED_OUT':
             console.log('User signed out');
             setParent(null);
+            setParentQueryError(null);
             break;
           case 'TOKEN_REFRESHED':
             console.log('Token refreshed');
@@ -414,6 +440,7 @@ export function useAuth(): AuthState {
     parent,
     isLoading,
     isAuthenticated: !!session && !!user,
+    parentQueryError,
     refreshParent,
   };
 }

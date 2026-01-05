@@ -24,7 +24,7 @@ function TabIcon({ name, color, size }: TabIconProps) {
 
 export default function AdminLayout() {
   const insets = useSafeAreaInsets();
-  const { isTutor, isLoading } = useAuthContext();
+  const { isTutor, isLoading, parentQueryError, isAuthenticated } = useAuthContext();
 
   // Show loading while checking auth
   if (isLoading) {
@@ -36,7 +36,20 @@ export default function AdminLayout() {
     );
   }
 
-  // Redirect non-tutors away from admin
+  // If there's a query error (timeout/error) and we're authenticated,
+  // show a loading state instead of immediately redirecting
+  // This prevents incorrect redirects when the database is slow
+  if (isAuthenticated && !isTutor && (parentQueryError === 'timeout' || parentQueryError === 'query_error')) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary.main} />
+        <Text style={styles.loadingText}>Verifying access...</Text>
+        <Text style={styles.retryText}>Please wait while we verify your permissions</Text>
+      </View>
+    );
+  }
+
+  // Redirect non-tutors away from admin (only when we're sure they're not a tutor)
   if (!isTutor) {
     return <Redirect href="/(tabs)" />;
   }
@@ -122,5 +135,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: colors.neutral.textSecondary,
+  },
+  retryText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
 });
