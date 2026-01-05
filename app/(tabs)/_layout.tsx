@@ -76,6 +76,14 @@ export default function TabLayout() {
               href: isParent ? null : undefined,
             }}
           />
+          <Tabs.Screen
+            name="resources"
+            options={{
+              title: 'Resources',
+              headerTitle: 'Shared Resources',
+              href: isTutor ? null : undefined,
+            }}
+          />
         </Tabs>
       </DesktopSidebar>
     );
@@ -161,6 +169,18 @@ export default function TabLayout() {
           ),
           // Hide Payments tab for parents
           href: isParent ? null : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="resources"
+        options={{
+          title: 'Resources',
+          headerTitle: 'Shared Resources',
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="folder-open" color={color} size={size} />
+          ),
+          // Hide Resources tab for tutors (they use worksheets screen)
+          href: isTutor ? null : undefined,
         }}
       />
     </Tabs>

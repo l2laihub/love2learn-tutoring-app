@@ -1,6 +1,7 @@
 /**
  * Worksheets Screen
  * AI-powered worksheet generation for piano and math lessons
+ * With resource sharing capabilities for tutors
  */
 
 import React, { useState, useCallback } from 'react';
@@ -21,12 +22,19 @@ import * as Sharing from 'expo-sharing';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
+import { useTutor } from '../../src/hooks/useParents';
 import { useAssignments, useCreateAssignment, useCompleteAssignment } from '../../src/hooks/useAssignments';
+import { useCreateSharedResource, useSharedResources } from '../../src/hooks/useSharedResources';
+import { SharedResourceList } from '../../src/components/SharedResourceCard';
+import { ResourceViewerModal } from '../../src/components/ResourceViewerModal';
 import { WorksheetGeneratorModal, WorksheetConfig } from '../../src/components/WorksheetGeneratorModal';
-import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent } from '../../src/types/database';
+import { UploadWorksheetModal } from '../../src/components/UploadWorksheetModal';
+import { ImageShareModal } from '../../src/components/ImageShareModal';
+import { YouTubeShareModal } from '../../src/components/YouTubeShareModal';
+import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent, CreateSharedResourceInput, SharedResourceWithStudent } from '../../src/types/database';
 import { generatePianoWorksheet } from '../../src/services/pianoWorksheetGenerator';
 
-type TabType = 'generate' | 'assigned';
+type TabType = 'generate' | 'assigned' | 'shared';
 
 // Filter options for parent view
 type FilterOption = 'all' | 'pending' | 'completed';
@@ -48,16 +56,48 @@ const MATH_TEMPLATES = [
 ];
 
 export default function WorksheetsScreen() {
-  const { role: userRole } = useAuthContext();
+  const { role: userRole, parent } = useAuthContext();
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: assignments, loading: assignmentsLoading, refetch: refetchAssignments } = useAssignments();
   const { mutate: createAssignment } = useCreateAssignment();
   const { mutate: completeAssignment, loading: completingAssignment } = useCompleteAssignment();
+  const { mutate: createSharedResource } = useCreateSharedResource();
+
+  // Fetch tutor record directly as a fallback when parent query times out
+  const { data: tutorRecord } = useTutor();
+
+  // Tutor ID is the parent record ID for tutors
+  // Use parent?.id from AuthContext if available, otherwise use tutorRecord?.id as fallback
+  const tutorId = parent?.id || (userRole === 'tutor' ? tutorRecord?.id : null) || null;
+
+  // Debug logging for tutorId resolution
+  React.useEffect(() => {
+    console.log('[WorksheetsScreen] TutorId resolution:', {
+      parentId: parent?.id,
+      tutorRecordId: tutorRecord?.id,
+      userRole,
+      resolvedTutorId: tutorId,
+    });
+  }, [parent?.id, tutorRecord?.id, userRole, tutorId]);
+
+  // Fetch shared resources for tutor view
+  const { data: sharedResources, loading: sharedResourcesLoading, error: sharedResourcesError, refetch: refetchSharedResources } = useSharedResources(
+    tutorId ? { tutorId } : {}
+  );
   const [activeTab, setActiveTab] = useState<TabType>('generate');
   const [showGenerator, setShowGenerator] = useState(false);
   const [presetSubject, setPresetSubject] = useState<TutoringSubject | undefined>();
   const [statusFilter, setStatusFilter] = useState<FilterOption>('all');
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
+
+  // Sharing modal states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [showYouTubeModal, setShowYouTubeModal] = useState(false);
+
+  // Resource viewer state
+  const [selectedResource, setSelectedResource] = useState<SharedResourceWithStudent | null>(null);
+  const [showResourceViewer, setShowResourceViewer] = useState(false);
 
   const isTutor = userRole === 'tutor';
 
@@ -241,6 +281,42 @@ export default function WorksheetsScreen() {
     // The modal will use preset subject to show appropriate initial config
   };
 
+  // Handle PDF worksheet upload completion
+  const handleUploadComplete = useCallback(async (input: CreateSharedResourceInput) => {
+    try {
+      await createSharedResource(input);
+      refetchSharedResources();
+      Alert.alert('Success', 'Worksheet uploaded and shared with parent!');
+    } catch (error) {
+      console.error('Error sharing worksheet:', error);
+      throw error;
+    }
+  }, [createSharedResource, refetchSharedResources]);
+
+  // Handle image share completion
+  const handleImageShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
+    try {
+      await createSharedResource(input);
+      refetchSharedResources();
+      Alert.alert('Success', 'Image shared with parent!');
+    } catch (error) {
+      console.error('Error sharing image:', error);
+      throw error;
+    }
+  }, [createSharedResource, refetchSharedResources]);
+
+  // Handle YouTube share completion
+  const handleYouTubeShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
+    try {
+      await createSharedResource(input);
+      refetchSharedResources();
+      Alert.alert('Success', 'Video link shared with parent!');
+    } catch (error) {
+      console.error('Error sharing video:', error);
+      throw error;
+    }
+  }, [createSharedResource, refetchSharedResources]);
+
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -307,6 +383,29 @@ export default function WorksheetsScreen() {
             >
               Assigned
             </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'shared' && styles.tabActive]}
+            onPress={() => setActiveTab('shared')}
+          >
+            <Ionicons
+              name="share-social"
+              size={20}
+              color={activeTab === 'shared' ? colors.piano.primary : colors.neutral.textMuted}
+            />
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'shared' && styles.tabTextActive,
+              ]}
+            >
+              Shared
+            </Text>
+            {sharedResources.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{sharedResources.length}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
       )}
@@ -392,7 +491,48 @@ export default function WorksheetsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'generate' ? (
+        {activeTab === 'shared' ? (
+          /* Shared Resources Tab */
+          <>
+            <View style={styles.sharedHeader}>
+              <Text style={styles.sharedHeaderTitle}>Shared Resources</Text>
+              <Text style={styles.sharedHeaderSubtitle}>
+                Resources you&apos;ve shared with parents
+              </Text>
+            </View>
+
+            {sharedResourcesLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.piano.primary} />
+                <Text style={styles.loadingText}>Loading shared resources...</Text>
+              </View>
+            ) : sharedResourcesError ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="alert-circle-outline" size={64} color={colors.status.error} />
+                </View>
+                <Text style={styles.emptyTitle}>Error Loading Resources</Text>
+                <Text style={styles.emptySubtitle}>
+                  {sharedResourcesError.message || 'Unable to load shared resources. Please try again.'}
+                </Text>
+                <Pressable style={styles.emptyButton} onPress={() => refetchSharedResources()}>
+                  <Ionicons name="refresh" size={18} color={colors.neutral.white} />
+                  <Text style={styles.emptyButtonText}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <SharedResourceList
+                resources={sharedResources}
+                onResourcePress={(resource) => {
+                  setSelectedResource(resource);
+                  setShowResourceViewer(true);
+                }}
+                compact
+                emptyMessage="You haven't shared any resources yet. Use the Generate tab to share worksheets, images, or videos with parents."
+              />
+            )}
+          </>
+        ) : activeTab === 'generate' ? (
           <>
             {/* Main Generate Button */}
             <Pressable
@@ -465,6 +605,51 @@ export default function WorksheetsScreen() {
                     <Text style={styles.templateLabel}>{template.label}</Text>
                   </Pressable>
                 ))}
+              </View>
+            </View>
+
+            {/* Share Resources Section */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionIcon}>📤</Text>
+                <Text style={styles.sectionTitle}>Share with Parents</Text>
+              </View>
+              <Text style={styles.sectionSubtitle}>
+                Share worksheets, images, and videos with parents
+              </Text>
+              <View style={styles.shareActionsGrid}>
+                <Pressable
+                  style={styles.shareActionCard}
+                  onPress={() => setShowUploadModal(true)}
+                >
+                  <View style={[styles.shareActionIcon, { backgroundColor: colors.math.subtle }]}>
+                    <Ionicons name="document" size={24} color={colors.math.primary} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Upload PDF</Text>
+                  <Text style={styles.shareActionDescription}>Upload worksheet files</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.shareActionCard}
+                  onPress={() => setShowImageModal(true)}
+                >
+                  <View style={[styles.shareActionIcon, { backgroundColor: colors.status.infoBg }]}>
+                    <Ionicons name="image" size={24} color={colors.status.info} />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Share Image</Text>
+                  <Text style={styles.shareActionDescription}>Photos from sessions</Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.shareActionCard}
+                  onPress={() => setShowYouTubeModal(true)}
+                >
+                  <View style={[styles.shareActionIcon, { backgroundColor: '#FFEBEE' }]}>
+                    <Ionicons name="logo-youtube" size={24} color="#FF0000" />
+                  </View>
+                  <Text style={styles.shareActionLabel}>Share Video</Text>
+                  <Text style={styles.shareActionDescription}>YouTube recordings</Text>
+                </Pressable>
               </View>
             </View>
 
@@ -689,6 +874,52 @@ export default function WorksheetsScreen() {
         students={students}
         studentsLoading={studentsLoading}
         presetSubject={presetSubject}
+      />
+
+      {/* Upload Worksheet Modal */}
+      {tutorId && (
+        <UploadWorksheetModal
+          visible={showUploadModal}
+          onClose={() => setShowUploadModal(false)}
+          onUploadComplete={handleUploadComplete}
+          students={students}
+          studentsLoading={studentsLoading}
+          tutorId={tutorId}
+        />
+      )}
+
+      {/* Image Share Modal */}
+      {tutorId && (
+        <ImageShareModal
+          visible={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          onUploadComplete={handleImageShareComplete}
+          students={students}
+          studentsLoading={studentsLoading}
+          tutorId={tutorId}
+        />
+      )}
+
+      {/* YouTube Share Modal */}
+      {tutorId && (
+        <YouTubeShareModal
+          visible={showYouTubeModal}
+          onClose={() => setShowYouTubeModal(false)}
+          onShare={handleYouTubeShareComplete}
+          students={students}
+          studentsLoading={studentsLoading}
+          tutorId={tutorId}
+        />
+      )}
+
+      {/* Resource Viewer Modal */}
+      <ResourceViewerModal
+        visible={showResourceViewer}
+        resource={selectedResource}
+        onClose={() => {
+          setShowResourceViewer(false);
+          setSelectedResource(null);
+        }}
       />
     </SafeAreaView>
   );
@@ -1037,5 +1268,72 @@ const styles = StyleSheet.create({
   },
   statusChipTextActive: {
     color: colors.piano.primary,
+  },
+  // Share section styles
+  sectionSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    marginBottom: spacing.md,
+  },
+  shareActionsGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  shareActionCard: {
+    flex: 1,
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  shareActionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  shareActionLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  shareActionDescription: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+  },
+  // Shared tab styles
+  tabBadge: {
+    backgroundColor: colors.primary.main,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    marginLeft: 4,
+  },
+  tabBadgeText: {
+    fontSize: 11,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.white,
+  },
+  sharedHeader: {
+    marginBottom: spacing.lg,
+  },
+  sharedHeaderTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+    marginBottom: spacing.xs,
+  },
+  sharedHeaderSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
   },
 });

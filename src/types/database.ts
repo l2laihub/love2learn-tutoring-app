@@ -873,6 +873,9 @@ export type AssignmentStatus = 'assigned' | 'completed';
 // Worksheet types
 export type WorksheetType = 'piano_naming' | 'piano_drawing' | 'math';
 
+// Resource types for shared resources
+export type ResourceType = 'worksheet' | 'pdf' | 'image' | 'video';
+
 // Lesson duration in minutes (supports custom durations from 15-240 minutes)
 export type LessonDuration = number;
 
@@ -1039,11 +1042,44 @@ export interface Assignment {
   worksheet_type: WorksheetType;
   config: Json; // Stored as JSON in DB, cast to WorksheetConfig when needed
   pdf_url: string | null;
+  storage_path: string | null; // Cloud storage path
   assigned_at: string;
   due_date: string | null;
   status: AssignmentStatus;
   completed_at: string | null;
   created_at: string;
+}
+
+// Shared resource (worksheets, PDFs, images, videos shared with parents)
+export interface SharedResource {
+  id: string;
+  student_id: string;
+  parent_id: string;
+  tutor_id: string;
+  resource_type: ResourceType;
+  title: string;
+  description: string | null;
+  storage_path: string | null;
+  external_url: string | null;
+  thumbnail_url: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  assignment_id: string | null;
+  lesson_id: string | null;
+  created_at: string;
+  viewed_at: string | null;
+  is_visible_to_parent: boolean;
+}
+
+// Shared resource with related entities
+export interface SharedResourceWithStudent extends SharedResource {
+  student: Student;
+}
+
+export interface SharedResourceWithDetails extends SharedResource {
+  student: Student;
+  parent: Parent;
+  assignment?: Assignment | null;
 }
 
 // Extended types with relations
@@ -1207,14 +1243,41 @@ export interface CreateAssignmentInput {
   worksheet_type: WorksheetType;
   config: Json; // WorksheetConfig stored as JSON
   pdf_url?: string | null;
+  storage_path?: string | null;
   due_date?: string | null;
 }
 
 export interface UpdateAssignmentInput {
   pdf_url?: string | null;
+  storage_path?: string | null;
   due_date?: string | null;
   status?: AssignmentStatus;
   completed_at?: string | null;
+}
+
+// Shared resource input types
+export interface CreateSharedResourceInput {
+  student_id: string;
+  parent_id: string;
+  tutor_id: string;
+  resource_type: ResourceType;
+  title: string;
+  description?: string | null;
+  storage_path?: string | null;
+  external_url?: string | null;
+  thumbnail_url?: string | null;
+  file_size?: number | null;
+  mime_type?: string | null;
+  assignment_id?: string | null;
+  lesson_id?: string | null;
+}
+
+export interface UpdateSharedResourceInput {
+  title?: string;
+  description?: string | null;
+  thumbnail_url?: string | null;
+  is_visible_to_parent?: boolean;
+  viewed_at?: string | null;
 }
 
 // Hook state types

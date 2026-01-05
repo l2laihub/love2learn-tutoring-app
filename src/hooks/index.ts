@@ -119,3 +119,30 @@ export {
   getRequestStatusInfo,
 } from './useLessonRequests';
 export type { LessonRequestsFilterOptions } from './useLessonRequests';
+
+// File Upload hooks
+export {
+  useFileUpload,
+  useStorageUrl,
+  STORAGE_BUCKETS,
+  FILE_SIZE_LIMITS,
+  ALLOWED_MIME_TYPES,
+} from './useFileUpload';
+export type { StorageBucket, UploadResult, UploadProgress, FileUploadState } from './useFileUpload';
+
+// Shared Resources hooks
+export {
+  useSharedResources,
+  useParentSharedResources,
+  useUnviewedResources,
+  useUnviewedResourceCount,
+  useSharedResource,
+  useCreateSharedResource,
+  useUpdateSharedResource,
+  useMarkResourceViewed,
+  useDeleteSharedResource,
+  useHideSharedResource,
+  useSharedResourceStats,
+  useResourcesByLesson,
+} from './useSharedResources';
+export type { SharedResourcesFilterOptions } from './useSharedResources';
