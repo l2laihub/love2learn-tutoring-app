@@ -213,13 +213,76 @@ export function useParentAgreement(): UseParentAgreementResult {
   }, []);
 
   /**
-   * Create a new agreement for a parent
+   * Create a new agreement for a parent (or return existing one if already exists)
    */
   const createAgreement = useCallback(async (params: CreateAgreementParams): Promise<Agreement | null> => {
     try {
       setLoading(true);
       setError(null);
 
+      const agreementType = params.agreementType || 'tutoring_services';
+
+      // First, check if parent already has a pending or signed agreement of this type
+      const { data: existingAgreement, error: checkError } = await supabase
+        .from('parent_agreements')
+        .select('*')
+        .eq('parent_id', params.parentId)
+        .eq('agreement_type', agreementType)
+        .in('status', ['pending', 'signed'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('Error checking existing agreement:', checkError);
+        // Don't throw - continue to create if check fails
+      }
+
+      // If a signed agreement already exists, return it (no need to create another)
+      if (existingAgreement && existingAgreement.status === 'signed') {
+        console.log('Parent already has a signed agreement, returning existing');
+        const agreementData: Agreement = {
+          id: existingAgreement.id,
+          parentId: existingAgreement.parent_id,
+          agreementVersion: existingAgreement.agreement_version,
+          agreementType: existingAgreement.agreement_type,
+          agreementContent: existingAgreement.agreement_content,
+          signatureData: existingAgreement.signature_data,
+          signatureTimestamp: existingAgreement.signature_timestamp,
+          signedByName: existingAgreement.signed_by_name,
+          signedByEmail: existingAgreement.signed_by_email,
+          status: existingAgreement.status,
+          createdAt: existingAgreement.created_at,
+          expiresAt: existingAgreement.expires_at,
+          pdfStoragePath: existingAgreement.pdf_storage_path,
+        };
+        setAgreement(agreementData);
+        return agreementData;
+      }
+
+      // If a pending agreement exists, return it instead of creating a new one
+      if (existingAgreement && existingAgreement.status === 'pending') {
+        console.log('Parent already has a pending agreement, returning existing');
+        const agreementData: Agreement = {
+          id: existingAgreement.id,
+          parentId: existingAgreement.parent_id,
+          agreementVersion: existingAgreement.agreement_version,
+          agreementType: existingAgreement.agreement_type,
+          agreementContent: existingAgreement.agreement_content,
+          signatureData: existingAgreement.signature_data,
+          signatureTimestamp: existingAgreement.signature_timestamp,
+          signedByName: existingAgreement.signed_by_name,
+          signedByEmail: existingAgreement.signed_by_email,
+          status: existingAgreement.status,
+          createdAt: existingAgreement.created_at,
+          expiresAt: existingAgreement.expires_at,
+          pdfStoragePath: existingAgreement.pdf_storage_path,
+        };
+        setAgreement(agreementData);
+        return agreementData;
+      }
+
+      // No existing agreement, create a new one
       const agreementContent = getAgreementText('Love to Learn Academy');
       const version = params.agreementVersion || AGREEMENT_VERSION;
 
@@ -227,7 +290,7 @@ export function useParentAgreement(): UseParentAgreementResult {
         p_parent_id: params.parentId,
         p_agreement_content: agreementContent,
         p_agreement_version: version,
-        p_agreement_type: params.agreementType || 'tutoring_services',
+        p_agreement_type: agreementType,
         p_expires_in_days: params.expiresInDays || 30,
       });
 
