@@ -19,7 +19,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAdminAgreements, AgreementWithParent } from '../../src/hooks/useAdmin';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
+
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1200,
+};
 
 type StatusFilter = 'all' | 'signed' | 'pending' | 'expired' | 'revoked';
 
@@ -257,6 +263,7 @@ export default function AdminAgreements() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedAgreement, setSelectedAgreement] = useState<AgreementWithParent | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const responsive = useResponsive();
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -354,7 +361,15 @@ export default function AdminAgreements() {
       {/* Agreements List */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            padding: responsive.contentPadding,
+            maxWidth: layoutConstants.contentMaxWidth,
+            alignSelf: 'center',
+            width: '100%',
+          },
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

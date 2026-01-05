@@ -21,7 +21,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAgreementTemplates, AgreementTemplate } from '../../src/hooks/useAdmin';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
+
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1200,
+};
 
 interface TemplateCardProps {
   template: AgreementTemplate;
@@ -314,6 +320,7 @@ export default function AdminTemplates() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<AgreementTemplate | null>(null);
+  const responsive = useResponsive();
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -381,7 +388,15 @@ export default function AdminTemplates() {
       {/* Templates List */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            padding: responsive.contentPadding,
+            maxWidth: layoutConstants.contentMaxWidth,
+            alignSelf: 'center',
+            width: '100%',
+          },
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }

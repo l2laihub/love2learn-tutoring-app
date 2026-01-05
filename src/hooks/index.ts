@@ -74,3 +74,30 @@ export {
   useAgreementCheck,
 } from './useParentAgreement';
 export type { Agreement, SignAgreementParams, CreateAgreementParams } from './useParentAgreement';
+
+// Responsive hooks
+export {
+  useResponsive,
+  breakpoints,
+  getGridItemWidth,
+  getResponsiveValue,
+} from './useResponsive';
+export type { ResponsiveInfo, Breakpoint } from './useResponsive';
+
+// Tutor Availability hooks
+export {
+  useTutorAvailability,
+  useAvailabilitySlot,
+  useCreateAvailability,
+  useUpdateAvailability,
+  useDeleteAvailability,
+  useWeeklyAvailability,
+  useCheckAvailability,
+  useAvailableSlotsForDate,
+  DAY_NAMES,
+  formatTimeDisplay,
+} from './useTutorAvailability';
+export type {
+  UpdateTutorAvailabilityInput,
+  AvailabilityFilterOptions,
+} from './useTutorAvailability';

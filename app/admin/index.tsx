@@ -17,7 +17,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAdminDashboard } from '../../src/hooks/useAdmin';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
+
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1200,
+};
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -78,6 +84,7 @@ function QuickAction({ title, description, icon, color, onPress }: QuickActionPr
 export default function AdminDashboard() {
   const { stats, loading, error, refetch } = useAdminDashboard();
   const [refreshing, setRefreshing] = React.useState(false);
+  const responsive = useResponsive();
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -115,7 +122,15 @@ export default function AdminDashboard() {
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            padding: responsive.contentPadding,
+            maxWidth: layoutConstants.contentMaxWidth,
+            alignSelf: 'center',
+            width: '100%',
+          },
+        ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -135,7 +150,10 @@ export default function AdminDashboard() {
         {/* Stats Grid */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>At a Glance</Text>
-          <View style={styles.statsGrid}>
+          <View style={[
+            styles.statsGrid,
+            responsive.isDesktop && styles.statsGridDesktop,
+          ]}>
             <StatCard
               title="Total Parents"
               value={stats?.totalParents || 0}
@@ -187,7 +205,10 @@ export default function AdminDashboard() {
         {/* Quick Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActions}>
+          <View style={[
+            styles.quickActions,
+            responsive.isDesktop && styles.quickActionsDesktop,
+          ]}>
             <QuickAction
               title="View Agreements"
               description="Review signed parent agreements"
@@ -314,6 +335,10 @@ const styles = StyleSheet.create({
   statsGrid: {
     gap: spacing.md,
   },
+  statsGridDesktop: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
   statCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -326,6 +351,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    minWidth: '48%',
+    flex: 1,
   },
   statIconContainer: {
     width: 48,
@@ -351,6 +378,10 @@ const styles = StyleSheet.create({
   quickActions: {
     gap: spacing.md,
   },
+  quickActionsDesktop: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
   quickAction: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -362,6 +393,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
+    minWidth: '30%',
+    flex: 1,
   },
   quickActionIcon: {
     width: 40,

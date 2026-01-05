@@ -51,6 +51,7 @@ import {
   UpdateParentInput,
 } from '../../src/types/database';
 import { colors, spacing, typography, borderRadius, getSubjectColor, Subject } from '../../src/theme';
+import { useResponsive } from '../../src/hooks/useResponsive';
 
 // Subject configuration for filters
 const ALL_SUBJECTS: Subject[] = ['piano', 'math', 'reading', 'speech', 'english'];
@@ -73,9 +74,15 @@ type DisplayMode = 'list' | 'grouped';
 
 type ViewMode = 'students' | 'parents';
 
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1200,
+};
+
 export default function StudentsScreen() {
   // Auth context for role checking
   const { isTutor } = useAuthContext();
+  const responsive = useResponsive();
 
   // Data fetching hooks
   const {
@@ -626,7 +633,15 @@ export default function StudentsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            padding: responsive.contentPadding,
+            maxWidth: layoutConstants.contentMaxWidth,
+            alignSelf: 'center',
+            width: '100%',
+          },
+        ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

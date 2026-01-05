@@ -12,9 +12,15 @@ import { useStudents } from '../../src/hooks/useStudents';
 import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
 import { usePendingAssignments } from '../../src/hooks/useAssignments';
 import { usePaymentSummary, useOverduePayments } from '../../src/hooks/usePayments';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { ScheduledLessonWithStudent, AssignmentWithStudent, GroupedLesson } from '../../src/types/database';
+
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1200,
+};
 
 // Subject emoji mapping
 const subjectEmojis: Record<Subject, string> = {
@@ -43,6 +49,7 @@ export default function HomeScreen() {
   const { summary: paymentSummary, refetch: refetchPayments } = usePaymentSummary();
   const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
   const [refreshing, setRefreshing] = useState(false);
+  const responsive = useResponsive();
 
   // Calculate student counts by subject dynamically
   const subjectCounts = useMemo(() => {
@@ -134,10 +141,48 @@ export default function HomeScreen() {
     return 'Good evening';
   }, []);
 
+  // Responsive styles
+  const responsiveStyles = useMemo(() => ({
+    content: {
+      padding: responsive.contentPadding,
+      maxWidth: layoutConstants.contentMaxWidth,
+      alignSelf: 'center' as const,
+      width: '100%' as const,
+    },
+    statsGrid: {
+      flexDirection: 'row' as const,
+      flexWrap: 'wrap' as const,
+      gap: spacing.md,
+    },
+    statCard: {
+      minWidth: responsive.isDesktop ? '15%' : responsive.isTablet ? '30%' : '45%',
+      flex: 1,
+    },
+    actionsGrid: {
+      flexDirection: 'row' as const,
+      flexWrap: 'wrap' as const,
+      gap: spacing.md,
+    },
+    actionCard: {
+      minWidth: responsive.isDesktop ? '15%' : '22%',
+      flex: 1,
+    },
+    twoColumnLayout: {
+      flexDirection: responsive.isDesktop ? 'row' as const : 'column' as const,
+      gap: spacing.xl,
+    },
+    mainColumn: {
+      flex: responsive.isDesktop ? 2 : 1,
+    },
+    sideColumn: {
+      flex: responsive.isDesktop ? 1 : 1,
+    },
+  }), [responsive]);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, responsiveStyles.content]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
@@ -238,14 +283,14 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>
             {isTutor ? 'Quick Stats' : 'Overview'}
           </Text>
-          <View style={styles.statsGrid}>
+          <View style={[styles.statsGrid, responsiveStyles.statsGrid]}>
             {/* Dynamic subject cards - show active subjects */}
             {subjectCounts.activeSubjects.map((subject) => {
               const subjectColor = getSubjectColor(subject);
               return (
                 <Pressable
                   key={subject}
-                  style={[styles.statCard, { backgroundColor: subjectColor.primary }]}
+                  style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: subjectColor.primary }]}
                   onPress={() => router.push('/(tabs)/students')}
                 >
                   {studentsLoading ? (
@@ -263,7 +308,7 @@ export default function HomeScreen() {
 
             {/* Today's lessons card */}
             <Pressable
-              style={[styles.statCard, { backgroundColor: colors.accent.main }]}
+              style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: colors.accent.main }]}
               onPress={() => router.push('/(tabs)/calendar')}
             >
               <Text style={styles.statNumber}>{todayStats.scheduled}</Text>
@@ -275,7 +320,7 @@ export default function HomeScreen() {
 
             {/* Done card - tutor only */}
             {isTutor && (
-              <View style={[styles.statCard, { backgroundColor: colors.status.success }]}>
+              <View style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: colors.status.success }]}>
                 <Text style={styles.statNumber}>{todayStats.completed}</Text>
                 <Text style={styles.statLabel}>Done</Text>
                 <View style={styles.statIcon}>
@@ -369,9 +414,9 @@ export default function HomeScreen() {
         {isTutor && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.actionsGrid}>
+            <View style={[styles.actionsGrid, responsiveStyles.actionsGrid]}>
               <Pressable
-                style={styles.actionCard}
+                style={[styles.actionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/(tabs)/calendar')}
               >
                 <View style={[styles.actionIcon, { backgroundColor: colors.accent.subtle }]}>
@@ -381,7 +426,7 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.actionCard}
+                style={[styles.actionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/(tabs)/students')}
               >
                 <View style={[styles.actionIcon, { backgroundColor: colors.accent.subtle }]}>
@@ -391,7 +436,7 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.actionCard}
+                style={[styles.actionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/(tabs)/worksheets')}
               >
                 <View style={[styles.actionIcon, { backgroundColor: colors.status.infoBg }]}>
@@ -401,8 +446,8 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.actionCard}
-                onPress={() => router.push('/admin')}
+                style={[styles.actionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/admin' as any)}
               >
                 <View style={[styles.actionIcon, { backgroundColor: '#E8EAF6' }]}>
                   <Ionicons name="settings" size={24} color="#5C6BC0" />
@@ -417,10 +462,10 @@ export default function HomeScreen() {
         {!isTutor && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={styles.parentActionsGrid}>
+            <View style={[styles.parentActionsGrid, responsiveStyles.actionsGrid]}>
               <Pressable
-                style={styles.parentActionCard}
-                onPress={() => router.push('/profile')}
+                style={[styles.parentActionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/profile' as any)}
               >
                 <View style={[styles.parentActionIcon, { backgroundColor: colors.primary.subtle }]}>
                   <Ionicons name="person-circle" size={24} color={colors.primary.main} />
@@ -429,8 +474,8 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.parentActionCard}
-                onPress={() => router.push('/agreement')}
+                style={[styles.parentActionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/agreement' as any)}
               >
                 <View style={[styles.parentActionIcon, { backgroundColor: colors.status.successBg }]}>
                   <Ionicons name="document-text" size={24} color={colors.status.success} />
@@ -439,7 +484,7 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.parentActionCard}
+                style={[styles.parentActionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/(tabs)/calendar')}
               >
                 <View style={[styles.parentActionIcon, { backgroundColor: colors.accent.subtle }]}>
@@ -449,7 +494,7 @@ export default function HomeScreen() {
               </Pressable>
 
               <Pressable
-                style={styles.parentActionCard}
+                style={[styles.parentActionCard, responsiveStyles.actionCard]}
                 onPress={() => router.push('/(tabs)/worksheets')}
               >
                 <View style={[styles.parentActionIcon, { backgroundColor: colors.status.infoBg }]}>
@@ -466,13 +511,13 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>My Children</Text>
-              <Pressable onPress={() => router.push('/profile')}>
+              <Pressable onPress={() => router.push('/profile' as any)}>
                 <Text style={styles.seeAllText}>View all</Text>
               </Pressable>
             </View>
-            <View style={styles.childrenGrid}>
+            <View style={[styles.childrenGrid, responsiveStyles.statsGrid]}>
               {students.map((student) => (
-                <View key={student.id} style={styles.childCard}>
+                <View key={student.id} style={[styles.childCard, { minWidth: responsive.isDesktop ? '20%' : responsive.isTablet ? '30%' : '45%' }]}>
                   <View style={styles.childAvatar}>
                     <Ionicons name="person" size={20} color={colors.piano.primary} />
                   </View>

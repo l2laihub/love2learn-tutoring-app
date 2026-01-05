@@ -8,7 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { AdminSidebar } from '../../src/components/layout/AdminSidebar';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -25,6 +27,7 @@ function TabIcon({ name, color, size }: TabIconProps) {
 export default function AdminLayout() {
   const insets = useSafeAreaInsets();
   const { isTutor, isLoading, parentQueryError, isAuthenticated } = useAuthContext();
+  const { isDesktop } = useResponsive();
 
   // Show loading while checking auth
   if (isLoading) {
@@ -54,6 +57,56 @@ export default function AdminLayout() {
     return <Redirect href="/(tabs)" />;
   }
 
+  // On desktop, use sidebar layout
+  if (isDesktop) {
+    return (
+      <AdminSidebar>
+        <Tabs
+          screenOptions={{
+            tabBarStyle: { display: 'none' }, // Hide bottom tabs on desktop
+            headerStyle: {
+              backgroundColor: '#1B3A4B', // Dark navy for admin
+            },
+            headerTintColor: colors.neutral.textInverse,
+            headerTitleStyle: {
+              fontWeight: '600',
+            },
+          }}
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Dashboard',
+              headerTitle: 'Admin Dashboard',
+            }}
+          />
+          <Tabs.Screen
+            name="agreements"
+            options={{
+              title: 'Agreements',
+              headerTitle: 'Parent Agreements',
+            }}
+          />
+          <Tabs.Screen
+            name="parents"
+            options={{
+              title: 'Parents',
+              headerTitle: 'Parent Management',
+            }}
+          />
+          <Tabs.Screen
+            name="templates"
+            options={{
+              title: 'Templates',
+              headerTitle: 'Agreement Templates',
+            }}
+          />
+        </Tabs>
+      </AdminSidebar>
+    );
+  }
+
+  // Mobile/tablet: use bottom tabs
   return (
     <Tabs
       screenOptions={{

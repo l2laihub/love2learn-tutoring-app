@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
+import { useResponsive } from '../../src/hooks/useResponsive';
 import {
   useWeekGroupedLessons,
   useCreateLesson,
@@ -82,8 +83,14 @@ function formatDateKey(date: Date): string {
 // Days of the week
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Layout constants for responsive design
+const layoutConstants = {
+  contentMaxWidth: 1400, // Wider for calendar to show week view
+};
+
 export default function CalendarScreen() {
   const { isTutor } = useAuthContext();
+  const responsive = useResponsive();
   const [weekStart, setWeekStart] = useState<Date>(() => getWeekStart(new Date()));
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -632,6 +639,12 @@ export default function CalendarScreen() {
       {!loading && !error && (
         <ScrollView
           style={styles.content}
+          contentContainerStyle={{
+            padding: responsive.contentPadding,
+            maxWidth: layoutConstants.contentMaxWidth,
+            alignSelf: 'center',
+            width: '100%',
+          }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }

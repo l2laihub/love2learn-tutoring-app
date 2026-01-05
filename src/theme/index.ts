@@ -260,6 +260,33 @@ export const animation = {
   },
 } as const;
 
+// Responsive breakpoints (in pixels)
+export const breakpoints = {
+  sm: 640,   // Small devices (phones landscape)
+  md: 768,   // Medium devices (tablets portrait)
+  lg: 1024,  // Large devices (tablets landscape, small laptops)
+  xl: 1280,  // Extra large (desktops)
+  '2xl': 1536, // Large desktops
+} as const;
+
+// Container max-widths for centered content
+export const containers = {
+  sm: 640,
+  md: 768,
+  lg: 1024,
+  xl: 1200,
+  '2xl': 1400,
+} as const;
+
+// Layout constants
+export const layout = {
+  sidebarWidth: 280,
+  sidebarCollapsedWidth: 72,
+  headerHeight: 64,
+  tabBarHeight: 60,
+  contentMaxWidth: 1200,
+} as const;
+
 // Subject type including all subjects
 export type Subject = 'piano' | 'math' | 'reading' | 'speech' | 'english';
 
@@ -304,6 +331,9 @@ export const theme = {
   borderRadius,
   shadows,
   animation,
+  breakpoints,
+  containers,
+  layout,
   getSubjectColor,
   getPaymentStatusColor,
   getAvatarColor,
