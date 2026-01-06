@@ -474,3 +474,34 @@ export function generatePianoWorksheet(
     })),
   };
 }
+
+// Generate worksheet from stored config (for viewing existing assignments)
+export function generatePianoWorksheetFromConfig(
+  config: unknown,
+  studentName: string
+): WorksheetResult | null {
+  // Validate config is a PianoWorksheetConfig
+  if (!config || typeof config !== 'object') return null;
+
+  const c = config as Record<string, unknown>;
+  if (
+    !c.type ||
+    !c.clef ||
+    !c.difficulty ||
+    !c.problemCount ||
+    (c.type !== 'note_naming' && c.type !== 'note_drawing')
+  ) {
+    return null;
+  }
+
+  const pianoConfig: PianoWorksheetConfig = {
+    type: c.type as 'note_naming' | 'note_drawing',
+    clef: (c.clef as string) as 'treble' | 'bass' | 'grand',
+    difficulty: (c.difficulty as string) as 'beginner' | 'elementary' | 'intermediate' | 'advanced',
+    problemCount: c.problemCount as 10 | 15 | 20,
+    accidentals: (c.accidentals as string || 'none') as 'none' | 'sharps' | 'flats' | 'mixed',
+    theme: c.theme as 'space' | 'animals' | 'ocean' | undefined,
+  };
+
+  return generatePianoWorksheet(pianoConfig, studentName);
+}

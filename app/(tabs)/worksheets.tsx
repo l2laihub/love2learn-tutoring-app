@@ -27,7 +27,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '../../src/th
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTutor } from '../../src/hooks/useParents';
-import { useAssignments, useCreateAssignment, useCompleteAssignment } from '../../src/hooks/useAssignments';
+import { useAssignments, useCreateAssignment, useCompleteAssignment, useDeleteAssignment } from '../../src/hooks/useAssignments';
 import { useSharedResources, useCreateSharedResource, useDeleteSharedResourceWithFile } from '../../src/hooks/useSharedResources';
 import { WorksheetGeneratorModal, WorksheetConfig } from '../../src/components/WorksheetGeneratorModal';
 import { UploadWorksheetModal } from '../../src/components/UploadWorksheetModal';
@@ -36,7 +36,7 @@ import { YouTubeShareModal } from '../../src/components/YouTubeShareModal';
 import { SharedResourceList } from '../../src/components/SharedResourceCard';
 import { ResourceViewerModal } from '../../src/components/ResourceViewerModal';
 import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent, CreateSharedResourceInput, SharedResourceWithStudent, ResourceType } from '../../src/types/database';
-import { generatePianoWorksheet } from '../../src/services/pianoWorksheetGenerator';
+import { generatePianoWorksheet, generatePianoWorksheetFromConfig } from '../../src/services/pianoWorksheetGenerator';
 
 type TabType = 'generate' | 'assigned' | 'library';
 
@@ -77,6 +77,7 @@ export default function WorksheetsScreen() {
   const { data: assignments, loading: assignmentsLoading, refetch: refetchAssignments } = useAssignments();
   const { mutate: createAssignment } = useCreateAssignment();
   const { mutate: completeAssignment, loading: completingAssignment } = useCompleteAssignment();
+  const { mutate: deleteAssignment, loading: deletingAssignment } = useDeleteAssignment();
   const { mutate: createSharedResource } = useCreateSharedResource();
   const { mutate: deleteResource, loading: deletingResource } = useDeleteSharedResourceWithFile();
 
@@ -85,6 +86,12 @@ export default function WorksheetsScreen() {
   const [presetSubject, setPresetSubject] = useState<TutoringSubject | undefined>();
   const [statusFilter, setStatusFilter] = useState<FilterOption>('all');
   const [selectedChild, setSelectedChild] = useState<string | null>(null);
+
+  // Admin Assigned tab filter states
+  const [adminStatusFilter, setAdminStatusFilter] = useState<FilterOption>('all');
+  const [adminStudentFilter, setAdminStudentFilter] = useState<string | null>(null);
+  const [adminTypeFilter, setAdminTypeFilter] = useState<'all' | 'piano_naming' | 'piano_drawing' | 'math'>('all');
+  const [showAdminStudentPicker, setShowAdminStudentPicker] = useState(false);
 
   // Sharing modal states
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -99,9 +106,13 @@ export default function WorksheetsScreen() {
   const [refreshingLibrary, setRefreshingLibrary] = useState(false);
   const [showStudentPicker, setShowStudentPicker] = useState(false);
 
-  // Multi-select states for bulk delete
+  // Multi-select states for bulk delete (Library)
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
+
+  // Multi-select states for bulk delete (Assignments)
+  const [isAssignmentSelectMode, setIsAssignmentSelectMode] = useState(false);
+  const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<string[]>([]);
 
   const isTutor = userRole === 'tutor';
 
@@ -153,6 +164,49 @@ export default function WorksheetsScreen() {
 
     return filtered;
   }, [assignments, statusFilter, selectedChild]);
+
+  // Filtered assignments for admin/tutor view
+  const adminFilteredAssignments = React.useMemo(() => {
+    let filtered = assignments;
+
+    // Filter by status
+    if (adminStatusFilter === 'pending') {
+      filtered = filtered.filter(a => a.status !== 'completed');
+    } else if (adminStatusFilter === 'completed') {
+      filtered = filtered.filter(a => a.status === 'completed');
+    }
+
+    // Filter by student
+    if (adminStudentFilter) {
+      filtered = filtered.filter(a => a.student_id === adminStudentFilter);
+    }
+
+    // Filter by worksheet type
+    if (adminTypeFilter !== 'all') {
+      filtered = filtered.filter(a => a.worksheet_type === adminTypeFilter);
+    }
+
+    return filtered;
+  }, [assignments, adminStatusFilter, adminStudentFilter, adminTypeFilter]);
+
+  // Assignment counts for admin filters
+  const assignmentCounts = React.useMemo(() => {
+    return {
+      all: assignments.length,
+      pending: assignments.filter(a => a.status !== 'completed').length,
+      completed: assignments.filter(a => a.status === 'completed').length,
+      piano_naming: assignments.filter(a => a.worksheet_type === 'piano_naming').length,
+      piano_drawing: assignments.filter(a => a.worksheet_type === 'piano_drawing').length,
+      math: assignments.filter(a => a.worksheet_type === 'math').length,
+    };
+  }, [assignments]);
+
+  // Get admin selected student name
+  const getAdminSelectedStudentName = useCallback(() => {
+    if (!adminStudentFilter) return 'All Students';
+    const student = students?.find((s) => s.id === adminStudentFilter);
+    return student?.name || 'Unknown Student';
+  }, [adminStudentFilter, students]);
 
   // Filtered resources for library tab
   const filteredResources = React.useMemo(() => {
@@ -364,6 +418,126 @@ export default function WorksheetsScreen() {
     }
   }, [selectedResourceIds, filteredResources, deleteResource, refetchResources]);
 
+  // Toggle assignment select mode
+  const toggleAssignmentSelectMode = useCallback(() => {
+    setIsAssignmentSelectMode(prev => {
+      if (prev) {
+        // Exiting select mode, clear selections
+        setSelectedAssignmentIds([]);
+      }
+      return !prev;
+    });
+  }, []);
+
+  // Handle assignment selection toggle
+  const handleSelectAssignment = useCallback((assignmentId: string) => {
+    setSelectedAssignmentIds(prev => {
+      const index = prev.indexOf(assignmentId);
+      if (index > -1) {
+        // Remove from selection
+        return prev.filter(id => id !== assignmentId);
+      } else {
+        // Add to selection
+        return [...prev, assignmentId];
+      }
+    });
+  }, []);
+
+  // Select all visible assignments
+  const selectAllAssignments = useCallback(() => {
+    setSelectedAssignmentIds(adminFilteredAssignments.map(a => a.id));
+  }, [adminFilteredAssignments]);
+
+  // Handle bulk delete assignments
+  const handleBulkDeleteAssignments = useCallback(async () => {
+    const count = selectedAssignmentIds.length;
+    if (count === 0) {
+      if (Platform.OS === 'web') {
+        window.alert('Please select assignments to delete.');
+      } else {
+        Alert.alert('No Selection', 'Please select assignments to delete.');
+      }
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to delete ${count} worksheet${count > 1 ? 's' : ''}? This action cannot be undone.`;
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+
+      // Proceed with deletion
+      let successCount = 0;
+      let failCount = 0;
+
+      for (const assignmentId of selectedAssignmentIds) {
+        const success = await deleteAssignment(assignmentId);
+        if (success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+
+      // Exit select mode and clear selections
+      setIsAssignmentSelectMode(false);
+      setSelectedAssignmentIds([]);
+
+      // Refresh the list
+      await refetchAssignments();
+
+      // Show result
+      if (failCount === 0) {
+        window.alert(`${successCount} worksheet${successCount > 1 ? 's' : ''} deleted successfully`);
+      } else {
+        window.alert(`${successCount} deleted, ${failCount} failed. Please try again for failed items.`);
+      }
+    } else {
+      // Native alert
+      Alert.alert(
+        'Delete Selected Worksheets',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete All',
+            style: 'destructive',
+            onPress: async () => {
+              let successCount = 0;
+              let failCount = 0;
+
+              for (const assignmentId of selectedAssignmentIds) {
+                const success = await deleteAssignment(assignmentId);
+                if (success) {
+                  successCount++;
+                } else {
+                  failCount++;
+                }
+              }
+
+              // Exit select mode and clear selections
+              setIsAssignmentSelectMode(false);
+              setSelectedAssignmentIds([]);
+
+              // Refresh the list
+              await refetchAssignments();
+
+              // Show result
+              if (failCount === 0) {
+                Alert.alert('Success', `${successCount} worksheet${successCount > 1 ? 's' : ''} deleted successfully`);
+              } else {
+                Alert.alert(
+                  'Partial Success',
+                  `${successCount} deleted, ${failCount} failed. Please try again for failed items.`
+                );
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [selectedAssignmentIds, deleteAssignment, refetchAssignments]);
+
   // Get selected student name for dropdown display
   const getSelectedStudentName = useCallback(() => {
     if (!selectedStudent) return 'All Students';
@@ -382,6 +556,109 @@ export default function WorksheetsScreen() {
       Alert.alert('Error', 'Failed to mark worksheet as complete. Please try again.');
     }
   };
+
+  // Handle deleting an assignment (admin only)
+  const handleDeleteAssignment = useCallback(async (assignment: AssignmentWithStudent) => {
+    const confirmMessage = `Are you sure you want to delete this ${getWorksheetTypeName(assignment.worksheet_type)} worksheet assigned to ${assignment.student?.name || 'Unknown'}?`;
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+
+      const success = await deleteAssignment(assignment.id);
+      if (success) {
+        window.alert('Assignment deleted successfully');
+        refetchAssignments();
+      } else {
+        window.alert('Failed to delete assignment. Please try again.');
+      }
+    } else {
+      Alert.alert(
+        'Delete Assignment',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const success = await deleteAssignment(assignment.id);
+              if (success) {
+                Alert.alert('Success', 'Assignment deleted successfully');
+                refetchAssignments();
+              } else {
+                Alert.alert('Error', 'Failed to delete assignment. Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [deleteAssignment, refetchAssignments]);
+
+  // Handle viewing/printing a worksheet (regenerates from stored config if needed)
+  const handleViewWorksheet = useCallback(async (assignment: AssignmentWithStudent) => {
+    const studentName = assignment.student?.name || 'Student';
+
+    // If it's a piano worksheet, regenerate from stored config
+    if (assignment.worksheet_type === 'piano_naming' || assignment.worksheet_type === 'piano_drawing') {
+      const result = generatePianoWorksheetFromConfig(assignment.config, studentName);
+
+      if (!result) {
+        Alert.alert('Error', 'Unable to generate worksheet. Invalid configuration.');
+        return;
+      }
+
+      // On web, open in a new window
+      if (Platform.OS === 'web') {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(result.worksheetHtml);
+          printWindow.document.close();
+        } else {
+          Alert.alert('Error', 'Unable to open worksheet. Please allow popups for this site.');
+        }
+        return;
+      }
+
+      // On mobile, if we have a stored PDF URL, try to share it first
+      if (assignment.pdf_url) {
+        try {
+          const canShare = await Sharing.isAvailableAsync();
+          if (canShare) {
+            await Sharing.shareAsync(assignment.pdf_url, {
+              mimeType: 'application/pdf',
+              dialogTitle: 'Print Worksheet',
+            });
+            return;
+          }
+        } catch (error) {
+          console.log('Stored PDF not accessible, regenerating...');
+        }
+      }
+
+      // Generate PDF on the fly and share
+      try {
+        const printResult = await Print.printToFileAsync({
+          html: result.worksheetHtml,
+        });
+
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(printResult.uri, {
+            mimeType: 'application/pdf',
+            dialogTitle: 'Print Worksheet',
+          });
+        }
+      } catch (error) {
+        console.error('Error generating worksheet PDF:', error);
+        Alert.alert('Error', 'Unable to generate worksheet PDF.');
+      }
+    } else {
+      // Math worksheet - not yet supported
+      Alert.alert('Coming Soon', 'Math worksheet viewing is not yet available.');
+    }
+  }, []);
 
   const handleOpenGenerator = (subject?: TutoringSubject) => {
     setPresetSubject(subject);
@@ -903,12 +1180,210 @@ export default function WorksheetsScreen() {
         ) : activeTab === 'assigned' ? (
           /* Assigned Tab */
           <>
+            {/* Admin Filters */}
+            {isTutor && (
+              <View style={styles.adminFiltersContainer}>
+                {/* Header with count */}
+                <View style={styles.adminFiltersHeader}>
+                  <Text style={styles.adminFiltersTitle}>Assigned Worksheets</Text>
+                  <Text style={styles.adminFiltersCount}>
+                    {adminFilteredAssignments.length} of {assignments.length}
+                  </Text>
+                </View>
+
+                {/* Student Filter Dropdown */}
+                <View style={styles.adminFilterRow}>
+                  <Text style={styles.adminFilterLabel}>Student:</Text>
+                  <Pressable
+                    style={styles.adminFilterDropdown}
+                    onPress={() => setShowAdminStudentPicker(true)}
+                  >
+                    <Ionicons
+                      name="person"
+                      size={16}
+                      color={adminStudentFilter ? colors.piano.primary : colors.neutral.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.adminFilterDropdownText,
+                        adminStudentFilter && styles.adminFilterDropdownTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {getAdminSelectedStudentName()}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.neutral.textSecondary} />
+                  </Pressable>
+                  {adminStudentFilter && (
+                    <Pressable
+                      style={styles.adminFilterClearBtn}
+                      onPress={() => setAdminStudentFilter(null)}
+                    >
+                      <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
+                    </Pressable>
+                  )}
+                </View>
+
+                {/* Status Filter Chips */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.adminFilterChips}
+                  contentContainerStyle={styles.adminFilterChipsContent}
+                >
+                  {(['all', 'pending', 'completed'] as FilterOption[]).map((filter) => (
+                    <Pressable
+                      key={filter}
+                      style={[
+                        styles.adminFilterChip,
+                        adminStatusFilter === filter && styles.adminFilterChipActive,
+                      ]}
+                      onPress={() => setAdminStatusFilter(filter)}
+                    >
+                      <Text
+                        style={[
+                          styles.adminFilterChipText,
+                          adminStatusFilter === filter && styles.adminFilterChipTextActive,
+                        ]}
+                      >
+                        {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.adminFilterChipBadge,
+                          adminStatusFilter === filter && styles.adminFilterChipBadgeActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.adminFilterChipBadgeText,
+                            adminStatusFilter === filter && styles.adminFilterChipBadgeTextActive,
+                          ]}
+                        >
+                          {filter === 'all' ? assignmentCounts.all : filter === 'pending' ? assignmentCounts.pending : assignmentCounts.completed}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                {/* Type Filter Chips */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.adminFilterChips}
+                  contentContainerStyle={styles.adminFilterChipsContent}
+                >
+                  {[
+                    { value: 'all' as const, label: 'All Types', icon: 'apps' },
+                    { value: 'piano_naming' as const, label: 'Note Naming', icon: 'musical-notes' },
+                    { value: 'piano_drawing' as const, label: 'Note Drawing', icon: 'pencil' },
+                    { value: 'math' as const, label: 'Math', icon: 'calculator' },
+                  ].map((type) => (
+                    <Pressable
+                      key={type.value}
+                      style={[
+                        styles.adminFilterChip,
+                        adminTypeFilter === type.value && styles.adminFilterChipActive,
+                      ]}
+                      onPress={() => setAdminTypeFilter(type.value)}
+                    >
+                      <Ionicons
+                        name={type.icon as any}
+                        size={14}
+                        color={adminTypeFilter === type.value ? colors.piano.primary : colors.neutral.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.adminFilterChipText,
+                          adminTypeFilter === type.value && styles.adminFilterChipTextActive,
+                        ]}
+                      >
+                        {type.label}
+                      </Text>
+                      {type.value !== 'all' && (
+                        <View
+                          style={[
+                            styles.adminFilterChipBadge,
+                            adminTypeFilter === type.value && styles.adminFilterChipBadgeActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.adminFilterChipBadgeText,
+                              adminTypeFilter === type.value && styles.adminFilterChipBadgeTextActive,
+                            ]}
+                          >
+                            {assignmentCounts[type.value]}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+
+                {/* Clear All Filters */}
+                {(adminStatusFilter !== 'all' || adminStudentFilter || adminTypeFilter !== 'all') && (
+                  <Pressable
+                    style={styles.clearAllFiltersBtn}
+                    onPress={() => {
+                      setAdminStatusFilter('all');
+                      setAdminStudentFilter(null);
+                      setAdminTypeFilter('all');
+                    }}
+                  >
+                    <Ionicons name="refresh" size={14} color={colors.piano.primary} />
+                    <Text style={styles.clearAllFiltersText}>Clear All Filters</Text>
+                  </Pressable>
+                )}
+
+                {/* Select Mode Controls for Bulk Delete */}
+                {adminFilteredAssignments.length > 0 && (
+                  <View style={styles.assignmentSelectControls}>
+                    {isAssignmentSelectMode ? (
+                      <>
+                        <Pressable style={styles.selectAllButton} onPress={selectAllAssignments}>
+                          <Ionicons name="checkbox-outline" size={18} color={colors.piano.primary} />
+                          <Text style={styles.selectAllText}>Select All</Text>
+                        </Pressable>
+                        <Text style={styles.selectedCount}>
+                          {selectedAssignmentIds.length} selected
+                        </Text>
+                        <View style={styles.selectModeActions}>
+                          <Pressable
+                            style={[styles.bulkDeleteButton, selectedAssignmentIds.length === 0 && styles.bulkDeleteButtonDisabled]}
+                            onPress={handleBulkDeleteAssignments}
+                            disabled={selectedAssignmentIds.length === 0 || deletingAssignment}
+                          >
+                            {deletingAssignment ? (
+                              <ActivityIndicator size="small" color={colors.status.error} />
+                            ) : (
+                              <Ionicons name="trash-outline" size={18} color={colors.status.error} />
+                            )}
+                            <Text style={styles.bulkDeleteText}>Delete</Text>
+                          </Pressable>
+                          <Pressable style={styles.cancelSelectButton} onPress={toggleAssignmentSelectMode}>
+                            <Text style={styles.cancelSelectText}>Cancel</Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    ) : (
+                      <Pressable style={styles.enterSelectButton} onPress={toggleAssignmentSelectMode}>
+                        <Ionicons name="checkmark-circle-outline" size={18} color={colors.neutral.textSecondary} />
+                        <Text style={styles.enterSelectText}>Select to Delete</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+
             {assignmentsLoading ? (
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.piano.primary} />
                 <Text style={styles.loadingText}>Loading worksheets...</Text>
               </View>
-            ) : (isTutor ? assignments : filteredAssignments).length === 0 ? (
+            ) : (isTutor ? adminFilteredAssignments : filteredAssignments).length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconContainer}>
                   <Ionicons
@@ -918,18 +1393,21 @@ export default function WorksheetsScreen() {
                   />
                 </View>
                 <Text style={styles.emptyTitle}>
-                  {!isTutor && (statusFilter !== 'all' || selectedChild)
+                  {(isTutor && (adminStatusFilter !== 'all' || adminStudentFilter || adminTypeFilter !== 'all')) ||
+                   (!isTutor && (statusFilter !== 'all' || selectedChild))
                     ? 'No Matching Worksheets'
                     : 'No Assigned Worksheets'}
                 </Text>
                 <Text style={styles.emptySubtitle}>
                   {isTutor
-                    ? 'Generate a worksheet and assign it to a student to track their progress.'
+                    ? (adminStatusFilter !== 'all' || adminStudentFilter || adminTypeFilter !== 'all')
+                      ? 'Try adjusting your filters to see more worksheets.'
+                      : 'Generate a worksheet and assign it to a student to track their progress.'
                     : !isTutor && (statusFilter !== 'all' || selectedChild)
                       ? 'Try adjusting your filters to see more worksheets.'
                       : 'Your assigned worksheets will appear here once your tutor assigns them.'}
                 </Text>
-                {isTutor && (
+                {isTutor && !(adminStatusFilter !== 'all' || adminStudentFilter || adminTypeFilter !== 'all') && (
                   <Pressable
                     style={styles.emptyButton}
                     onPress={() => {
@@ -942,6 +1420,23 @@ export default function WorksheetsScreen() {
                       color={colors.neutral.white}
                     />
                     <Text style={styles.emptyButtonText}>Generate Worksheet</Text>
+                  </Pressable>
+                )}
+                {isTutor && (adminStatusFilter !== 'all' || adminStudentFilter || adminTypeFilter !== 'all') && (
+                  <Pressable
+                    style={styles.emptyButton}
+                    onPress={() => {
+                      setAdminStatusFilter('all');
+                      setAdminStudentFilter(null);
+                      setAdminTypeFilter('all');
+                    }}
+                  >
+                    <Ionicons
+                      name="refresh"
+                      size={18}
+                      color={colors.neutral.white}
+                    />
+                    <Text style={styles.emptyButtonText}>Clear Filters</Text>
                   </Pressable>
                 )}
                 {!isTutor && (statusFilter !== 'all' || selectedChild) && (
@@ -963,107 +1458,183 @@ export default function WorksheetsScreen() {
               </View>
             ) : (
               <View style={styles.assignmentsList}>
-                {(isTutor ? assignments : filteredAssignments).map((assignment: AssignmentWithStudent) => (
-                  <Pressable
-                    key={assignment.id}
-                    style={styles.assignmentCard}
-                    onPress={() => {
-                      if (isTutor) {
-                        // Tutor: show details
-                        Alert.alert(
-                          getWorksheetTypeName(assignment.worksheet_type),
-                          `Assigned to: ${assignment.student?.name || 'Unknown'}\nStatus: ${assignment.status}\nAssigned: ${formatDate(assignment.assigned_at)}`,
-                          [{ text: 'OK' }]
-                        );
-                      } else {
-                        // Parent: show action options
-                        const options = [{ text: 'Close', style: 'cancel' as const }];
+                {(isTutor ? adminFilteredAssignments : filteredAssignments).map((assignment: AssignmentWithStudent) => {
+                  const isPianoWorksheet = assignment.worksheet_type === 'piano_naming' || assignment.worksheet_type === 'piano_drawing';
+                  const isSelected = selectedAssignmentIds.includes(assignment.id);
 
-                        // Add print option if PDF exists
-                        if (assignment.pdf_url) {
-                          options.push({
-                            text: 'Print',
-                            style: 'default' as const,
-                            onPress: async () => {
-                              try {
-                                const canShare = await Sharing.isAvailableAsync();
-                                if (canShare) {
-                                  await Sharing.shareAsync(assignment.pdf_url!, {
-                                    mimeType: 'application/pdf',
-                                    dialogTitle: 'Print Worksheet',
-                                  });
-                                }
-                              } catch (error) {
-                                console.error('Error sharing worksheet:', error);
-                                Alert.alert('Error', 'Unable to open worksheet for printing.');
-                              }
-                            },
-                          } as any);
-                        }
+                  return (
+                    <View key={assignment.id} style={styles.assignmentCardContainer}>
+                      {/* Checkbox for select mode (tutor only) */}
+                      {isTutor && isAssignmentSelectMode && (
+                        <Pressable
+                          style={styles.assignmentCheckbox}
+                          onPress={() => handleSelectAssignment(assignment.id)}
+                        >
+                          <Ionicons
+                            name={isSelected ? 'checkbox' : 'square-outline'}
+                            size={24}
+                            color={isSelected ? colors.piano.primary : colors.neutral.textMuted}
+                          />
+                        </Pressable>
+                      )}
 
-                        // Add mark complete option if not already completed
-                        if (assignment.status !== 'completed') {
-                          options.push({
-                            text: 'Mark as Done',
-                            style: 'default' as const,
-                            onPress: () => handleMarkComplete(assignment.id),
-                          } as any);
-                        }
-
-                        Alert.alert(
-                          getWorksheetTypeName(assignment.worksheet_type),
-                          `For: ${assignment.student?.name || 'Unknown'}\nAssigned: ${formatDate(assignment.assigned_at)}${assignment.due_date ? `\nDue: ${formatDate(assignment.due_date)}` : ''}`,
-                          options
-                        );
-                      }
-                    }}
-                  >
-                    <View
-                      style={[
-                        styles.assignmentIcon,
-                        {
-                          backgroundColor: assignment.worksheet_type.startsWith('piano')
-                            ? colors.piano.subtle
-                            : colors.math.subtle,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.assignmentEmoji}>
-                        {getWorksheetIcon(assignment.worksheet_type)}
-                      </Text>
-                    </View>
-                    <View style={styles.assignmentInfo}>
-                      <Text style={styles.assignmentTitle}>
-                        {getWorksheetTypeName(assignment.worksheet_type)}
-                      </Text>
-                      <Text style={styles.assignmentStudent}>
-                        {assignment.student?.name || 'Unknown Student'}
-                      </Text>
-                      <Text style={styles.assignmentDate}>
-                        Assigned {formatDate(assignment.assigned_at)}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        assignment.status === 'completed'
-                          ? styles.statusCompleted
-                          : styles.statusPending,
-                      ]}
-                    >
-                      <Text
+                      <Pressable
                         style={[
-                          styles.statusText,
-                          assignment.status === 'completed'
-                            ? styles.statusTextCompleted
-                            : styles.statusTextPending,
+                          styles.assignmentCard,
+                          isAssignmentSelectMode && styles.assignmentCardSelectMode,
+                          isSelected && styles.assignmentCardSelected,
                         ]}
+                        onPress={() => {
+                          // In select mode, toggle selection
+                          if (isTutor && isAssignmentSelectMode) {
+                            handleSelectAssignment(assignment.id);
+                            return;
+                          }
+
+                          // Normal mode - handle viewing
+                          if (Platform.OS === 'web') {
+                            // For parents or non-piano worksheets on web, just view
+                            if (!isTutor) {
+                              if (isPianoWorksheet) {
+                                handleViewWorksheet(assignment);
+                              } else {
+                                window.alert(`${getWorksheetTypeName(assignment.worksheet_type)}\n\nFor: ${assignment.student?.name || 'Unknown'}\nAssigned: ${formatDate(assignment.assigned_at)}`);
+                              }
+                            }
+                            // For tutors on web, let action buttons handle it
+                            return;
+                          }
+
+                          // On mobile, use Alert.alert with options
+                          if (isTutor) {
+                            const options: Array<{ text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }> = [
+                              { text: 'Close', style: 'cancel' },
+                            ];
+
+                            if (isPianoWorksheet) {
+                              options.push({
+                                text: 'View / Print',
+                                style: 'default',
+                                onPress: () => handleViewWorksheet(assignment),
+                              });
+                            }
+
+                            options.push({
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: () => handleDeleteAssignment(assignment),
+                            });
+
+                            Alert.alert(
+                              getWorksheetTypeName(assignment.worksheet_type),
+                              `Assigned to: ${assignment.student?.name || 'Unknown'}\nStatus: ${assignment.status}\nAssigned: ${formatDate(assignment.assigned_at)}`,
+                              options
+                            );
+                          } else {
+                            // Parent: show action options
+                            const options: Array<{ text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }> = [
+                              { text: 'Close', style: 'cancel' },
+                            ];
+
+                            if (isPianoWorksheet) {
+                              options.push({
+                                text: 'View / Print',
+                                style: 'default',
+                                onPress: () => handleViewWorksheet(assignment),
+                              });
+                            }
+
+                            if (assignment.status !== 'completed') {
+                              options.push({
+                                text: 'Mark as Done',
+                                style: 'default',
+                                onPress: () => handleMarkComplete(assignment.id),
+                              });
+                            }
+
+                            Alert.alert(
+                              getWorksheetTypeName(assignment.worksheet_type),
+                              `For: ${assignment.student?.name || 'Unknown'}\nAssigned: ${formatDate(assignment.assigned_at)}${assignment.due_date ? `\nDue: ${formatDate(assignment.due_date)}` : ''}`,
+                              options
+                            );
+                          }
+                        }}
                       >
-                        {assignment.status === 'completed' ? 'Done' : 'Pending'}
-                      </Text>
+                        <View
+                          style={[
+                            styles.assignmentIcon,
+                            {
+                              backgroundColor: assignment.worksheet_type.startsWith('piano')
+                                ? colors.piano.subtle
+                                : colors.math.subtle,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.assignmentEmoji}>
+                            {getWorksheetIcon(assignment.worksheet_type)}
+                          </Text>
+                        </View>
+                        <View style={styles.assignmentInfo}>
+                          <Text style={styles.assignmentTitle}>
+                            {getWorksheetTypeName(assignment.worksheet_type)}
+                          </Text>
+                          <Text style={styles.assignmentStudent}>
+                            {assignment.student?.name || 'Unknown Student'}
+                          </Text>
+                          <Text style={styles.assignmentDate}>
+                            Assigned {formatDate(assignment.assigned_at)}
+                          </Text>
+                        </View>
+
+                        {/* Action buttons for tutor on web (not in select mode) */}
+                        {isTutor && Platform.OS === 'web' && !isAssignmentSelectMode ? (
+                          <View style={styles.assignmentActions}>
+                            {isPianoWorksheet && (
+                              <Pressable
+                                style={styles.assignmentActionBtn}
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  handleViewWorksheet(assignment);
+                                }}
+                              >
+                                <Ionicons name="eye-outline" size={20} color={colors.piano.primary} />
+                              </Pressable>
+                            )}
+                            <Pressable
+                              style={[styles.assignmentActionBtn, styles.assignmentActionBtnDelete]}
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                handleDeleteAssignment(assignment);
+                              }}
+                            >
+                              <Ionicons name="trash-outline" size={20} color={colors.status.error} />
+                            </Pressable>
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              assignment.status === 'completed'
+                                ? styles.statusCompleted
+                                : styles.statusPending,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusText,
+                                assignment.status === 'completed'
+                                  ? styles.statusTextCompleted
+                                  : styles.statusTextPending,
+                              ]}
+                            >
+                              {assignment.status === 'completed' ? 'Done' : 'Pending'}
+                            </Text>
+                          </View>
+                        )}
+                      </Pressable>
                     </View>
-                  </Pressable>
-                ))}
+                  );
+                })}
               </View>
             )}
           </>
@@ -1399,6 +1970,95 @@ export default function WorksheetsScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Admin Student Picker Modal for Assigned Tab */}
+      <Modal
+        visible={showAdminStudentPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowAdminStudentPicker(false)}
+      >
+        <Pressable
+          style={styles.pickerOverlay}
+          onPress={() => setShowAdminStudentPicker(false)}
+        >
+          <Pressable style={styles.pickerContainer} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Filter by Student</Text>
+              <Pressable
+                style={styles.pickerCloseButton}
+                onPress={() => setShowAdminStudentPicker(false)}
+              >
+                <Ionicons name="close" size={24} color={colors.neutral.text} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              data={[{ id: null, name: 'All Students' }, ...(students || [])]}
+              keyExtractor={(item) => item.id || 'all'}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[
+                    styles.pickerItem,
+                    (item.id === null && adminStudentFilter === null) ||
+                    item.id === adminStudentFilter
+                      ? styles.pickerItemActive
+                      : null,
+                  ]}
+                  onPress={() => {
+                    setAdminStudentFilter(item.id);
+                    setShowAdminStudentPicker(false);
+                  }}
+                >
+                  <View style={styles.pickerItemLeft}>
+                    <View
+                      style={[
+                        styles.pickerItemAvatar,
+                        (item.id === null && adminStudentFilter === null) ||
+                        item.id === adminStudentFilter
+                          ? styles.pickerItemAvatarActive
+                          : null,
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.id === null ? 'people' : 'person'}
+                        size={18}
+                        color={
+                          (item.id === null && adminStudentFilter === null) ||
+                          item.id === adminStudentFilter
+                            ? colors.piano.primary
+                            : colors.neutral.textSecondary
+                        }
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.pickerItemText,
+                        (item.id === null && adminStudentFilter === null) ||
+                        item.id === adminStudentFilter
+                          ? styles.pickerItemTextActive
+                          : null,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </View>
+                  {((item.id === null && adminStudentFilter === null) ||
+                    item.id === adminStudentFilter) && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={colors.piano.primary}
+                    />
+                  )}
+                </Pressable>
+              )}
+              style={styles.pickerList}
+              contentContainerStyle={styles.pickerListContent}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1628,6 +2288,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   assignmentCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.neutral.white,
@@ -1746,6 +2407,125 @@ const styles = StyleSheet.create({
   },
   statusChipTextActive: {
     color: colors.piano.primary,
+  },
+  // Admin filters styles
+  adminFiltersContainer: {
+    backgroundColor: colors.neutral.white,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+    marginBottom: spacing.sm,
+  },
+  adminFiltersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  adminFiltersTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+  },
+  adminFiltersCount: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+  },
+  adminFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  adminFilterLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    minWidth: 60,
+  },
+  adminFilterDropdown: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.background,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    gap: spacing.xs,
+  },
+  adminFilterDropdownText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  adminFilterDropdownTextActive: {
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  adminFilterClearBtn: {
+    padding: spacing.xs,
+  },
+  adminFilterChips: {
+    marginBottom: spacing.xs,
+  },
+  adminFilterChipsContent: {
+    gap: spacing.sm,
+    paddingRight: spacing.sm,
+  },
+  adminFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.neutral.background,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    gap: spacing.xs,
+  },
+  adminFilterChipActive: {
+    backgroundColor: colors.piano.subtle,
+    borderColor: colors.piano.primary,
+  },
+  adminFilterChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textMuted,
+  },
+  adminFilterChipTextActive: {
+    color: colors.piano.primary,
+  },
+  adminFilterChipBadge: {
+    backgroundColor: colors.neutral.border,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  adminFilterChipBadgeActive: {
+    backgroundColor: colors.piano.primary,
+  },
+  adminFilterChipBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.textMuted,
+  },
+  adminFilterChipBadgeTextActive: {
+    color: colors.neutral.white,
+  },
+  clearAllFiltersBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  clearAllFiltersText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
   },
   // Share section styles
   sectionSubtitle: {
@@ -2049,5 +2829,48 @@ const styles = StyleSheet.create({
   cancelSelectText: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
+  },
+  // Assignment select mode styles
+  assignmentSelectControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+    marginTop: spacing.sm,
+  },
+  assignmentCardContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+  },
+  assignmentCheckbox: {
+    padding: spacing.sm,
+    marginRight: spacing.xs,
+  },
+  assignmentCardSelectMode: {
+    // Additional styles when in select mode (card already has flex: 1)
+  },
+  assignmentCardSelected: {
+    backgroundColor: colors.piano.subtle,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  assignmentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  assignmentActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.piano.subtle,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  assignmentActionBtnDelete: {
+    backgroundColor: colors.status.errorBg,
   },
 });

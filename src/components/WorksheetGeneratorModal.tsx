@@ -24,9 +24,11 @@ export interface WorksheetGeneratorModalProps {
   visible: boolean;
   onClose: () => void;
   onGenerate: (config: WorksheetConfig, studentId: string) => Promise<void>;
+  onGenerateMultiple?: (config: WorksheetConfig, studentIds: string[]) => Promise<void>;
   students: StudentWithParent[];
   studentsLoading?: boolean;
   presetSubject?: TutoringSubject;
+  allowMultiSelect?: boolean;
 }
 
 type WorksheetType = 'piano_naming' | 'piano_drawing' | 'math';
@@ -80,15 +82,19 @@ export function WorksheetGeneratorModal({
   visible,
   onClose,
   onGenerate,
+  onGenerateMultiple,
   students,
   studentsLoading = false,
   presetSubject,
+  allowMultiSelect = true,
 }: WorksheetGeneratorModalProps) {
   const [step, setStep] = useState<Step>('type');
   const [worksheetType, setWorksheetType] = useState<WorksheetType | null>(
     presetSubject === 'piano' ? 'piano_naming' : presetSubject === 'math' ? 'math' : null
   );
   const [selectedStudent, setSelectedStudent] = useState<string>('');
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +115,8 @@ export function WorksheetGeneratorModal({
     setStep('type');
     setWorksheetType(null);
     setSelectedStudent('');
+    setSelectedStudents([]);
+    setIsMultiSelectMode(false);
     setError(null);
     onClose();
   };
@@ -124,12 +132,37 @@ export function WorksheetGeneratorModal({
   };
 
   const handleSelectStudent = (studentId: string) => {
-    setSelectedStudent(studentId);
-    setStep('config');
+    if (isMultiSelectMode) {
+      // Toggle selection in multi-select mode
+      setSelectedStudents(prev =>
+        prev.includes(studentId)
+          ? prev.filter(id => id !== studentId)
+          : [...prev, studentId]
+      );
+    } else {
+      // Single select mode - proceed to config
+      setSelectedStudent(studentId);
+      setStep('config');
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedStudents.length === filteredStudents.length) {
+      setSelectedStudents([]);
+    } else {
+      setSelectedStudents(filteredStudents.map(s => s.id));
+    }
+  };
+
+  const handleProceedWithMultiple = () => {
+    if (selectedStudents.length > 0) {
+      setStep('config');
+    }
   };
 
   const handleGenerate = async () => {
-    if (!worksheetType || !selectedStudent) return;
+    const hasSelection = isMultiSelectMode ? selectedStudents.length > 0 : !!selectedStudent;
+    if (!worksheetType || !hasSelection) return;
 
     setGenerating(true);
     setError(null);
@@ -155,7 +188,19 @@ export function WorksheetGeneratorModal({
         } as MathWorksheetConfig;
       }
 
-      await onGenerate(config, selectedStudent);
+      if (isMultiSelectMode && selectedStudents.length > 0) {
+        // Generate for multiple students
+        if (onGenerateMultiple) {
+          await onGenerateMultiple(config, selectedStudents);
+        } else {
+          // Fallback: generate for each student sequentially
+          for (const studentId of selectedStudents) {
+            await onGenerate(config, studentId);
+          }
+        }
+      } else {
+        await onGenerate(config, selectedStudent);
+      }
       handleClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate worksheet');
@@ -224,10 +269,54 @@ export function WorksheetGeneratorModal({
 
   const renderStudentSelection = () => (
     <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Select Student</Text>
-      <Text style={styles.stepSubtitle}>
-        Choose the student for this worksheet
+      <Text style={styles.stepTitle}>
+        {isMultiSelectMode ? 'Select Students' : 'Select Student'}
       </Text>
+      <Text style={styles.stepSubtitle}>
+        {isMultiSelectMode
+          ? `Choose students for this worksheet (${selectedStudents.length} selected)`
+          : 'Choose the student for this worksheet'}
+      </Text>
+
+      {/* Multi-select toggle */}
+      {allowMultiSelect && filteredStudents.length > 1 && (
+        <View style={styles.multiSelectToggle}>
+          <Pressable
+            style={[
+              styles.multiSelectButton,
+              isMultiSelectMode && styles.multiSelectButtonActive,
+            ]}
+            onPress={() => {
+              setIsMultiSelectMode(!isMultiSelectMode);
+              if (!isMultiSelectMode) {
+                setSelectedStudents([]);
+              }
+            }}
+          >
+            <Ionicons
+              name={isMultiSelectMode ? 'checkbox' : 'checkbox-outline'}
+              size={18}
+              color={isMultiSelectMode ? colors.piano.primary : colors.neutral.textMuted}
+            />
+            <Text
+              style={[
+                styles.multiSelectButtonText,
+                isMultiSelectMode && styles.multiSelectButtonTextActive,
+              ]}
+            >
+              Assign to Multiple Students
+            </Text>
+          </Pressable>
+
+          {isMultiSelectMode && (
+            <Pressable style={styles.selectAllButton} onPress={handleToggleSelectAll}>
+              <Text style={styles.selectAllText}>
+                {selectedStudents.length === filteredStudents.length ? 'Deselect All' : 'Select All'}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {studentsLoading ? (
         <ActivityIndicator size="large" color={colors.piano.primary} />
@@ -240,27 +329,55 @@ export function WorksheetGeneratorModal({
         </View>
       ) : (
         <View style={styles.studentList}>
-          {filteredStudents.map((student) => (
-            <Pressable
-              key={student.id}
-              style={styles.studentCard}
-              onPress={() => handleSelectStudent(student.id)}
-            >
-              <View style={styles.studentAvatar}>
-                <Text style={styles.studentInitial}>
-                  {student.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={styles.studentInfo}>
-                <Text style={styles.studentName}>{student.name}</Text>
-                <Text style={styles.studentGrade}>
-                  Grade {student.grade_level} • Age {student.age}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-            </Pressable>
-          ))}
+          {filteredStudents.map((student) => {
+            const isSelected = isMultiSelectMode
+              ? selectedStudents.includes(student.id)
+              : selectedStudent === student.id;
+
+            return (
+              <Pressable
+                key={student.id}
+                style={[
+                  styles.studentCard,
+                  isMultiSelectMode && isSelected && styles.studentCardSelected,
+                ]}
+                onPress={() => handleSelectStudent(student.id)}
+              >
+                {isMultiSelectMode && (
+                  <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+                    )}
+                  </View>
+                )}
+                <View style={styles.studentAvatar}>
+                  <Text style={styles.studentInitial}>
+                    {student.name.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.studentInfo}>
+                  <Text style={styles.studentName}>{student.name}</Text>
+                  <Text style={styles.studentGrade}>
+                    Grade {student.grade_level} • Age {student.age}
+                  </Text>
+                </View>
+                {!isMultiSelectMode && (
+                  <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+                )}
+              </Pressable>
+            );
+          })}
         </View>
+      )}
+
+      {/* Multi-select proceed button */}
+      {isMultiSelectMode && selectedStudents.length > 0 && (
+        <Pressable style={styles.proceedButton} onPress={handleProceedWithMultiple}>
+          <Text style={styles.proceedButtonText}>
+            Continue with {selectedStudents.length} Student{selectedStudents.length > 1 ? 's' : ''}
+          </Text>
+          <Ionicons name="arrow-forward" size={20} color={colors.neutral.white} />
+        </Pressable>
       )}
     </View>
   );
@@ -549,7 +666,11 @@ export function WorksheetGeneratorModal({
               ) : (
                 <>
                   <Ionicons name="sparkles" size={20} color={colors.neutral.white} />
-                  <Text style={styles.generateButtonText}>Generate Worksheet</Text>
+                  <Text style={styles.generateButtonText}>
+                    {isMultiSelectMode && selectedStudents.length > 1
+                      ? `Generate for ${selectedStudents.length} Students`
+                      : 'Generate Worksheet'}
+                  </Text>
                 </>
               )}
             </Pressable>
@@ -681,6 +802,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadows.sm,
   },
+  studentCardSelected: {
+    backgroundColor: colors.piano.subtle,
+    borderWidth: 2,
+    borderColor: colors.piano.primary,
+  },
   studentAvatar: {
     width: 48,
     height: 48,
@@ -706,6 +832,60 @@ const styles = StyleSheet.create({
   studentGrade: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
+  },
+  // Multi-select styles
+  multiSelectToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+  },
+  multiSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  multiSelectButtonActive: {},
+  multiSelectButtonText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+  },
+  multiSelectButtonTextActive: {
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  selectAllButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  selectAllText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  checkboxSelected: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  proceedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.piano.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  proceedButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.white,
     marginTop: 2,
   },
   emptyCard: {
