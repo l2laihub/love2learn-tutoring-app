@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../theme';
 import {
   ScheduledLessonWithStudent,
+  GroupedLesson,
   TutorAvailability,
   TutoringSubject,
 } from '../types/database';
@@ -51,6 +52,7 @@ const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
 interface RescheduleRequestModalProps {
   visible: boolean;
   lesson: ScheduledLessonWithStudent | null;
+  groupedLesson: GroupedLesson | null; // For combined sessions
   parentId: string;
   onClose: () => void;
   onSuccess: () => void;
@@ -74,6 +76,7 @@ function getNextTwoWeeks(): Date[] {
 export function RescheduleRequestModal({
   visible,
   lesson,
+  groupedLesson,
   parentId,
   onClose,
   onSuccess,
@@ -228,27 +231,75 @@ export function RescheduleRequestModal({
 
     setError(null);
 
-    const result = await createRequest({
-      parent_id: parentId,
-      student_id: lesson.student_id,
-      subject: lesson.subject,
-      preferred_date: selectedDate.toISOString().split('T')[0],
-      preferred_time: selectedTime,
-      preferred_duration: lesson.duration_min,
-      notes: notes.trim() || null,
-    });
+    // Check if this is a combined session (multiple lessons)
+    const isCombinedSession = groupedLesson && groupedLesson.lessons.length > 1;
 
-    if (result) {
-      onSuccess();
-      onClose();
+    if (isCombinedSession) {
+      // Create a unique group ID to link all requests for this combined session
+      const requestGroupId = crypto.randomUUID();
+
+      // Create a request for each lesson in the combined session
+      let allSucceeded = true;
+      for (const lessonItem of groupedLesson.lessons) {
+        const result = await createRequest({
+          parent_id: parentId,
+          student_id: lessonItem.student_id,
+          subject: lessonItem.subject,
+          preferred_date: selectedDate.toISOString().split('T')[0],
+          preferred_time: selectedTime,
+          preferred_duration: groupedLesson.duration_min, // Total session duration
+          notes: notes.trim() || null,
+          request_group_id: requestGroupId,
+        });
+
+        if (!result) {
+          allSucceeded = false;
+          break;
+        }
+      }
+
+      if (allSucceeded) {
+        onSuccess();
+        onClose();
+      } else {
+        setError('Failed to submit request. Please try again.');
+      }
     } else {
-      setError('Failed to submit request. Please try again.');
+      // Single lesson - original behavior
+      const result = await createRequest({
+        parent_id: parentId,
+        student_id: lesson.student_id,
+        subject: lesson.subject,
+        preferred_date: selectedDate.toISOString().split('T')[0],
+        preferred_time: selectedTime,
+        preferred_duration: lesson.duration_min,
+        notes: notes.trim() || null,
+      });
+
+      if (result) {
+        onSuccess();
+        onClose();
+      } else {
+        setError('Failed to submit request. Please try again.');
+      }
     }
   };
 
   if (!lesson) return null;
 
-  const subjectColor = getSubjectColor(lesson.subject);
+  // Determine display info - for combined sessions show all students/subjects
+  const isCombinedSession = groupedLesson && groupedLesson.lessons.length > 1;
+
+  // For combined sessions, use groupedLesson data for display
+  const displaySubjects = isCombinedSession ? groupedLesson.subjects : [lesson.subject];
+  const displayStudentNames = isCombinedSession
+    ? groupedLesson.student_names.join(' & ')
+    : lesson.student.name;
+  const displaySubjectsText = displaySubjects.map(s => SUBJECT_NAMES[s]).join(', ');
+  const displayEmojis = displaySubjects.map(s => SUBJECT_EMOJI[s]).join(' ');
+  const displayDuration = isCombinedSession ? groupedLesson.duration_min : lesson.duration_min;
+
+  const subjectColor = getSubjectColor(displaySubjects[0]);
   const originalDate = new Date(lesson.scheduled_at);
 
   return (
@@ -270,10 +321,10 @@ export function RescheduleRequestModal({
 
         {/* Current Lesson Info */}
         <View style={[styles.lessonInfo, { backgroundColor: subjectColor.subtle }]}>
-          <Text style={styles.lessonInfoIcon}>{SUBJECT_EMOJI[lesson.subject]}</Text>
+          <Text style={styles.lessonInfoIcon}>{displayEmojis}</Text>
           <View style={styles.lessonInfoContent}>
             <Text style={styles.lessonInfoTitle}>
-              {SUBJECT_NAMES[lesson.subject]} with {lesson.student.name}
+              {displaySubjectsText} with {displayStudentNames}
             </Text>
             <Text style={styles.lessonInfoDate}>
               Currently: {originalDate.toLocaleDateString('en-US', {
@@ -285,6 +336,9 @@ export function RescheduleRequestModal({
                 minute: '2-digit',
               })}
             </Text>
+            {isCombinedSession && (
+              <Text style={styles.combinedSessionBadge}>Combined Session</Text>
+            )}
           </View>
         </View>
 
@@ -516,9 +570,18 @@ export function RescheduleRequestModal({
                   <Ionicons name="hourglass" size={20} color={colors.primary.main} />
                   <View style={styles.summaryContent}>
                     <Text style={styles.summaryLabel}>Duration</Text>
-                    <Text style={styles.summaryValue}>{lesson.duration_min} minutes</Text>
+                    <Text style={styles.summaryValue}>{displayDuration} minutes</Text>
                   </View>
                 </View>
+                {isCombinedSession && (
+                  <View style={styles.summaryRow}>
+                    <Ionicons name="people" size={20} color={colors.primary.main} />
+                    <View style={styles.summaryContent}>
+                      <Text style={styles.summaryLabel}>Session Type</Text>
+                      <Text style={styles.summaryValue}>Combined Session</Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               {/* Notes Input */}
@@ -626,6 +689,18 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
     marginTop: spacing.xs,
+  },
+  combinedSessionBadge: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
+    backgroundColor: colors.primary.subtle,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    overflow: 'hidden',
   },
   stepIndicator: {
     flexDirection: 'row',

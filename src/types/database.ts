@@ -909,6 +909,7 @@ export interface LessonRequest {
   status: LessonRequestStatus;
   tutor_response: string | null;
   scheduled_lesson_id: string | null;
+  request_group_id: string | null; // Groups multiple requests for combined session reschedules
   created_at: string;
   updated_at: string;
 }
@@ -938,6 +939,7 @@ export interface CreateLessonRequestInput {
   preferred_time?: string | null;
   preferred_duration?: number;
   notes?: string | null;
+  request_group_id?: string | null; // For linking combined session reschedule requests
 }
 
 export interface UpdateLessonRequestInput {

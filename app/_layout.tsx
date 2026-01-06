@@ -113,6 +113,28 @@ function RootLayoutNav() {
           headerBackTitle: 'Back',
         }}
       />
+      <Stack.Screen
+        name="availability"
+        options={{
+          headerShown: true,
+          headerTitle: 'My Availability',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
+        name="requests"
+        options={{
+          headerShown: true,
+          headerTitle: 'Lesson Requests',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
+        name="admin"
+        options={{
+          headerShown: false,
+        }}
+      />
       <Stack.Screen name="(auth)" options={{ headerShown: false }} />
     </Stack>
   );

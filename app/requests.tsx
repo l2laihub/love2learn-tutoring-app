@@ -27,9 +27,9 @@ import {
   useRejectLessonRequest,
   getRequestStatusInfo,
 } from '../src/hooks/useLessonRequests';
-import { useCreateLesson } from '../src/hooks/useLessons';
+import { useCreateLesson, useCreateGroupedLesson } from '../src/hooks/useLessons';
 import { formatTimeDisplay } from '../src/hooks/useTutorAvailability';
-import { LessonRequestWithStudent, TutoringSubject } from '../src/types/database';
+import { LessonRequestWithStudent, TutoringSubject, LessonRequest } from '../src/types/database';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../src/theme';
 
 // Subject display names
@@ -51,11 +51,93 @@ const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
 
 type TabType = 'pending' | 'all';
 
+// Helper to parse YYYY-MM-DD date string as local time (avoids UTC timezone issues)
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day); // month is 0-indexed
+}
+
+// Grouped request type for combined sessions
+interface GroupedRequest {
+  id: string; // First request ID or group_id
+  requests: LessonRequestWithStudent[];
+  isCombinedSession: boolean;
+  student_names: string[];
+  subjects: TutoringSubject[];
+  preferred_date: string;
+  preferred_time: string | null;
+  preferred_duration: number;
+  notes: string | null;
+  status: LessonRequest['status'];
+  tutor_response: string | null;
+  created_at: string;
+}
+
+// Helper function to group requests by request_group_id
+function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
+  const groupMap = new Map<string, LessonRequestWithStudent[]>();
+  const standaloneRequests: LessonRequestWithStudent[] = [];
+
+  // Separate grouped and standalone requests
+  for (const request of requests) {
+    if (request.request_group_id) {
+      const existing = groupMap.get(request.request_group_id) || [];
+      groupMap.set(request.request_group_id, [...existing, request]);
+    } else {
+      standaloneRequests.push(request);
+    }
+  }
+
+  const result: GroupedRequest[] = [];
+
+  // Convert grouped requests
+  for (const [groupId, groupedRequests] of groupMap) {
+    const first = groupedRequests[0];
+    result.push({
+      id: groupId,
+      requests: groupedRequests,
+      isCombinedSession: groupedRequests.length > 1,
+      student_names: groupedRequests.map(r => r.student.name),
+      subjects: groupedRequests.map(r => r.subject as TutoringSubject),
+      preferred_date: first.preferred_date,
+      preferred_time: first.preferred_time,
+      preferred_duration: first.preferred_duration,
+      notes: first.notes,
+      status: first.status,
+      tutor_response: first.tutor_response,
+      created_at: first.created_at,
+    });
+  }
+
+  // Convert standalone requests
+  for (const request of standaloneRequests) {
+    result.push({
+      id: request.id,
+      requests: [request],
+      isCombinedSession: false,
+      student_names: [request.student.name],
+      subjects: [request.subject as TutoringSubject],
+      preferred_date: request.preferred_date,
+      preferred_time: request.preferred_time,
+      preferred_duration: request.preferred_duration,
+      notes: request.notes,
+      status: request.status,
+      tutor_response: request.tutor_response,
+      created_at: request.created_at,
+    });
+  }
+
+  // Sort by created_at descending
+  return result.sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
 export default function RequestsScreen() {
   const { isTutor } = useAuthContext();
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
-  const [selectedRequest, setSelectedRequest] = useState<LessonRequestWithStudent | null>(null);
+  const [selectedGroupedRequest, setSelectedGroupedRequest] = useState<GroupedRequest | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
 
@@ -71,7 +153,8 @@ export default function RequestsScreen() {
 
   const { approveRequest, loading: approving } = useApproveLessonRequest();
   const { rejectRequest, loading: rejecting } = useRejectLessonRequest();
-  const { createLesson } = useCreateLesson();
+  const { mutate: createLesson } = useCreateLesson();
+  const { mutate: createGroupedLesson } = useCreateGroupedLesson();
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -79,13 +162,16 @@ export default function RequestsScreen() {
     setRefreshing(false);
   }, [refetch]);
 
-  const handleApprove = (request: LessonRequestWithStudent) => {
-    setSelectedRequest(request);
+  // Group the requests
+  const groupedRequests = React.useMemo(() => groupRequests(requests), [requests]);
+
+  const handleApprove = (groupedRequest: GroupedRequest) => {
+    setSelectedGroupedRequest(groupedRequest);
     setShowApproveModal(true);
   };
 
-  const handleReject = (request: LessonRequestWithStudent) => {
-    setSelectedRequest(request);
+  const handleReject = (groupedRequest: GroupedRequest) => {
+    setSelectedGroupedRequest(groupedRequest);
     setShowRejectModal(true);
   };
 
@@ -108,8 +194,8 @@ export default function RequestsScreen() {
     );
   }
 
-  // Count pending requests
-  const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  // Count pending grouped requests
+  const pendingCount = groupedRequests.filter((r) => r.status === 'pending').length;
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -178,7 +264,7 @@ export default function RequestsScreen() {
         )}
 
         {/* Empty State */}
-        {!loading && requests.length === 0 && (
+        {!loading && groupedRequests.length === 0 && (
           <View style={styles.emptyState}>
             <Ionicons name="mail-open-outline" size={64} color={colors.neutral.textMuted} />
             <Text style={styles.emptyStateTitle}>
@@ -193,14 +279,14 @@ export default function RequestsScreen() {
         )}
 
         {/* Request Cards */}
-        {!loading && requests.length > 0 && (
+        {!loading && groupedRequests.length > 0 && (
           <View style={styles.requestsList}>
-            {requests.map((request) => (
-              <RequestCard
-                key={request.id}
-                request={request}
-                onApprove={() => handleApprove(request)}
-                onReject={() => handleReject(request)}
+            {groupedRequests.map((groupedRequest) => (
+              <GroupedRequestCard
+                key={groupedRequest.id}
+                groupedRequest={groupedRequest}
+                onApprove={() => handleApprove(groupedRequest)}
+                onReject={() => handleReject(groupedRequest)}
               />
             ))}
           </View>
@@ -208,48 +294,96 @@ export default function RequestsScreen() {
       </ScrollView>
 
       {/* Approve Modal */}
-      <ApproveModal
+      <ApproveGroupedModal
         visible={showApproveModal}
-        request={selectedRequest}
+        groupedRequest={selectedGroupedRequest}
         onClose={() => {
           setShowApproveModal(false);
-          setSelectedRequest(null);
+          setSelectedGroupedRequest(null);
         }}
         onApprove={async (response, createScheduledLesson) => {
-          if (!selectedRequest) return;
+          if (!selectedGroupedRequest) return;
 
-          let lessonId: string | undefined;
+          let allSucceeded = true;
+          const isCombinedSession = selectedGroupedRequest.isCombinedSession;
 
-          // Optionally create the scheduled lesson
+          // Build the scheduled time - parse date as local time to avoid timezone issues
+          const scheduledAt = parseLocalDate(selectedGroupedRequest.preferred_date);
+          if (selectedGroupedRequest.preferred_time) {
+            const [hours, minutes] = selectedGroupedRequest.preferred_time.split(':').map(Number);
+            scheduledAt.setHours(hours, minutes, 0, 0);
+          }
+
+          // Map to store request_id -> lesson_id for approval
+          const requestLessonMap = new Map<string, string>();
+
+          // Optionally create the scheduled lesson(s)
           if (createScheduledLesson) {
-            const scheduledAt = new Date(selectedRequest.preferred_date);
-            if (selectedRequest.preferred_time) {
-              const [hours, minutes] = selectedRequest.preferred_time.split(':').map(Number);
-              scheduledAt.setHours(hours, minutes, 0, 0);
-            }
+            if (isCombinedSession && selectedGroupedRequest.requests.length > 1) {
+              // For combined sessions, create a grouped lesson session
+              const sessionInput = {
+                scheduled_at: scheduledAt.toISOString(),
+                duration_min: selectedGroupedRequest.preferred_duration,
+                notes: `Rescheduled combined session: ${selectedGroupedRequest.notes || 'No notes'}`,
+              };
 
-            const lesson = await createLesson({
-              student_id: selectedRequest.student_id,
-              subject: selectedRequest.subject as TutoringSubject,
-              scheduled_at: scheduledAt.toISOString(),
-              duration_min: selectedRequest.preferred_duration,
-              notes: `Rescheduled from request: ${selectedRequest.notes || 'No notes'}`,
-            });
+              // Calculate individual lesson duration (total / number of students)
+              const individualDuration = Math.floor(
+                selectedGroupedRequest.preferred_duration / selectedGroupedRequest.requests.length
+              );
 
-            if (lesson) {
-              lessonId = lesson.id;
+              const lessonInputs = selectedGroupedRequest.requests.map(request => ({
+                student_id: request.student_id,
+                subject: request.subject as TutoringSubject,
+                scheduled_at: scheduledAt.toISOString(),
+                duration_min: individualDuration,
+                notes: `Rescheduled from request: ${request.notes || 'No notes'}`,
+              }));
+
+              const result = await createGroupedLesson(sessionInput, lessonInputs);
+
+              if (result && result.lessons) {
+                // Map each request to its corresponding lesson
+                for (let i = 0; i < selectedGroupedRequest.requests.length; i++) {
+                  const request = selectedGroupedRequest.requests[i];
+                  const lesson = result.lessons.find(l => l.student_id === request.student_id);
+                  if (lesson) {
+                    requestLessonMap.set(request.id, lesson.id);
+                  }
+                }
+              } else {
+                allSucceeded = false;
+              }
+            } else {
+              // Single lesson - original behavior
+              const request = selectedGroupedRequest.requests[0];
+              const lesson = await createLesson({
+                student_id: request.student_id,
+                subject: request.subject as TutoringSubject,
+                scheduled_at: scheduledAt.toISOString(),
+                duration_min: selectedGroupedRequest.preferred_duration,
+                notes: `Rescheduled from request: ${request.notes || 'No notes'}`,
+              });
+
+              if (lesson) {
+                requestLessonMap.set(request.id, lesson.id);
+              }
             }
           }
 
-          const result = await approveRequest(
-            selectedRequest.id,
-            response,
-            lessonId
-          );
+          // Approve all requests in the group
+          for (const request of selectedGroupedRequest.requests) {
+            const lessonId = requestLessonMap.get(request.id);
+            const result = await approveRequest(request.id, response, lessonId);
 
-          if (result) {
+            if (!result) {
+              allSucceeded = false;
+            }
+          }
+
+          if (allSucceeded) {
             setShowApproveModal(false);
-            setSelectedRequest(null);
+            setSelectedGroupedRequest(null);
             refetch();
           }
         }}
@@ -257,21 +391,28 @@ export default function RequestsScreen() {
       />
 
       {/* Reject Modal */}
-      <RejectModal
+      <RejectGroupedModal
         visible={showRejectModal}
-        request={selectedRequest}
+        groupedRequest={selectedGroupedRequest}
         onClose={() => {
           setShowRejectModal(false);
-          setSelectedRequest(null);
+          setSelectedGroupedRequest(null);
         }}
         onReject={async (reason) => {
-          if (!selectedRequest) return;
+          if (!selectedGroupedRequest) return;
 
-          const result = await rejectRequest(selectedRequest.id, reason);
+          // Reject all requests in the group
+          let allSucceeded = true;
+          for (const request of selectedGroupedRequest.requests) {
+            const result = await rejectRequest(request.id, reason);
+            if (!result) {
+              allSucceeded = false;
+            }
+          }
 
-          if (result) {
+          if (allSucceeded) {
             setShowRejectModal(false);
-            setSelectedRequest(null);
+            setSelectedGroupedRequest(null);
             refetch();
           }
         }}
@@ -281,31 +422,34 @@ export default function RequestsScreen() {
   );
 }
 
-// Request Card Component
-interface RequestCardProps {
-  request: LessonRequestWithStudent;
+// Grouped Request Card Component
+interface GroupedRequestCardProps {
+  groupedRequest: GroupedRequest;
   onApprove: () => void;
   onReject: () => void;
 }
 
-function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
-  const statusInfo = getRequestStatusInfo(request.status);
-  const subjectColor = getSubjectColor(request.subject as TutoringSubject);
-  const preferredDate = new Date(request.preferred_date);
-  const createdAt = new Date(request.created_at);
+function GroupedRequestCard({ groupedRequest, onApprove, onReject }: GroupedRequestCardProps) {
+  const statusInfo = getRequestStatusInfo(groupedRequest.status);
+  const primarySubject = groupedRequest.subjects[0];
+  const subjectColor = getSubjectColor(primarySubject);
+  // Parse date as local time to avoid timezone issues
+  const preferredDate = parseLocalDate(groupedRequest.preferred_date);
+  const createdAt = new Date(groupedRequest.created_at);
+
+  // Display info for combined sessions
+  const studentNamesDisplay = groupedRequest.student_names.join(' & ');
+  const subjectsDisplay = groupedRequest.subjects.map(s => SUBJECT_NAMES[s]).join(', ');
+  const subjectEmojis = groupedRequest.subjects.map(s => SUBJECT_EMOJI[s]).join(' ');
 
   return (
     <View style={styles.requestCard}>
       {/* Header */}
       <View style={[styles.requestHeader, { backgroundColor: subjectColor.subtle }]}>
-        <Text style={styles.requestSubjectIcon}>
-          {SUBJECT_EMOJI[request.subject as TutoringSubject] || '📚'}
-        </Text>
+        <Text style={styles.requestSubjectIcon}>{subjectEmojis}</Text>
         <View style={styles.requestHeaderInfo}>
-          <Text style={styles.requestStudentName}>{request.student.name}</Text>
-          <Text style={styles.requestSubject}>
-            {SUBJECT_NAMES[request.subject as TutoringSubject] || request.subject}
-          </Text>
+          <Text style={styles.requestStudentName}>{studentNamesDisplay}</Text>
+          <Text style={styles.requestSubject}>{subjectsDisplay}</Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
           <Ionicons
@@ -318,6 +462,14 @@ function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
           </Text>
         </View>
       </View>
+
+      {/* Combined Session Badge */}
+      {groupedRequest.isCombinedSession && (
+        <View style={styles.combinedSessionBadge}>
+          <Ionicons name="people" size={14} color={colors.primary.main} />
+          <Text style={styles.combinedSessionBadgeText}>Combined Session</Text>
+        </View>
+      )}
 
       {/* Content */}
       <View style={styles.requestContent}>
@@ -333,11 +485,11 @@ function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
           </Text>
         </View>
 
-        {request.preferred_time && (
+        {groupedRequest.preferred_time && (
           <View style={styles.requestDetail}>
             <Ionicons name="time-outline" size={18} color={colors.neutral.textSecondary} />
             <Text style={styles.requestDetailText}>
-              {formatTimeDisplay(request.preferred_time)}
+              {formatTimeDisplay(groupedRequest.preferred_time)}
             </Text>
           </View>
         )}
@@ -345,21 +497,21 @@ function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
         <View style={styles.requestDetail}>
           <Ionicons name="hourglass-outline" size={18} color={colors.neutral.textSecondary} />
           <Text style={styles.requestDetailText}>
-            {request.preferred_duration} minutes
+            {groupedRequest.preferred_duration} minutes
           </Text>
         </View>
 
-        {request.notes && (
+        {groupedRequest.notes && (
           <View style={styles.requestNotes}>
             <Text style={styles.requestNotesLabel}>Parent's note:</Text>
-            <Text style={styles.requestNotesText}>{request.notes}</Text>
+            <Text style={styles.requestNotesText}>{groupedRequest.notes}</Text>
           </View>
         )}
 
-        {request.tutor_response && (
+        {groupedRequest.tutor_response && (
           <View style={styles.responseBox}>
             <Text style={styles.responseLabel}>Your response:</Text>
-            <Text style={styles.responseText}>{request.tutor_response}</Text>
+            <Text style={styles.responseText}>{groupedRequest.tutor_response}</Text>
           </View>
         )}
 
@@ -375,7 +527,7 @@ function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
       </View>
 
       {/* Actions - only for pending requests */}
-      {request.status === 'pending' && (
+      {groupedRequest.status === 'pending' && (
         <View style={styles.requestActions}>
           <Pressable style={styles.rejectButton} onPress={onReject}>
             <Ionicons name="close-circle-outline" size={20} color={colors.status.error} />
@@ -391,16 +543,16 @@ function RequestCard({ request, onApprove, onReject }: RequestCardProps) {
   );
 }
 
-// Approve Modal Component
-interface ApproveModalProps {
+// Approve Grouped Modal Component
+interface ApproveGroupedModalProps {
   visible: boolean;
-  request: LessonRequestWithStudent | null;
+  groupedRequest: GroupedRequest | null;
   onClose: () => void;
   onApprove: (response: string, createLesson: boolean) => Promise<void>;
   loading: boolean;
 }
 
-function ApproveModal({ visible, request, onClose, onApprove, loading }: ApproveModalProps) {
+function ApproveGroupedModal({ visible, groupedRequest, onClose, onApprove, loading }: ApproveGroupedModalProps) {
   const [response, setResponse] = useState('');
   const [createLesson, setCreateLesson] = useState(true);
 
@@ -411,7 +563,9 @@ function ApproveModal({ visible, request, onClose, onApprove, loading }: Approve
     }
   }, [visible]);
 
-  if (!request) return null;
+  if (!groupedRequest) return null;
+
+  const studentNamesDisplay = groupedRequest.student_names.join(' & ');
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -420,14 +574,21 @@ function ApproveModal({ visible, request, onClose, onApprove, loading }: Approve
           <Ionicons name="checkmark-circle" size={48} color={colors.status.success} />
           <Text style={modalStyles.title}>Approve Request</Text>
           <Text style={modalStyles.subtitle}>
-            Approve {request.student.name}'s reschedule request for{' '}
-            {new Date(request.preferred_date).toLocaleDateString('en-US', {
+            Approve {studentNamesDisplay}'s reschedule request for{' '}
+            {parseLocalDate(groupedRequest.preferred_date).toLocaleDateString('en-US', {
               weekday: 'short',
               month: 'short',
               day: 'numeric',
             })}
-            {request.preferred_time && ` at ${formatTimeDisplay(request.preferred_time)}`}
+            {groupedRequest.preferred_time && ` at ${formatTimeDisplay(groupedRequest.preferred_time)}`}
           </Text>
+
+          {groupedRequest.isCombinedSession && (
+            <View style={modalStyles.combinedBadge}>
+              <Ionicons name="people" size={16} color={colors.primary.main} />
+              <Text style={modalStyles.combinedBadgeText}>Combined Session</Text>
+            </View>
+          )}
 
           {/* Create Lesson Toggle */}
           <Pressable
@@ -443,7 +604,7 @@ function ApproveModal({ visible, request, onClose, onApprove, loading }: Approve
               color={createLesson ? colors.primary.main : colors.neutral.border}
             />
             <Text style={modalStyles.toggleText}>
-              Create scheduled lesson automatically
+              Create scheduled lesson{groupedRequest.isCombinedSession ? 's' : ''} automatically
             </Text>
           </Pressable>
 
@@ -482,16 +643,16 @@ function ApproveModal({ visible, request, onClose, onApprove, loading }: Approve
   );
 }
 
-// Reject Modal Component
-interface RejectModalProps {
+// Reject Grouped Modal Component
+interface RejectGroupedModalProps {
   visible: boolean;
-  request: LessonRequestWithStudent | null;
+  groupedRequest: GroupedRequest | null;
   onClose: () => void;
   onReject: (reason: string) => Promise<void>;
   loading: boolean;
 }
 
-function RejectModal({ visible, request, onClose, onReject, loading }: RejectModalProps) {
+function RejectGroupedModal({ visible, groupedRequest, onClose, onReject, loading }: RejectGroupedModalProps) {
   const [reason, setReason] = useState('');
 
   React.useEffect(() => {
@@ -500,7 +661,9 @@ function RejectModal({ visible, request, onClose, onReject, loading }: RejectMod
     }
   }, [visible]);
 
-  if (!request) return null;
+  if (!groupedRequest) return null;
+
+  const studentNamesDisplay = groupedRequest.student_names.join(' & ');
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -509,7 +672,7 @@ function RejectModal({ visible, request, onClose, onReject, loading }: RejectMod
           <Ionicons name="close-circle" size={48} color={colors.status.error} />
           <Text style={modalStyles.title}>Decline Request</Text>
           <Text style={modalStyles.subtitle}>
-            Let {request.student.name}'s parent know why this time doesn't work.
+            Let {studentNamesDisplay}'s parent know why this time doesn't work.
           </Text>
 
           <TextInput
@@ -654,6 +817,21 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
     ...shadows.sm,
+  },
+  combinedSessionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary.subtle,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  combinedSessionBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
   },
   requestHeader: {
     flexDirection: 'row',
@@ -809,6 +987,21 @@ const modalStyles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.lg,
     lineHeight: 22,
+  },
+  combinedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary.subtle,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    marginBottom: spacing.md,
+  },
+  combinedBadgeText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
   },
   toggleOption: {
     flexDirection: 'row',

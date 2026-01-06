@@ -985,10 +985,12 @@ export default function CalendarScreen() {
         <RescheduleRequestModal
           visible={showRescheduleModal}
           lesson={selectedLesson}
+          groupedLesson={selectedGroupedLesson}
           parentId={parent.id}
           onClose={() => {
             setShowRescheduleModal(false);
             setSelectedLesson(null);
+            setSelectedGroupedLesson(null);
           }}
           onSuccess={handleRescheduleSuccess}
         />

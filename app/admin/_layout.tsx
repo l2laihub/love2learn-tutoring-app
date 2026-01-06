@@ -3,14 +3,26 @@
  * Navigation layout for admin panel with tab-based navigation
  */
 
-import { Tabs, Redirect } from 'expo-router';
+import { Tabs, Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../src/theme';
+import { colors, spacing } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
-import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Pressable } from 'react-native';
 import { AdminSidebar } from '../../src/components/layout/AdminSidebar';
+
+// Back button component for admin header
+function AdminHeaderLeft() {
+  return (
+    <Pressable
+      onPress={() => router.replace('/(tabs)')}
+      style={{ padding: spacing.sm, marginLeft: spacing.xs }}
+    >
+      <Ionicons name="arrow-back" size={24} color={colors.neutral.textInverse} />
+    </Pressable>
+  );
+}
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -131,6 +143,7 @@ export default function AdminLayout() {
         headerTitleStyle: {
           fontWeight: '600',
         },
+        headerLeft: () => <AdminHeaderLeft />,
       }}
     >
       <Tabs.Screen
