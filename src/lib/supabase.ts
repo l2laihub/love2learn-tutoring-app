@@ -8,6 +8,7 @@
 import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { Database } from '../types/database';
 
@@ -31,15 +32,30 @@ if (!process.env.EXPO_PUBLIC_SUPABASE_URL ||
 }
 
 /**
- * In-memory storage fallback for when SecureStore is unavailable
+ * SecureStore has a 2048 byte limit on iOS.
+ * Supabase session JWTs are typically larger than this.
+ * We use AsyncStorage for session data (which can be large).
+ *
+ * For production apps requiring higher security, consider implementing
+ * the full AES encryption approach from Supabase docs:
+ * https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native
+ */
+
+/**
+ * In-memory storage fallback for when storage is unavailable
  */
 const memoryStorage: Record<string, string> = {};
 
 /**
- * Custom storage adapter using Expo SecureStore for native platforms
- * Falls back to localStorage for web platform, and in-memory for Expo Go issues
+ * Custom storage adapter using AsyncStorage for large values (session data)
+ * and SecureStore for small values. Falls back to localStorage for web.
+ *
+ * Note: For production apps requiring maximum security, consider implementing
+ * the full AES encryption approach where:
+ * - Encryption key is stored in SecureStore (small)
+ * - Encrypted session data is stored in AsyncStorage (large)
  */
-const ExpoSecureStoreAdapter = {
+const ExpoHybridStorageAdapter = {
   getItem: async (key: string): Promise<string | null> => {
     try {
       if (Platform.OS === 'web') {
@@ -49,11 +65,30 @@ const ExpoSecureStoreAdapter = {
         }
         return memoryStorage[key] || null;
       }
-      // Use SecureStore for native platforms
-      const value = await SecureStore.getItemAsync(key);
+
+      // For native platforms, try AsyncStorage first (for large session data)
+      // then fall back to SecureStore (for migration from old storage)
+      let value = await AsyncStorage.getItem(key);
+
+      if (value === null) {
+        // Try SecureStore as fallback (for migration from old implementation)
+        try {
+          value = await SecureStore.getItemAsync(key);
+          if (value !== null) {
+            // Migrate to AsyncStorage for future reads
+            await AsyncStorage.setItem(key, value);
+            // Clean up SecureStore
+            await SecureStore.deleteItemAsync(key);
+            console.log('[Storage] Migrated key from SecureStore to AsyncStorage:', key);
+          }
+        } catch {
+          // SecureStore may fail for various reasons, ignore
+        }
+      }
+
       return value;
     } catch (error) {
-      console.warn('[SecureStore] getItem failed, using memory fallback:', error);
+      console.warn('[Storage] getItem failed, using memory fallback:', error);
       return memoryStorage[key] || null;
     }
   },
@@ -69,10 +104,12 @@ const ExpoSecureStoreAdapter = {
         }
         return;
       }
-      // Use SecureStore for native platforms
-      await SecureStore.setItemAsync(key, value);
+
+      // For native platforms, use AsyncStorage for all values
+      // This avoids the SecureStore 2048 byte limit issue
+      await AsyncStorage.setItem(key, value);
     } catch (error) {
-      console.warn('[SecureStore] setItem failed, using memory fallback:', error);
+      console.warn('[Storage] setItem failed, using memory fallback:', error);
       memoryStorage[key] = value;
     }
   },
@@ -87,10 +124,16 @@ const ExpoSecureStoreAdapter = {
         delete memoryStorage[key];
         return;
       }
-      // Use SecureStore for native platforms
-      await SecureStore.deleteItemAsync(key);
+
+      // Remove from both storages to ensure cleanup
+      await AsyncStorage.removeItem(key);
+      try {
+        await SecureStore.deleteItemAsync(key);
+      } catch {
+        // Ignore SecureStore errors on delete
+      }
     } catch (error) {
-      console.warn('[SecureStore] removeItem failed:', error);
+      console.warn('[Storage] removeItem failed:', error);
       delete memoryStorage[key];
     }
   },
@@ -112,7 +155,7 @@ try {
     supabasePublishableKey,
     {
       auth: {
-        storage: ExpoSecureStoreAdapter,
+        storage: ExpoHybridStorageAdapter,
         autoRefreshToken: true,
         persistSession: true,
         // Enable URL detection for web to handle password recovery redirects

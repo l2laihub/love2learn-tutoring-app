@@ -26,7 +26,13 @@ export interface SharedResourceCardProps {
   resource: SharedResourceWithStudent;
   onPress?: () => void;
   onMarkViewed?: (id: string) => void;
+  onDelete?: (resource: SharedResourceWithStudent) => void;
+  showDeleteButton?: boolean;
   compact?: boolean;
+  // Multi-select support
+  isSelectable?: boolean;
+  isSelected?: boolean;
+  onSelect?: (resource: SharedResourceWithStudent) => void;
 }
 
 const getResourceTypeConfig = (type: ResourceType) => {
@@ -64,7 +70,7 @@ const getResourceTypeConfig = (type: ResourceType) => {
         icon: 'document-outline',
         label: 'Resource',
         color: colors.neutral.text,
-        bgColor: colors.neutral.surfaceHover,
+        bgColor: colors.neutral.background,
       };
   }
 };
@@ -97,16 +103,31 @@ export function SharedResourceCard({
   resource,
   onPress,
   onMarkViewed,
+  onDelete,
+  showDeleteButton = false,
   compact = false,
+  isSelectable = false,
+  isSelected = false,
+  onSelect,
 }: SharedResourceCardProps) {
   const config = getResourceTypeConfig(resource.resource_type);
   const isUnviewed = !resource.viewed_at;
 
   const handlePress = () => {
+    if (isSelectable && onSelect) {
+      onSelect(resource);
+      return;
+    }
     if (isUnviewed && onMarkViewed) {
       onMarkViewed(resource.id);
     }
     onPress?.();
+  };
+
+  const handleDelete = () => {
+    if (onDelete) {
+      onDelete(resource);
+    }
   };
 
   const handleOpenInYouTube = async () => {
@@ -236,13 +257,35 @@ export function SharedResourceCard({
             <Ionicons name="open-outline" size={16} color={colors.neutral.white} />
             <Text style={styles.openInYouTubeText}>Open in YouTube</Text>
           </Pressable>
+
+          {/* Delete Button (for tutors) - only show when not in select mode */}
+          {showDeleteButton && onDelete && !isSelectable && (
+            <Pressable
+              style={styles.deleteButton}
+              onPress={handleDelete}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.status.error} />
+              <Text style={styles.deleteButtonText}>Delete</Text>
+            </Pressable>
+          )}
         </View>
+
+        {/* Selection Checkbox Overlay */}
+        {isSelectable && (
+          <View style={styles.selectionOverlay}>
+            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+              {isSelected && (
+                <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+              )}
+            </View>
+          </View>
+        )}
       </View>
     );
   }
 
   return (
-    <Pressable style={styles.container} onPress={handlePress}>
+    <Pressable style={[styles.container, isSelected && styles.containerSelected]} onPress={handlePress}>
       {/* Unviewed indicator */}
       {isUnviewed && (
         <View style={styles.unviewedBadge}>
@@ -290,7 +333,32 @@ export function SharedResourceCard({
         {resource.file_size && (
           <Text style={styles.fileSize}>{formatFileSize(resource.file_size)}</Text>
         )}
+
+        {/* Delete Button (for tutors) - only show when not in select mode */}
+        {showDeleteButton && onDelete && !isSelectable && (
+          <Pressable
+            style={styles.deleteButton}
+            onPress={handleDelete}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.status.error} />
+            <Text style={styles.deleteButtonText}>Delete</Text>
+          </Pressable>
+        )}
       </View>
+
+      {/* Selection Checkbox Overlay */}
+      {isSelectable && (
+        <View style={styles.selectionOverlay}>
+          <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+            {isSelected && (
+              <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Selected border highlight */}
+      {isSelected && <View style={styles.selectedBorder} />}
     </Pressable>
   );
 }
@@ -302,16 +370,27 @@ export interface SharedResourceListProps {
   resources: SharedResourceWithStudent[];
   onResourcePress?: (resource: SharedResourceWithStudent) => void;
   onMarkViewed?: (id: string) => void;
+  onDelete?: (resource: SharedResourceWithStudent) => void;
+  showDeleteButton?: boolean;
   compact?: boolean;
   emptyMessage?: string;
+  // Multi-select support
+  isSelectable?: boolean;
+  selectedIds?: string[];
+  onSelect?: (resource: SharedResourceWithStudent) => void;
 }
 
 export function SharedResourceList({
   resources,
   onResourcePress,
   onMarkViewed,
+  onDelete,
+  showDeleteButton = false,
   compact = false,
   emptyMessage = 'No resources shared yet',
+  isSelectable = false,
+  selectedIds = [],
+  onSelect,
 }: SharedResourceListProps) {
   if (resources.length === 0) {
     return (
@@ -330,7 +409,12 @@ export function SharedResourceList({
           resource={resource}
           onPress={() => onResourcePress?.(resource)}
           onMarkViewed={onMarkViewed}
+          onDelete={onDelete}
+          showDeleteButton={showDeleteButton}
           compact={compact}
+          isSelectable={isSelectable}
+          isSelected={selectedIds.includes(resource.id)}
+          onSelect={onSelect}
         />
       ))}
     </View>
@@ -548,6 +632,60 @@ const styles = StyleSheet.create({
     color: colors.neutral.textMuted,
     marginTop: spacing.md,
     textAlign: 'center',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.status.errorBg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.status.error,
+  },
+  deleteButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.status.error,
+  },
+  // Selection styles
+  containerSelected: {
+    borderColor: colors.piano.primary,
+    borderWidth: 2,
+  },
+  selectionOverlay: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    zIndex: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.neutral.border,
+    backgroundColor: colors.neutral.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  selectedBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: borderRadius.lg,
+    borderWidth: 2,
+    borderColor: colors.piano.primary,
+    pointerEvents: 'none',
   },
 });
 

@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { SharedResourceWithStudent, ResourceType } from '../types/database';
 import { YouTubePlayer } from './YouTubePlayer';
@@ -49,71 +49,78 @@ export function ResourceViewerModal({
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch signed URL for storage files
-  const fetchSignedUrl = useCallback(async () => {
-    if (!resource?.storage_path) return;
+  // Fetch public URL for storage files
+  const fetchResourceUrl = useCallback(async () => {
+    console.log('[ResourceViewerModal] fetchResourceUrl called with:', {
+      storage_path: resource?.storage_path,
+      thumbnail_url: resource?.thumbnail_url,
+      resource_type: resource?.resource_type,
+    });
+
+    // If we have thumbnail_url, use it directly - it's already a working public URL
+    if (resource?.thumbnail_url) {
+      console.log('[ResourceViewerModal] Using thumbnail_url directly:', resource.thumbnail_url);
+
+      if (resource.resource_type === 'image') {
+        setImageUrl(resource.thumbnail_url);
+      } else {
+        setPdfUrl(resource.thumbnail_url);
+      }
+
+      if (!resource.viewed_at && onMarkViewed) {
+        onMarkViewed(resource.id);
+      }
+      return;
+    }
+
+    // If no thumbnail_url but we have storage_path, try to construct URL
+    if (!resource?.storage_path) {
+      console.log('[ResourceViewerModal] No storage_path or thumbnail_url available');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      // Determine bucket based on resource type
-      const bucket = resource.resource_type === 'image'
-        ? STORAGE_BUCKETS.SESSION_MEDIA
-        : STORAGE_BUCKETS.WORKSHEETS;
-
-      console.log('[ResourceViewerModal] Fetching signed URL:', {
-        bucket,
-        path: resource.storage_path,
-        resourceType: resource.resource_type,
-      });
-
-      // First try the determined bucket
-      let { data, error: urlError } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(resource.storage_path, 3600); // 1 hour expiry
-
-      // If not found in expected bucket, try the other bucket
-      if (urlError && urlError.message.includes('not found')) {
-        console.log('[ResourceViewerModal] File not found in', bucket, '- trying other bucket');
-        const otherBucket = bucket === STORAGE_BUCKETS.SESSION_MEDIA
-          ? STORAGE_BUCKETS.WORKSHEETS
-          : STORAGE_BUCKETS.SESSION_MEDIA;
-
-        const fallbackResult = await supabase.storage
-          .from(otherBucket)
-          .createSignedUrl(resource.storage_path, 3600);
-
-        if (!fallbackResult.error) {
-          data = fallbackResult.data;
-          urlError = null;
-          console.log('[ResourceViewerModal] Found file in fallback bucket:', otherBucket);
-        }
-      }
-
-      if (urlError) {
-        throw new Error(urlError.message);
-      }
-
+      // Determine the correct bucket based on resource type and mime type
+      let bucket: string;
       if (resource.resource_type === 'image') {
-        setImageUrl(data.signedUrl);
+        bucket = STORAGE_BUCKETS.SESSION_MEDIA;
+      } else if (resource.resource_type === 'pdf' || resource.resource_type === 'worksheet') {
+        bucket = STORAGE_BUCKETS.WORKSHEETS;
+      } else if (resource.mime_type?.startsWith('image/')) {
+        bucket = STORAGE_BUCKETS.SESSION_MEDIA;
       } else {
-        setPdfUrl(data.signedUrl);
+        bucket = STORAGE_BUCKETS.WORKSHEETS;
       }
 
-      // Mark as viewed
-      if (!resource.viewed_at && onMarkViewed) {
-        onMarkViewed(resource.id);
+      console.log('[ResourceViewerModal] Using bucket:', bucket, 'for resource type:', resource.resource_type);
+
+      const { data } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(resource.storage_path);
+
+      let workingUrl: string | null = data?.publicUrl || null;
+
+      if (workingUrl) {
+        console.log('[ResourceViewerModal] Using constructed URL:', workingUrl);
+
+        if (resource.resource_type === 'image') {
+          setImageUrl(workingUrl);
+        } else {
+          setPdfUrl(workingUrl);
+        }
+
+        if (!resource.viewed_at && onMarkViewed) {
+          onMarkViewed(resource.id);
+        }
+      } else {
+        throw new Error('Could not construct public URL');
       }
     } catch (err) {
-      console.error('Error fetching signed URL:', err);
-      // If there's a thumbnail_url for images, try using that as fallback
-      if (resource.resource_type === 'image' && resource.thumbnail_url) {
-        console.log('[ResourceViewerModal] Using thumbnail_url as fallback');
-        setImageUrl(resource.thumbnail_url);
-      } else {
-        setError(err instanceof Error ? err.message : 'Failed to load resource');
-      }
+      console.error('[ResourceViewerModal] Error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load resource');
     } finally {
       setLoading(false);
     }
@@ -131,11 +138,12 @@ export function ResourceViewerModal({
         if (!resource.viewed_at && onMarkViewed) {
           onMarkViewed(resource.id);
         }
-      } else if (resource.storage_path) {
-        fetchSignedUrl();
+      } else if (resource.storage_path || resource.thumbnail_url) {
+        // Fetch URL for images and PDFs (using thumbnail_url or storage_path)
+        fetchResourceUrl();
       }
     }
-  }, [visible, resource, fetchSignedUrl, onMarkViewed]);
+  }, [visible, resource, fetchResourceUrl, onMarkViewed]);
 
   // Handle opening video in browser/YouTube app
   const handleOpenVideo = async () => {
@@ -173,66 +181,47 @@ export function ResourceViewerModal({
 
   // Handle downloading/sharing file
   const handleDownload = async () => {
-    if (!resource?.storage_path) return;
+    // Use already loaded URL or thumbnail_url
+    const downloadUrl = imageUrl || pdfUrl || resource?.thumbnail_url;
+
+    if (!downloadUrl) {
+      Alert.alert('Error', 'No download URL available');
+      return;
+    }
+
+    console.log('[ResourceViewerModal] Download - using URL:', downloadUrl);
 
     setDownloading(true);
 
     try {
-      // Determine bucket and get signed URL
-      const bucket = resource.resource_type === 'image'
-        ? STORAGE_BUCKETS.SESSION_MEDIA
-        : STORAGE_BUCKETS.WORKSHEETS;
-
-      let { data, error: urlError } = await supabase.storage
-        .from(bucket)
-        .createSignedUrl(resource.storage_path, 3600);
-
-      // Try other bucket if not found
-      if (urlError && urlError.message.includes('not found')) {
-        const otherBucket = bucket === STORAGE_BUCKETS.SESSION_MEDIA
-          ? STORAGE_BUCKETS.WORKSHEETS
-          : STORAGE_BUCKETS.SESSION_MEDIA;
-
-        const fallbackResult = await supabase.storage
-          .from(otherBucket)
-          .createSignedUrl(resource.storage_path, 3600);
-
-        if (!fallbackResult.error) {
-          data = fallbackResult.data;
-          urlError = null;
-        }
-      }
-
-      if (urlError) throw new Error(urlError.message);
-
       if (Platform.OS === 'web') {
         // On web, open in new tab
-        window.open(data.signedUrl, '_blank');
+        window.open(downloadUrl, '_blank');
       } else {
         // On native, download and share
         const canShare = await Sharing.isAvailableAsync();
 
-        if (canShare) {
+        if (canShare && resource?.storage_path) {
           // Download file first
           const fileName = resource.storage_path.split('/').pop() || 'file';
-          const fileUri = FileSystem.cacheDirectory + fileName;
+          const fileUri = LegacyFileSystem.cacheDirectory + fileName;
 
-          const downloadResult = await FileSystem.downloadAsync(
-            data.signedUrl,
+          const downloadResult = await LegacyFileSystem.downloadAsync(
+            downloadUrl,
             fileUri
           );
 
           if (downloadResult.status === 200) {
             await Sharing.shareAsync(downloadResult.uri, {
-              mimeType: resource.mime_type || 'application/octet-stream',
-              dialogTitle: `Share ${resource.title}`,
+              mimeType: resource?.mime_type || 'application/octet-stream',
+              dialogTitle: `Share ${resource?.title || 'Resource'}`,
             });
           } else {
             throw new Error('Download failed');
           }
         } else {
           // Fallback: open in browser
-          await Linking.openURL(data.signedUrl);
+          await Linking.openURL(downloadUrl);
         }
       }
     } catch (err) {
@@ -279,7 +268,7 @@ export function ResourceViewerModal({
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle-outline" size={64} color={colors.status.error} />
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={fetchSignedUrl}>
+          <Pressable style={styles.retryButton} onPress={fetchResourceUrl}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </Pressable>
         </View>

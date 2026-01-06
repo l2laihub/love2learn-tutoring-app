@@ -518,6 +518,75 @@ export function useDeleteSharedResource() {
 }
 
 /**
+ * Hook for deleting a shared resource with its storage file
+ * This performs a full delete including the file from Supabase Storage
+ * @returns Mutation state with delete function
+ */
+export function useDeleteSharedResourceWithFile() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const mutate = useCallback(async (
+    id: string,
+    storagePath: string | null,
+    resourceType: string
+  ): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+      setSuccess(false);
+
+      // Delete the file from storage first (if it exists)
+      if (storagePath) {
+        // Determine the bucket based on resource type
+        const bucket = resourceType === 'image' ? 'session-media' : 'worksheets';
+
+        console.log('[useDeleteSharedResourceWithFile] Deleting file:', { bucket, storagePath });
+
+        const { error: storageError } = await supabase.storage
+          .from(bucket)
+          .remove([storagePath]);
+
+        if (storageError) {
+          console.warn('[useDeleteSharedResourceWithFile] Storage delete warning:', storageError.message);
+          // Continue with database delete even if storage delete fails
+          // The file might have already been deleted or doesn't exist
+        }
+      }
+
+      // Delete the database record
+      const { error: deleteError } = await supabase
+        .from('shared_resources')
+        .delete()
+        .eq('id', id);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      setSuccess(true);
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to delete resource');
+      setError(errorMessage);
+      console.error('[useDeleteSharedResourceWithFile] error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+    setSuccess(false);
+  }, []);
+
+  return { loading, error, success, mutate, reset };
+}
+
+/**
  * Hook for hiding a resource from parent view (soft delete)
  * @returns Mutation state with hide function
  */

@@ -84,6 +84,15 @@ export default function TabLayout() {
               href: isTutor ? null : undefined,
             }}
           />
+          <Tabs.Screen
+            name="library"
+            options={{
+              title: 'Library',
+              headerTitle: 'Resource Library',
+              // Library is now integrated into Worksheets tab - hide for all users
+              href: null,
+            }}
+          />
         </Tabs>
       </DesktopSidebar>
     );
@@ -179,8 +188,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="folder-open" color={color} size={size} />
           ),
-          // Hide Resources tab for tutors (they use worksheets screen)
+          // Hide Resources tab for tutors (they see Library in Worksheets tab)
           href: isTutor ? null : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="library"
+        options={{
+          title: 'Library',
+          headerTitle: 'Resource Library',
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="library" color={color} size={size} />
+          ),
+          // Library is now integrated into Worksheets tab - hide for all users
+          href: null,
         }}
       />
     </Tabs>

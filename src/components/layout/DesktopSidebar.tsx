@@ -29,6 +29,7 @@ const navItems: NavItem[] = [
   { name: 'Calendar', href: '/(tabs)/calendar', icon: 'calendar-outline', iconActive: 'calendar' },
   { name: 'Students', href: '/(tabs)/students', icon: 'people-outline', iconActive: 'people', tutorOnly: true },
   { name: 'Worksheets', href: '/(tabs)/worksheets', icon: 'document-text-outline', iconActive: 'document-text' },
+  { name: 'Resources', href: '/(tabs)/resources', icon: 'folder-open-outline', iconActive: 'folder-open', parentOnly: true },
   { name: 'Payments', href: '/(tabs)/payments', icon: 'card-outline', iconActive: 'card', tutorOnly: true },
 ];
 

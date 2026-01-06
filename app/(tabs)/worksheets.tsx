@@ -1,7 +1,8 @@
 /**
  * Worksheets Screen
  * AI-powered worksheet generation for piano and math lessons
- * With resource sharing capabilities for tutors
+ * Tutors: Generate worksheets, view assigned, and manage shared resource library
+ * Parents: View assigned worksheets
  */
 
 import React, { useState, useCallback } from 'react';
@@ -14,6 +15,9 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  RefreshControl,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,20 +28,31 @@ import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTutor } from '../../src/hooks/useParents';
 import { useAssignments, useCreateAssignment, useCompleteAssignment } from '../../src/hooks/useAssignments';
-import { useCreateSharedResource, useSharedResources } from '../../src/hooks/useSharedResources';
-import { SharedResourceList } from '../../src/components/SharedResourceCard';
-import { ResourceViewerModal } from '../../src/components/ResourceViewerModal';
+import { useSharedResources, useCreateSharedResource, useDeleteSharedResourceWithFile } from '../../src/hooks/useSharedResources';
 import { WorksheetGeneratorModal, WorksheetConfig } from '../../src/components/WorksheetGeneratorModal';
 import { UploadWorksheetModal } from '../../src/components/UploadWorksheetModal';
 import { ImageShareModal } from '../../src/components/ImageShareModal';
 import { YouTubeShareModal } from '../../src/components/YouTubeShareModal';
-import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent, CreateSharedResourceInput, SharedResourceWithStudent } from '../../src/types/database';
+import { SharedResourceList } from '../../src/components/SharedResourceCard';
+import { ResourceViewerModal } from '../../src/components/ResourceViewerModal';
+import { TutoringSubject, PianoWorksheetConfig, AssignmentWithStudent, CreateSharedResourceInput, SharedResourceWithStudent, ResourceType } from '../../src/types/database';
 import { generatePianoWorksheet } from '../../src/services/pianoWorksheetGenerator';
 
-type TabType = 'generate' | 'assigned' | 'shared';
+type TabType = 'generate' | 'assigned' | 'library';
 
 // Filter options for parent view
 type FilterOption = 'all' | 'pending' | 'completed';
+
+// Library resource filter
+type ResourceFilter = 'all' | 'worksheet' | 'pdf' | 'image' | 'video';
+
+const RESOURCE_FILTER_OPTIONS: { value: ResourceFilter; label: string; icon: string }[] = [
+  { value: 'all', label: 'All', icon: 'apps' },
+  { value: 'worksheet', label: 'Worksheets', icon: 'document-text' },
+  { value: 'pdf', label: 'PDFs', icon: 'document' },
+  { value: 'image', label: 'Images', icon: 'image' },
+  { value: 'video', label: 'Videos', icon: 'videocam' },
+];
 
 // Piano quick templates
 const PIANO_TEMPLATES = [
@@ -58,32 +73,13 @@ const MATH_TEMPLATES = [
 export default function WorksheetsScreen() {
   const { role: userRole, parent } = useAuthContext();
   const { data: students, loading: studentsLoading } = useStudents();
+  const { data: tutor } = useTutor();
   const { data: assignments, loading: assignmentsLoading, refetch: refetchAssignments } = useAssignments();
   const { mutate: createAssignment } = useCreateAssignment();
   const { mutate: completeAssignment, loading: completingAssignment } = useCompleteAssignment();
   const { mutate: createSharedResource } = useCreateSharedResource();
+  const { mutate: deleteResource, loading: deletingResource } = useDeleteSharedResourceWithFile();
 
-  // Fetch tutor record directly as a fallback when parent query times out
-  const { data: tutorRecord } = useTutor();
-
-  // Tutor ID is the parent record ID for tutors
-  // Use parent?.id from AuthContext if available, otherwise use tutorRecord?.id as fallback
-  const tutorId = parent?.id || (userRole === 'tutor' ? tutorRecord?.id : null) || null;
-
-  // Debug logging for tutorId resolution
-  React.useEffect(() => {
-    console.log('[WorksheetsScreen] TutorId resolution:', {
-      parentId: parent?.id,
-      tutorRecordId: tutorRecord?.id,
-      userRole,
-      resolvedTutorId: tutorId,
-    });
-  }, [parent?.id, tutorRecord?.id, userRole, tutorId]);
-
-  // Fetch shared resources for tutor view
-  const { data: sharedResources, loading: sharedResourcesLoading, error: sharedResourcesError, refetch: refetchSharedResources } = useSharedResources(
-    tutorId ? { tutorId } : {}
-  );
   const [activeTab, setActiveTab] = useState<TabType>('generate');
   const [showGenerator, setShowGenerator] = useState(false);
   const [presetSubject, setPresetSubject] = useState<TutoringSubject | undefined>();
@@ -95,11 +91,31 @@ export default function WorksheetsScreen() {
   const [showImageModal, setShowImageModal] = useState(false);
   const [showYouTubeModal, setShowYouTubeModal] = useState(false);
 
-  // Resource viewer state
+  // Library tab states
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>('all');
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<SharedResourceWithStudent | null>(null);
   const [showResourceViewer, setShowResourceViewer] = useState(false);
+  const [refreshingLibrary, setRefreshingLibrary] = useState(false);
+  const [showStudentPicker, setShowStudentPicker] = useState(false);
+
+  // Multi-select states for bulk delete
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
 
   const isTutor = userRole === 'tutor';
+
+  // Get tutor ID for sharing resources
+  const tutorId = tutor?.id;
+
+  // Fetch shared resources for library tab
+  const resourceType = resourceFilter === 'all' ? undefined : (resourceFilter as ResourceType);
+  const {
+    data: sharedResources,
+    loading: resourcesLoading,
+    error: resourcesError,
+    refetch: refetchResources,
+  } = useSharedResources(tutorId ? { tutorId, resourceType } : {});
 
   // For parents, always start on assigned tab
   React.useEffect(() => {
@@ -137,6 +153,223 @@ export default function WorksheetsScreen() {
 
     return filtered;
   }, [assignments, statusFilter, selectedChild]);
+
+  // Filtered resources for library tab
+  const filteredResources = React.useMemo(() => {
+    if (!selectedStudent) return sharedResources;
+    return sharedResources.filter((r) => r.student_id === selectedStudent);
+  }, [sharedResources, selectedStudent]);
+
+  // Resource counts for library filters
+  const resourceCounts = React.useMemo(() => {
+    return {
+      all: sharedResources.length,
+      worksheet: sharedResources.filter((r) => r.resource_type === 'worksheet').length,
+      pdf: sharedResources.filter((r) => r.resource_type === 'pdf').length,
+      image: sharedResources.filter((r) => r.resource_type === 'image').length,
+      video: sharedResources.filter((r) => r.resource_type === 'video').length,
+    };
+  }, [sharedResources]);
+
+  // Library refresh handler
+  const handleRefreshLibrary = useCallback(async () => {
+    setRefreshingLibrary(true);
+    await refetchResources();
+    setRefreshingLibrary(false);
+  }, [refetchResources]);
+
+  // Library resource press handler
+  const handleResourcePress = useCallback((resource: SharedResourceWithStudent) => {
+    setSelectedResource(resource);
+    setShowResourceViewer(true);
+  }, []);
+
+  // Handle delete resource (tutor only)
+  const handleDeleteResource = useCallback(async (resource: SharedResourceWithStudent) => {
+    const confirmMessage = `Are you sure you want to delete "${resource.title}"? This action cannot be undone.`;
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+
+      const success = await deleteResource(
+        resource.id,
+        resource.storage_path,
+        resource.resource_type
+      );
+      if (success) {
+        window.alert('Resource deleted successfully');
+        refetchResources();
+      } else {
+        window.alert('Failed to delete resource. Please try again.');
+      }
+    } else {
+      Alert.alert(
+        'Delete Resource',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const success = await deleteResource(
+                resource.id,
+                resource.storage_path,
+                resource.resource_type
+              );
+              if (success) {
+                Alert.alert('Success', 'Resource deleted successfully');
+                refetchResources();
+              } else {
+                Alert.alert('Error', 'Failed to delete resource. Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [deleteResource, refetchResources]);
+
+  // Toggle select mode
+  const toggleSelectMode = useCallback(() => {
+    setIsSelectMode(prev => {
+      if (prev) {
+        // Exiting select mode, clear selections
+        setSelectedResourceIds([]);
+      }
+      return !prev;
+    });
+  }, []);
+
+  // Handle resource selection toggle
+  const handleSelectResource = useCallback((resource: SharedResourceWithStudent) => {
+    setSelectedResourceIds(prev => {
+      const index = prev.indexOf(resource.id);
+      if (index > -1) {
+        // Remove from selection
+        return prev.filter(id => id !== resource.id);
+      } else {
+        // Add to selection
+        return [...prev, resource.id];
+      }
+    });
+  }, []);
+
+  // Select all visible resources
+  const selectAllResources = useCallback(() => {
+    setSelectedResourceIds(filteredResources.map(r => r.id));
+  }, [filteredResources]);
+
+  // Handle bulk delete
+  const handleBulkDelete = useCallback(async () => {
+    const count = selectedResourceIds.length;
+    if (count === 0) {
+      if (Platform.OS === 'web') {
+        window.alert('Please select resources to delete.');
+      } else {
+        Alert.alert('No Selection', 'Please select resources to delete.');
+      }
+      return;
+    }
+
+    // Confirmation - handle web vs native differently
+    const confirmMessage = `Are you sure you want to delete ${count} resource${count > 1 ? 's' : ''}? This action cannot be undone.`;
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(confirmMessage);
+      if (!confirmed) return;
+
+      // Proceed with deletion
+      let successCount = 0;
+      let failCount = 0;
+
+      const resourcesToDelete = filteredResources.filter(r => selectedResourceIds.includes(r.id));
+
+      for (const resource of resourcesToDelete) {
+        const success = await deleteResource(
+          resource.id,
+          resource.storage_path,
+          resource.resource_type
+        );
+        if (success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+
+      // Exit select mode and clear selections
+      setIsSelectMode(false);
+      setSelectedResourceIds([]);
+
+      // Refresh the list
+      await refetchResources();
+
+      // Show result
+      if (failCount === 0) {
+        window.alert(`${successCount} resource${successCount > 1 ? 's' : ''} deleted successfully`);
+      } else {
+        window.alert(`${successCount} deleted, ${failCount} failed. Please try again for failed items.`);
+      }
+    } else {
+      // Native alert
+      Alert.alert(
+        'Delete Selected Resources',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete All',
+            style: 'destructive',
+            onPress: async () => {
+              let successCount = 0;
+              let failCount = 0;
+
+              const resourcesToDelete = filteredResources.filter(r => selectedResourceIds.includes(r.id));
+
+              for (const resource of resourcesToDelete) {
+                const success = await deleteResource(
+                  resource.id,
+                  resource.storage_path,
+                  resource.resource_type
+                );
+                if (success) {
+                  successCount++;
+                } else {
+                  failCount++;
+                }
+              }
+
+              // Exit select mode and clear selections
+              setIsSelectMode(false);
+              setSelectedResourceIds([]);
+
+              // Refresh the list
+              await refetchResources();
+
+              // Show result
+              if (failCount === 0) {
+                Alert.alert('Success', `${successCount} resource${successCount > 1 ? 's' : ''} deleted successfully`);
+              } else {
+                Alert.alert(
+                  'Partial Success',
+                  `${successCount} deleted, ${failCount} failed. Please try again for failed items.`
+                );
+              }
+            },
+          },
+        ]
+      );
+    }
+  }, [selectedResourceIds, filteredResources, deleteResource, refetchResources]);
+
+  // Get selected student name for dropdown display
+  const getSelectedStudentName = useCallback(() => {
+    if (!selectedStudent) return 'All Students';
+    const student = students?.find((s) => s.id === selectedStudent);
+    return student?.name || 'Unknown Student';
+  }, [selectedStudent, students]);
 
   // Handle marking assignment as complete
   const handleMarkComplete = async (assignmentId: string) => {
@@ -285,37 +518,52 @@ export default function WorksheetsScreen() {
   const handleUploadComplete = useCallback(async (input: CreateSharedResourceInput) => {
     try {
       await createSharedResource(input);
-      refetchSharedResources();
-      Alert.alert('Success', 'Worksheet uploaded and shared with parent!');
+      // Refresh the library to show the new resource
+      await refetchResources();
+      if (Platform.OS === 'web') {
+        window.alert('Worksheet uploaded and shared with parent!');
+      } else {
+        Alert.alert('Success', 'Worksheet uploaded and shared with parent!');
+      }
     } catch (error) {
       console.error('Error sharing worksheet:', error);
       throw error;
     }
-  }, [createSharedResource, refetchSharedResources]);
+  }, [createSharedResource, refetchResources]);
 
   // Handle image share completion
   const handleImageShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
     try {
       await createSharedResource(input);
-      refetchSharedResources();
-      Alert.alert('Success', 'Image shared with parent!');
+      // Refresh the library to show the new resource
+      await refetchResources();
+      if (Platform.OS === 'web') {
+        window.alert('Image shared with parent!');
+      } else {
+        Alert.alert('Success', 'Image shared with parent!');
+      }
     } catch (error) {
       console.error('Error sharing image:', error);
       throw error;
     }
-  }, [createSharedResource, refetchSharedResources]);
+  }, [createSharedResource, refetchResources]);
 
   // Handle YouTube share completion
   const handleYouTubeShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
     try {
       await createSharedResource(input);
-      refetchSharedResources();
-      Alert.alert('Success', 'Video link shared with parent!');
+      // Refresh the library to show the new resource
+      await refetchResources();
+      if (Platform.OS === 'web') {
+        window.alert('Video link shared with parent!');
+      } else {
+        Alert.alert('Success', 'Video link shared with parent!');
+      }
     } catch (error) {
       console.error('Error sharing video:', error);
       throw error;
     }
-  }, [createSharedResource, refetchSharedResources]);
+  }, [createSharedResource, refetchResources]);
 
   // Format date for display
   const formatDate = (dateString: string) => {
@@ -385,21 +633,21 @@ export default function WorksheetsScreen() {
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.tab, activeTab === 'shared' && styles.tabActive]}
-            onPress={() => setActiveTab('shared')}
+            style={[styles.tab, activeTab === 'library' && styles.tabActive]}
+            onPress={() => setActiveTab('library')}
           >
             <Ionicons
-              name="share-social"
+              name="library"
               size={20}
-              color={activeTab === 'shared' ? colors.piano.primary : colors.neutral.textMuted}
+              color={activeTab === 'library' ? colors.piano.primary : colors.neutral.textMuted}
             />
             <Text
               style={[
                 styles.tabText,
-                activeTab === 'shared' && styles.tabTextActive,
+                activeTab === 'library' && styles.tabTextActive,
               ]}
             >
-              Shared
+              Library
             </Text>
             {sharedResources.length > 0 && (
               <View style={styles.tabBadge}>
@@ -491,48 +739,7 @@ export default function WorksheetsScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {activeTab === 'shared' ? (
-          /* Shared Resources Tab */
-          <>
-            <View style={styles.sharedHeader}>
-              <Text style={styles.sharedHeaderTitle}>Shared Resources</Text>
-              <Text style={styles.sharedHeaderSubtitle}>
-                Resources you&apos;ve shared with parents
-              </Text>
-            </View>
-
-            {sharedResourcesLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.piano.primary} />
-                <Text style={styles.loadingText}>Loading shared resources...</Text>
-              </View>
-            ) : sharedResourcesError ? (
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIconContainer}>
-                  <Ionicons name="alert-circle-outline" size={64} color={colors.status.error} />
-                </View>
-                <Text style={styles.emptyTitle}>Error Loading Resources</Text>
-                <Text style={styles.emptySubtitle}>
-                  {sharedResourcesError.message || 'Unable to load shared resources. Please try again.'}
-                </Text>
-                <Pressable style={styles.emptyButton} onPress={() => refetchSharedResources()}>
-                  <Ionicons name="refresh" size={18} color={colors.neutral.white} />
-                  <Text style={styles.emptyButtonText}>Retry</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <SharedResourceList
-                resources={sharedResources}
-                onResourcePress={(resource) => {
-                  setSelectedResource(resource);
-                  setShowResourceViewer(true);
-                }}
-                compact
-                emptyMessage="You haven't shared any resources yet. Use the Generate tab to share worksheets, images, or videos with parents."
-              />
-            )}
-          </>
-        ) : activeTab === 'generate' ? (
+        {activeTab === 'generate' ? (
           <>
             {/* Main Generate Button */}
             <Pressable
@@ -693,7 +900,7 @@ export default function WorksheetsScreen() {
               </View>
             </View>
           </>
-        ) : (
+        ) : activeTab === 'assigned' ? (
           /* Assigned Tab */
           <>
             {assignmentsLoading ? (
@@ -860,7 +1067,189 @@ export default function WorksheetsScreen() {
               </View>
             )}
           </>
-        )}
+        ) : activeTab === 'library' ? (
+          /* Library Tab - Tutor only */
+          <>
+            {/* Library Header with filters */}
+            <View style={styles.libraryHeader}>
+              <Text style={styles.libraryTitle}>Resource Library</Text>
+              <Text style={styles.librarySubtitle}>
+                {resourceCounts.all} resources shared with students
+              </Text>
+            </View>
+
+            {/* Student Filter - Dropdown Picker */}
+            {students && students.length > 0 && (
+              <View style={styles.studentFilterContainer}>
+                <Text style={styles.studentFilterLabel}>Filter by Student:</Text>
+                <Pressable
+                  style={styles.studentPickerButton}
+                  onPress={() => setShowStudentPicker(true)}
+                >
+                  <Ionicons
+                    name="person"
+                    size={18}
+                    color={selectedStudent ? colors.piano.primary : colors.neutral.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.studentPickerText,
+                      selectedStudent && styles.studentPickerTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {getSelectedStudentName()}
+                  </Text>
+                  <Ionicons
+                    name="chevron-down"
+                    size={18}
+                    color={colors.neutral.textSecondary}
+                  />
+                </Pressable>
+                {selectedStudent && (
+                  <Pressable
+                    style={styles.clearFilterButton}
+                    onPress={() => setSelectedStudent(null)}
+                  >
+                    <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* Resource Type Filter */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.typeFilter}
+              contentContainerStyle={styles.typeFilterContent}
+            >
+              {RESOURCE_FILTER_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.typeChip, resourceFilter === option.value && styles.typeChipActive]}
+                  onPress={() => setResourceFilter(option.value)}
+                >
+                  <Ionicons
+                    name={option.icon as any}
+                    size={16}
+                    color={
+                      resourceFilter === option.value ? colors.piano.primary : colors.neutral.textMuted
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      resourceFilter === option.value && styles.typeChipTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                  <View
+                    style={[
+                      styles.typeChipCount,
+                      resourceFilter === option.value && styles.typeChipCountActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.typeChipCountText,
+                        resourceFilter === option.value && styles.typeChipCountTextActive,
+                      ]}
+                    >
+                      {resourceCounts[option.value]}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {/* Select Mode Controls */}
+            {filteredResources.length > 0 && (
+              <View style={styles.selectModeControls}>
+                {isSelectMode ? (
+                  <>
+                    <Pressable style={styles.selectAllButton} onPress={selectAllResources}>
+                      <Ionicons name="checkbox-outline" size={18} color={colors.piano.primary} />
+                      <Text style={styles.selectAllText}>Select All</Text>
+                    </Pressable>
+                    <Text style={styles.selectedCount}>
+                      {selectedResourceIds.length} selected
+                    </Text>
+                    <View style={styles.selectModeActions}>
+                      <Pressable
+                        style={[styles.bulkDeleteButton, selectedResourceIds.length === 0 && styles.bulkDeleteButtonDisabled]}
+                        onPress={handleBulkDelete}
+                        disabled={selectedResourceIds.length === 0 || deletingResource}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={colors.status.error} />
+                        <Text style={styles.bulkDeleteText}>Delete</Text>
+                      </Pressable>
+                      <Pressable style={styles.cancelSelectButton} onPress={toggleSelectMode}>
+                        <Text style={styles.cancelSelectText}>Cancel</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <Pressable style={styles.enterSelectButton} onPress={toggleSelectMode}>
+                    <Ionicons name="checkmark-circle-outline" size={18} color={colors.neutral.textSecondary} />
+                    <Text style={styles.enterSelectText}>Select</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* Resources List */}
+            {resourcesLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.piano.primary} />
+                <Text style={styles.loadingText}>Loading resources...</Text>
+              </View>
+            ) : resourcesError ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="alert-circle-outline" size={64} color={colors.status.error} />
+                </View>
+                <Text style={styles.emptyTitle}>Error Loading Resources</Text>
+                <Text style={styles.emptySubtitle}>
+                  {resourcesError.message || 'Unable to load resources. Please try again.'}
+                </Text>
+                <Pressable style={styles.emptyButton} onPress={() => refetchResources()}>
+                  <Ionicons name="refresh" size={18} color={colors.neutral.white} />
+                  <Text style={styles.emptyButtonText}>Retry</Text>
+                </Pressable>
+              </View>
+            ) : filteredResources.length === 0 ? (
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconContainer}>
+                  <Ionicons name="library-outline" size={64} color={colors.neutral.border} />
+                </View>
+                <Text style={styles.emptyTitle}>No Resources Yet</Text>
+                <Text style={styles.emptySubtitle}>
+                  {resourceFilter !== 'all'
+                    ? `No ${resourceFilter}s have been shared yet.`
+                    : 'Share worksheets, images, and videos with your students using the share options in the Generate tab.'}
+                </Text>
+                <Pressable style={styles.emptyButton} onPress={() => setActiveTab('generate')}>
+                  <Ionicons name="sparkles" size={18} color={colors.neutral.white} />
+                  <Text style={styles.emptyButtonText}>Generate & Share</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <SharedResourceList
+                resources={filteredResources}
+                onResourcePress={handleResourcePress}
+                onDelete={handleDeleteResource}
+                showDeleteButton={!isSelectMode}
+                compact={false}
+                emptyMessage="No resources found"
+                isSelectable={isSelectMode}
+                selectedIds={selectedResourceIds}
+                onSelect={handleSelectResource}
+              />
+            )}
+          </>
+        ) : null}
       </ScrollView>
 
       {/* Worksheet Generator Modal */}
@@ -921,6 +1310,95 @@ export default function WorksheetsScreen() {
           setSelectedResource(null);
         }}
       />
+
+      {/* Student Picker Modal */}
+      <Modal
+        visible={showStudentPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowStudentPicker(false)}
+      >
+        <Pressable
+          style={styles.pickerOverlay}
+          onPress={() => setShowStudentPicker(false)}
+        >
+          <Pressable style={styles.pickerContainer} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Student</Text>
+              <Pressable
+                style={styles.pickerCloseButton}
+                onPress={() => setShowStudentPicker(false)}
+              >
+                <Ionicons name="close" size={24} color={colors.neutral.text} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              data={[{ id: null, name: 'All Students' }, ...(students || [])]}
+              keyExtractor={(item) => item.id || 'all'}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={[
+                    styles.pickerItem,
+                    (item.id === null && selectedStudent === null) ||
+                    item.id === selectedStudent
+                      ? styles.pickerItemActive
+                      : null,
+                  ]}
+                  onPress={() => {
+                    setSelectedStudent(item.id);
+                    setShowStudentPicker(false);
+                  }}
+                >
+                  <View style={styles.pickerItemLeft}>
+                    <View
+                      style={[
+                        styles.pickerItemAvatar,
+                        (item.id === null && selectedStudent === null) ||
+                        item.id === selectedStudent
+                          ? styles.pickerItemAvatarActive
+                          : null,
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.id === null ? 'people' : 'person'}
+                        size={18}
+                        color={
+                          (item.id === null && selectedStudent === null) ||
+                          item.id === selectedStudent
+                            ? colors.piano.primary
+                            : colors.neutral.textSecondary
+                        }
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.pickerItemText,
+                        (item.id === null && selectedStudent === null) ||
+                        item.id === selectedStudent
+                          ? styles.pickerItemTextActive
+                          : null,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </View>
+                  {((item.id === null && selectedStudent === null) ||
+                    item.id === selectedStudent) && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={22}
+                      color={colors.piano.primary}
+                    />
+                  )}
+                </Pressable>
+              )}
+              style={styles.pickerList}
+              contentContainerStyle={styles.pickerListContent}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1307,7 +1785,7 @@ const styles = StyleSheet.create({
     color: colors.neutral.textMuted,
     textAlign: 'center',
   },
-  // Shared tab styles
+  // Tab badge styles
   tabBadge: {
     backgroundColor: colors.primary.main,
     borderRadius: 10,
@@ -1323,16 +1801,252 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.bold,
     color: colors.neutral.white,
   },
-  sharedHeader: {
-    marginBottom: spacing.lg,
+  // Library tab styles
+  libraryHeader: {
+    marginBottom: spacing.md,
   },
-  sharedHeaderTitle: {
+  libraryTitle: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.neutral.text,
     marginBottom: spacing.xs,
   },
-  sharedHeaderSubtitle: {
+  librarySubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  // Student filter dropdown styles
+  studentFilterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  studentFilterLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  studentPickerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    ...shadows.sm,
+  },
+  studentPickerText: {
+    flex: 1,
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  studentPickerTextActive: {
+    color: colors.piano.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  clearFilterButton: {
+    padding: spacing.xs,
+  },
+  // Student picker modal styles
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerContainer: {
+    backgroundColor: colors.neutral.white,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    maxHeight: '70%',
+    ...shadows.lg,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  pickerTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  pickerCloseButton: {
+    padding: spacing.xs,
+  },
+  pickerList: {
+    flexGrow: 0,
+  },
+  pickerListContent: {
+    paddingVertical: spacing.sm,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  pickerItemActive: {
+    backgroundColor: colors.piano.subtle,
+  },
+  pickerItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  pickerItemAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.neutral.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerItemAvatarActive: {
+    backgroundColor: colors.piano.subtle,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  pickerItemText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    flex: 1,
+  },
+  pickerItemTextActive: {
+    color: colors.piano.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  typeFilter: {
+    marginBottom: spacing.md,
+  },
+  typeFilterContent: {
+    paddingHorizontal: 0,
+    gap: spacing.sm,
+  },
+  typeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.neutral.white,
+    gap: spacing.xs,
+    ...shadows.sm,
+  },
+  typeChipActive: {
+    backgroundColor: colors.piano.subtle,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  typeChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  typeChipTextActive: {
+    color: colors.piano.primary,
+  },
+  typeChipCount: {
+    backgroundColor: colors.neutral.background,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  typeChipCountActive: {
+    backgroundColor: colors.piano.primary,
+  },
+  typeChipCountText: {
+    fontSize: 11,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.textMuted,
+  },
+  typeChipCountTextActive: {
+    color: colors.neutral.white,
+  },
+  // Select mode styles
+  selectModeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+    paddingTop: spacing.md,
+  },
+  enterSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  enterSelectText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  selectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  selectAllText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  selectedCount: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    flex: 1,
+    textAlign: 'center',
+  },
+  selectModeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  bulkDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.status.errorBg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.status.error,
+  },
+  bulkDeleteButtonDisabled: {
+    opacity: 0.5,
+  },
+  bulkDeleteText: {
+    fontSize: typography.sizes.sm,
+    color: colors.status.error,
+    fontWeight: typography.weights.medium,
+  },
+  cancelSelectButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  cancelSelectText: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
   },

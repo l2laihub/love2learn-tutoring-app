@@ -286,9 +286,9 @@ export async function getParentByUserId(
   console.log('[getParentByUserId] Using RPC function to get parent');
 
   try {
-    // Add timeout to detect hanging queries
+    // Add timeout to detect hanging queries (10s for mobile SecureStore operations)
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Parent query timeout after 5s')), 5000);
+      setTimeout(() => reject(new Error('Parent query timeout after 10s')), 10000);
     });
 
     // Use RPC function that bypasses RLS to avoid circular dependency
@@ -352,13 +352,16 @@ export function useAuth(): AuthState {
   }, [user?.id, fetchParent]);
 
   useEffect(() => {
-    // Get initial session with timeout to prevent hanging
-    const initializeAuth = async () => {
-      console.log('[useAuth] initializeAuth starting...');
+    // Get initial session with timeout and retry to prevent hanging
+    const initializeAuth = async (retryCount = 0) => {
+      const maxRetries = 2;
+      const timeoutMs = 10000; // 10s timeout for mobile SecureStore operations
+
+      console.log('[useAuth] initializeAuth starting...', retryCount > 0 ? `(retry ${retryCount})` : '');
       try {
         // Add timeout to prevent infinite hang
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error('getSession timeout after 5s')), 5000);
+          setTimeout(() => reject(new Error(`getSession timeout after ${timeoutMs / 1000}s`)), timeoutMs);
         });
 
         const sessionPromise = supabase.auth.getSession();
@@ -375,16 +378,27 @@ export function useAuth(): AuthState {
         if (initialSession?.user) {
           await fetchParent(initialSession.user.id);
         }
+        setIsLoading(false);
+        console.log('[useAuth] Auth initialization complete, isLoading set to false');
       } catch (error) {
         console.error('[useAuth] Error initializing auth:', error);
-        // On timeout or error, set session to null and continue
+
+        // Retry on timeout if we haven't exhausted retries
+        if (retryCount < maxRetries && error instanceof Error && error.message.includes('timeout')) {
+          console.log('[useAuth] Retrying auth initialization...');
+          // Small delay before retry to let SecureStore settle
+          await new Promise(resolve => setTimeout(resolve, 500));
+          return initializeAuth(retryCount + 1);
+        }
+
+        // On final failure, set session to null and continue
+        // The onAuthStateChange listener will pick up the session if it eventually loads
         setSession(null);
         setUser(null);
         setParent(null);
         setParentQueryError('timeout');
-      } finally {
         setIsLoading(false);
-        console.log('[useAuth] Auth initialization complete, isLoading set to false');
+        console.log('[useAuth] Auth initialization failed after retries, isLoading set to false');
       }
     };
 

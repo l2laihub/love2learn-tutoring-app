@@ -288,10 +288,14 @@ export function useParentByUserId(userId: string | null): QueryState<ParentWithS
 
       if (fetchError) {
         // Not found is not necessarily an error - user might not have a parent profile
+        // PGRST116 = "The result contains 0 rows" (no matching row found)
         if (fetchError.code === 'PGRST116') {
+          console.log('[useParentByUserId] No parent profile found for user:', userId);
           setData(null);
           return;
         }
+        // Don't log as error for expected scenarios
+        console.warn('[useParentByUserId] Query error:', fetchError.code, fetchError.message);
         throw new Error(fetchError.message);
       }
 
@@ -299,7 +303,10 @@ export function useParentByUserId(userId: string | null): QueryState<ParentWithS
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch parent');
       setError(errorMessage);
-      console.error('useParentByUserId error:', errorMessage);
+      // Only log unexpected errors, not routine lookup failures
+      if (errorMessage.message !== 'Failed to fetch parent') {
+        console.error('[useParentByUserId] Unexpected error:', errorMessage);
+      }
     } finally {
       setLoading(false);
     }

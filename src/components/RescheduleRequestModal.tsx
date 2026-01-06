@@ -131,13 +131,6 @@ export function RescheduleRequestModal({
     return parts[0] * 60 + parts[1];
   }, []);
 
-  // Debug: log busy slots when they change
-  useEffect(() => {
-    if (busySlots.length > 0) {
-      console.log('[RescheduleModal] Busy slots for', selectedDateString, ':', busySlots);
-    }
-  }, [busySlots, selectedDateString]);
-
   // Helper function to check if a time slot conflicts with an existing lesson
   const isTimeSlotBusy = useCallback((timeStr: string, durationMin: number = 30) => {
     if (!selectedDate || busySlots.length === 0) return false;

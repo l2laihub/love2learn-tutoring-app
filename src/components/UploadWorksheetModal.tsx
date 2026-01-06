@@ -128,6 +128,7 @@ export function UploadWorksheetModal({
         title: title.trim(),
         description: description.trim() || null,
         storage_path: uploadResult.path,
+        thumbnail_url: uploadResult.publicUrl, // Use public URL for viewing
         file_size: uploadResult.size,
         mime_type: uploadResult.mimeType,
       };
