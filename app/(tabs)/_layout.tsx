@@ -5,6 +5,7 @@ import { colors } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
+import { NotificationBell } from '../../src/components/NotificationBell';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -16,6 +17,11 @@ interface TabIconProps {
 
 function TabIcon({ name, color, size }: TabIconProps) {
   return <Ionicons name={name} size={size} color={color} />;
+}
+
+// Header right component with notification bell
+function HeaderRight() {
+  return <NotificationBell color={colors.neutral.textInverse} />;
 }
 
 export default function TabLayout() {
@@ -37,6 +43,7 @@ export default function TabLayout() {
             headerTitleStyle: {
               fontWeight: '600',
             },
+            headerRight: () => <HeaderRight />,
           }}
         >
           <Tabs.Screen
@@ -123,6 +130,7 @@ export default function TabLayout() {
         headerTitleStyle: {
           fontWeight: '600',
         },
+        headerRight: () => <HeaderRight />,
       }}
     >
       <Tabs.Screen

@@ -130,6 +130,17 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="notifications"
+        options={{
+          headerShown: true,
+          headerTitle: 'Notifications',
+          headerBackTitle: 'Back',
+          headerStyle: { backgroundColor: colors.primary.main },
+          headerTintColor: colors.neutral.textInverse,
+          headerTitleStyle: { fontWeight: '600' },
+        }}
+      />
+      <Stack.Screen
         name="admin"
         options={{
           headerShown: false,
