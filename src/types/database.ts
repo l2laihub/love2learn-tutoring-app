@@ -896,6 +896,20 @@ export interface TutorAvailability {
   updated_at: string;
 }
 
+// Tutor break slot (within availability windows)
+export interface TutorBreak {
+  id: string;
+  tutor_id: string;
+  day_of_week: number | null; // 0=Sunday, 6=Saturday
+  start_time: string;
+  end_time: string;
+  is_recurring: boolean;
+  specific_date: string | null;
+  notes: string | null; // Free-form notes (e.g., "lunch", "personal")
+  created_at: string;
+  updated_at: string;
+}
+
 // Lesson request from parent
 export interface LessonRequest {
   id: string;
@@ -925,6 +939,35 @@ export interface CreateTutorAvailabilityInput {
   day_of_week?: number | null;
   start_time: string;
   end_time: string;
+  is_recurring?: boolean;
+  specific_date?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateTutorAvailabilityInput {
+  day_of_week?: number | null;
+  start_time?: string;
+  end_time?: string;
+  is_recurring?: boolean;
+  specific_date?: string | null;
+  notes?: string | null;
+}
+
+// Input types for tutor breaks
+export interface CreateTutorBreakInput {
+  tutor_id: string;
+  day_of_week?: number | null;
+  start_time: string;
+  end_time: string;
+  is_recurring?: boolean;
+  specific_date?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateTutorBreakInput {
+  day_of_week?: number | null;
+  start_time?: string;
+  end_time?: string;
   is_recurring?: boolean;
   specific_date?: string | null;
   notes?: string | null;

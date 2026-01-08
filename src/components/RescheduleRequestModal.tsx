@@ -128,8 +128,17 @@ export function RescheduleRequestModal({
     );
   }, [selectedDate, availability]);
 
-  // Helper function to parse time string (HH:MM or HH:MM:SS) to minutes from midnight
+  // Helper function to parse time string (HH:MM, HH:MM:SS, or timestamp) to minutes from midnight in LOCAL timezone
   const parseTimeToMinutes = useCallback((timeStr: string): number => {
+    // Check if it's a timestamp (contains 'T' for ISO or space for Postgres format like "2026-01-12 12:15:00+00")
+    if (timeStr.includes('T') || (timeStr.includes('-') && timeStr.includes(':'))) {
+      // Replace space with T for proper ISO parsing if needed
+      const isoStr = timeStr.replace(' ', 'T');
+      const date = new Date(isoStr);
+      // getHours() returns local time hours, which is what we want for display
+      return date.getHours() * 60 + date.getMinutes();
+    }
+    // Otherwise parse as HH:MM or HH:MM:SS (simple time string)
     const parts = timeStr.split(':').map(Number);
     return parts[0] * 60 + parts[1];
   }, []);

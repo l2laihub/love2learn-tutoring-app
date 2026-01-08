@@ -646,12 +646,14 @@ export default function StudentsScreen() {
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={[colors.piano.primary]}
-            tintColor={colors.piano.primary}
-          />
+          !isSearchFocused ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.piano.primary]}
+              tintColor={colors.piano.primary}
+            />
+          ) : undefined
         }
       >
         {/* Header */}
@@ -717,6 +719,8 @@ export default function StudentsScreen() {
             onClear={() => setSearchQuery('')}
             placeholder={viewMode === 'students' ? 'Search students...' : 'Search parents...'}
             containerStyle={styles.searchContainer}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
         </View>
 

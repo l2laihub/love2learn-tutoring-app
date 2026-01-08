@@ -44,6 +44,9 @@ import {
 import { LessonFormModal, LessonFormData, SessionFormData } from '../../src/components/LessonFormModal';
 import { LessonDetailModal } from '../../src/components/LessonDetailModal';
 import { RescheduleRequestModal } from '../../src/components/RescheduleRequestModal';
+import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
+import { TutorBreak } from '../../src/types/database';
+import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
 
 // Subject emoji mapping
 const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
@@ -111,6 +114,13 @@ export default function CalendarScreen() {
   const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: tutorSettings } = useTutorSettings();
+
+  // Fetch tutor breaks (only for tutors)
+  const {
+    data: weeklyBreaks,
+    loading: breaksLoading,
+    refetch: refetchBreaks,
+  } = useWeeklyBreaks(isTutor ? parent?.id : undefined);
   const createLesson = useCreateLesson();
   const createGroupedLesson = useCreateGroupedLesson();
   const updateLesson = useUpdateLesson();
@@ -213,6 +223,13 @@ export default function CalendarScreen() {
     return days;
   }, [weekStart]);
 
+  // Helper to get breaks for a specific date
+  const getBreaksForDate = useCallback((date: Date): TutorBreak[] => {
+    if (!isTutor || !weeklyBreaks) return [];
+    const dayOfWeek = date.getDay(); // 0=Sunday, 6=Saturday
+    return weeklyBreaks.get(dayOfWeek) || [];
+  }, [isTutor, weeklyBreaks]);
+
   // Navigation
   const goToPreviousWeek = () => {
     const newStart = new Date(weekStart);
@@ -233,7 +250,7 @@ export default function CalendarScreen() {
   // Handlers
   const handleRefresh = async () => {
     setRefreshing(true);
-    await refetch();
+    await Promise.all([refetch(), refetchBreaks()]);
     setRefreshing(false);
   };
 
@@ -667,7 +684,27 @@ export default function CalendarScreen() {
           {weekDays.map((day, index) => {
             const dateKey = formatDateKey(day);
             const dayLessons = lessonsByDate.get(dateKey) || [];
+            const dayBreaks = getBreaksForDate(day);
             const today = isToday(day);
+            const hasContent = dayLessons.length > 0 || dayBreaks.length > 0;
+
+            // Combine and sort lessons and breaks by start time
+            type CalendarItem =
+              | { type: 'lesson'; data: GroupedLesson; sortTime: string }
+              | { type: 'break'; data: TutorBreak; sortTime: string };
+
+            const combinedItems: CalendarItem[] = [
+              ...dayLessons.map(lesson => ({
+                type: 'lesson' as const,
+                data: lesson,
+                sortTime: new Date(lesson.scheduled_at).toTimeString().slice(0, 5), // HH:MM
+              })),
+              ...dayBreaks.map(breakSlot => ({
+                type: 'break' as const,
+                data: breakSlot,
+                sortTime: breakSlot.start_time.slice(0, 5), // HH:MM
+              })),
+            ].sort((a, b) => a.sortTime.localeCompare(b.sortTime));
 
             return (
               <View key={dateKey} style={styles.dayContainer}>
@@ -685,12 +722,42 @@ export default function CalendarScreen() {
 
                 {/* Day Content */}
                 <View style={styles.dayContent}>
-                  {dayLessons.length === 0 ? (
+                  {!hasContent ? (
                     <View style={styles.emptyDay}>
                       <Text style={styles.emptyDayText}>No lessons</Text>
                     </View>
                   ) : (
-                    dayLessons.map((group, groupIndex) => {
+                    <>
+                    {combinedItems.map((item) => {
+                      if (item.type === 'break') {
+                        const breakSlot = item.data;
+                        return (
+                          <View key={`break-${breakSlot.id}`} style={styles.breakCard}>
+                            <View style={styles.breakTime}>
+                              <Text style={styles.breakTimeText}>
+                                {formatTimeDisplay(breakSlot.start_time)}
+                              </Text>
+                              <Text style={styles.breakTimeEndText}>
+                                –{formatTimeDisplay(breakSlot.end_time)}
+                              </Text>
+                            </View>
+                            <View style={styles.breakInfo}>
+                              <View style={styles.breakLabel}>
+                                <Ionicons name="cafe" size={14} color={colors.status.warning} />
+                                <Text style={styles.breakLabelText}>Break</Text>
+                              </View>
+                              {breakSlot.notes && (
+                                <Text style={styles.breakNotes} numberOfLines={1}>
+                                  {breakSlot.notes}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      }
+
+                      // Lesson item
+                      const group = item.data;
                       // Use the primary subject color (first subject)
                       const primarySubject = group.subjects[0];
                       const subjectColor = getSubjectColor(primarySubject);
@@ -813,7 +880,8 @@ export default function CalendarScreen() {
                           )}
                         </Pressable>
                       );
-                    })
+                    })}
+                    </>
                   )}
                 </View>
               </View>
@@ -923,6 +991,12 @@ export default function CalendarScreen() {
             <View style={[styles.legendDot, { backgroundColor: colors.subjects.english.primary }]} />
             <Text style={styles.legendText}>English</Text>
           </View>
+          {isTutor && (
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: colors.status.warning }]} />
+              <Text style={styles.legendText}>Break</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -1158,6 +1232,48 @@ const styles = StyleSheet.create({
   },
   lessonCardCompleted: {
     backgroundColor: colors.status.successBg,
+  },
+  // Break card styles
+  breakCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7', // warning subtle
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.status.warning,
+  },
+  breakTime: {
+    width: 70,
+    marginRight: spacing.sm,
+  },
+  breakTimeText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: '#92400E', // darker warning
+  },
+  breakTimeEndText: {
+    fontSize: typography.sizes.xs,
+    color: '#B45309', // medium warning
+    marginTop: 1,
+  },
+  breakInfo: {
+    flex: 1,
+  },
+  breakLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  breakLabelText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: '#92400E',
+  },
+  breakNotes: {
+    fontSize: typography.sizes.xs,
+    color: '#B45309',
+    marginTop: 2,
   },
   lessonTime: {
     width: 70,
