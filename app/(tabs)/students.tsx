@@ -114,6 +114,7 @@ export default function StudentsScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('students');
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedSubjects, setSelectedSubjects] = useState<Subject[]>([]);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('list');
 
@@ -642,6 +643,8 @@ export default function StudentsScreen() {
             width: '100%',
           },
         ]}
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -703,13 +706,19 @@ export default function StudentsScreen() {
         </View>
 
         {/* Search */}
-        <SearchInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onClear={() => setSearchQuery('')}
-          placeholder={viewMode === 'students' ? 'Search students...' : 'Search parents...'}
-          containerStyle={styles.searchContainer}
-        />
+        <View
+          style={styles.searchWrapper}
+          onStartShouldSetResponder={() => true}
+          onResponderTerminationRequest={() => false}
+        >
+          <SearchInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onClear={() => setSearchQuery('')}
+            placeholder={viewMode === 'students' ? 'Search students...' : 'Search parents...'}
+            containerStyle={styles.searchContainer}
+          />
+        </View>
 
         {/* View Mode Toggle */}
         <View style={styles.viewModeContainer}>
@@ -1293,6 +1302,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 5,
+  },
+  searchWrapper: {
+    zIndex: 1,
   },
   searchContainer: {
     marginBottom: spacing.md,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -8,6 +8,8 @@ import {
   ViewStyle,
   StyleProp,
   Pressable,
+  Platform,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, borderRadius, spacing, typography, shadows } from '../../theme';
@@ -31,9 +33,12 @@ export function Input({
   onRightIconPress,
   containerStyle,
   style,
+  onFocus,
+  onBlur,
   ...props
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   const inputContainerStyle = [
     styles.inputContainer,
@@ -41,31 +46,55 @@ export function Input({
     error && styles.inputContainerError,
   ];
 
+  const handleFocus = (e: any) => {
+    setIsFocused(true);
+    onFocus?.(e);
+  };
+
+  const handleBlur = (e: any) => {
+    setIsFocused(false);
+    onBlur?.(e);
+  };
+
+  // Handle container press to focus input (helps with mobile touch issues)
+  const handleContainerPress = () => {
+    inputRef.current?.focus();
+  };
+
   return (
     <View style={[styles.container, containerStyle]}>
       {label && <Text style={styles.label}>{label}</Text>}
-      <View style={inputContainerStyle}>
-        {icon && (
-          <Ionicons
-            name={icon}
-            size={20}
-            color={colors.neutral.textMuted}
-            style={styles.icon}
+      <TouchableWithoutFeedback onPress={handleContainerPress}>
+        <View style={inputContainerStyle}>
+          {icon && (
+            <Ionicons
+              name={icon}
+              size={20}
+              color={colors.neutral.textMuted}
+              style={styles.icon}
+            />
+          )}
+          <TextInput
+            ref={inputRef}
+            style={[styles.input, icon && styles.inputWithIcon, style]}
+            placeholderTextColor={colors.neutral.textMuted}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            autoCorrect={false}
+            spellCheck={false}
+            {...props}
           />
-        )}
-        <TextInput
-          style={[styles.input, icon && styles.inputWithIcon, style]}
-          placeholderTextColor={colors.neutral.textMuted}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          {...props}
-        />
-        {rightIcon && (
-          <Pressable onPress={onRightIconPress} style={styles.rightIcon}>
-            <Ionicons name={rightIcon} size={20} color={colors.neutral.textMuted} />
-          </Pressable>
-        )}
-      </View>
+          {rightIcon && (
+            <Pressable
+              onPress={onRightIconPress}
+              style={styles.rightIcon}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name={rightIcon} size={20} color={colors.neutral.textMuted} />
+            </Pressable>
+          )}
+        </View>
+      </TouchableWithoutFeedback>
       {error && <Text style={styles.error}>{error}</Text>}
       {hint && !error && <Text style={styles.hint}>{hint}</Text>}
     </View>

@@ -18,6 +18,7 @@ import {
   RefreshControl,
   Modal,
   FlatList,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -105,6 +106,8 @@ export default function WorksheetsScreen() {
   const [showResourceViewer, setShowResourceViewer] = useState(false);
   const [refreshingLibrary, setRefreshingLibrary] = useState(false);
   const [showStudentPicker, setShowStudentPicker] = useState(false);
+  const [studentPickerSearch, setStudentPickerSearch] = useState('');
+  const [adminStudentPickerSearch, setAdminStudentPickerSearch] = useState('');
 
   // Multi-select states for bulk delete (Library)
   const [isSelectMode, setIsSelectMode] = useState(false);
@@ -224,6 +227,28 @@ export default function WorksheetsScreen() {
       video: sharedResources.filter((r) => r.resource_type === 'video').length,
     };
   }, [sharedResources]);
+
+  // Filtered students for Library picker
+  const filteredStudentsForPicker = React.useMemo(() => {
+    if (!studentPickerSearch.trim()) return students || [];
+    const query = studentPickerSearch.toLowerCase().trim();
+    return (students || []).filter(
+      (student) =>
+        student.name.toLowerCase().includes(query) ||
+        `grade ${student.grade_level}`.toLowerCase().includes(query)
+    );
+  }, [students, studentPickerSearch]);
+
+  // Filtered students for Admin (Assigned tab) picker
+  const filteredStudentsForAdminPicker = React.useMemo(() => {
+    if (!adminStudentPickerSearch.trim()) return students || [];
+    const query = adminStudentPickerSearch.toLowerCase().trim();
+    return (students || []).filter(
+      (student) =>
+        student.name.toLowerCase().includes(query) ||
+        `grade ${student.grade_level}`.toLowerCase().includes(query)
+    );
+  }, [students, adminStudentPickerSearch]);
 
   // Library refresh handler
   const handleRefreshLibrary = useCallback(async () => {
@@ -808,22 +833,41 @@ export default function WorksheetsScreen() {
     }
   }, [createSharedResource, refetchResources]);
 
-  // Handle image share completion
+  // Handle individual image upload (no alerts - batch callbacks handle messaging)
   const handleImageShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
     try {
       await createSharedResource(input);
-      // Refresh the library to show the new resource
-      await refetchResources();
-      if (Platform.OS === 'web') {
-        window.alert('Image shared with parent!');
-      } else {
-        Alert.alert('Success', 'Image shared with parent!');
-      }
     } catch (error) {
       console.error('Error sharing image:', error);
       throw error;
     }
-  }, [createSharedResource, refetchResources]);
+  }, [createSharedResource]);
+
+  // Handle batch complete (all uploads successful)
+  const handleImageBatchComplete = useCallback(async (count: number) => {
+    // Refresh the library once after all uploads
+    await refetchResources();
+    const message = count === 1
+      ? 'Image shared with parent!'
+      : `${count} images shared with parents!`;
+    if (Platform.OS === 'web') {
+      window.alert(message);
+    } else {
+      Alert.alert('Success', message);
+    }
+  }, [refetchResources]);
+
+  // Handle batch partial complete (some uploads failed)
+  const handleImageBatchPartialComplete = useCallback(async (successCount: number, failCount: number) => {
+    // Refresh the library to show successful uploads
+    await refetchResources();
+    const message = `${successCount} image${successCount !== 1 ? 's' : ''} shared. ${failCount} failed.`;
+    if (Platform.OS === 'web') {
+      window.alert(message);
+    } else {
+      Alert.alert('Partial Success', message);
+    }
+  }, [refetchResources]);
 
   // Handle YouTube share completion
   const handleYouTubeShareComplete = useCallback(async (input: CreateSharedResourceInput) => {
@@ -1854,6 +1898,8 @@ export default function WorksheetsScreen() {
           visible={showImageModal}
           onClose={() => setShowImageModal(false)}
           onUploadComplete={handleImageShareComplete}
+          onBatchComplete={handleImageBatchComplete}
+          onBatchPartialComplete={handleImageBatchPartialComplete}
           students={students}
           studentsLoading={studentsLoading}
           tutorId={tutorId}
@@ -1887,25 +1933,56 @@ export default function WorksheetsScreen() {
         visible={showStudentPicker}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowStudentPicker(false)}
+        onRequestClose={() => {
+          setShowStudentPicker(false);
+          setStudentPickerSearch('');
+        }}
       >
         <Pressable
           style={styles.pickerOverlay}
-          onPress={() => setShowStudentPicker(false)}
+          onPress={() => {
+            setShowStudentPicker(false);
+            setStudentPickerSearch('');
+          }}
         >
           <Pressable style={styles.pickerContainer} onPress={(e) => e.stopPropagation()}>
             <View style={styles.pickerHeader}>
               <Text style={styles.pickerTitle}>Select Student</Text>
               <Pressable
                 style={styles.pickerCloseButton}
-                onPress={() => setShowStudentPicker(false)}
+                onPress={() => {
+                  setShowStudentPicker(false);
+                  setStudentPickerSearch('');
+                }}
               >
                 <Ionicons name="close" size={24} color={colors.neutral.text} />
               </Pressable>
             </View>
 
+            {/* Search Input */}
+            <View style={styles.pickerSearchContainer}>
+              <Ionicons name="search" size={20} color={colors.neutral.textMuted} />
+              <TextInput
+                style={styles.pickerSearchInput}
+                value={studentPickerSearch}
+                onChangeText={setStudentPickerSearch}
+                placeholder="Search students..."
+                placeholderTextColor={colors.neutral.textMuted}
+                autoCapitalize="none"
+              />
+              {studentPickerSearch.length > 0 && (
+                <Pressable onPress={() => setStudentPickerSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
+                </Pressable>
+              )}
+            </View>
+
             <FlatList
-              data={[{ id: null, name: 'All Students' }, ...(students || [])]}
+              data={[
+                // Only show "All Students" if not searching
+                ...(studentPickerSearch.trim() === '' ? [{ id: null, name: 'All Students' }] : []),
+                ...filteredStudentsForPicker,
+              ]}
               keyExtractor={(item) => item.id || 'all'}
               renderItem={({ item }) => (
                 <Pressable
@@ -1919,6 +1996,7 @@ export default function WorksheetsScreen() {
                   onPress={() => {
                     setSelectedStudent(item.id);
                     setShowStudentPicker(false);
+                    setStudentPickerSearch('');
                   }}
                 >
                   <View style={styles.pickerItemLeft}>
@@ -1966,6 +2044,11 @@ export default function WorksheetsScreen() {
               )}
               style={styles.pickerList}
               contentContainerStyle={styles.pickerListContent}
+              ListEmptyComponent={
+                <View style={styles.pickerEmptyContainer}>
+                  <Text style={styles.pickerEmptyText}>No students found</Text>
+                </View>
+              }
             />
           </Pressable>
         </Pressable>
@@ -1976,25 +2059,56 @@ export default function WorksheetsScreen() {
         visible={showAdminStudentPicker}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowAdminStudentPicker(false)}
+        onRequestClose={() => {
+          setShowAdminStudentPicker(false);
+          setAdminStudentPickerSearch('');
+        }}
       >
         <Pressable
           style={styles.pickerOverlay}
-          onPress={() => setShowAdminStudentPicker(false)}
+          onPress={() => {
+            setShowAdminStudentPicker(false);
+            setAdminStudentPickerSearch('');
+          }}
         >
           <Pressable style={styles.pickerContainer} onPress={(e) => e.stopPropagation()}>
             <View style={styles.pickerHeader}>
               <Text style={styles.pickerTitle}>Filter by Student</Text>
               <Pressable
                 style={styles.pickerCloseButton}
-                onPress={() => setShowAdminStudentPicker(false)}
+                onPress={() => {
+                  setShowAdminStudentPicker(false);
+                  setAdminStudentPickerSearch('');
+                }}
               >
                 <Ionicons name="close" size={24} color={colors.neutral.text} />
               </Pressable>
             </View>
 
+            {/* Search Input */}
+            <View style={styles.pickerSearchContainer}>
+              <Ionicons name="search" size={20} color={colors.neutral.textMuted} />
+              <TextInput
+                style={styles.pickerSearchInput}
+                value={adminStudentPickerSearch}
+                onChangeText={setAdminStudentPickerSearch}
+                placeholder="Search students..."
+                placeholderTextColor={colors.neutral.textMuted}
+                autoCapitalize="none"
+              />
+              {adminStudentPickerSearch.length > 0 && (
+                <Pressable onPress={() => setAdminStudentPickerSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
+                </Pressable>
+              )}
+            </View>
+
             <FlatList
-              data={[{ id: null, name: 'All Students' }, ...(students || [])]}
+              data={[
+                // Only show "All Students" if not searching
+                ...(adminStudentPickerSearch.trim() === '' ? [{ id: null, name: 'All Students' }] : []),
+                ...filteredStudentsForAdminPicker,
+              ]}
               keyExtractor={(item) => item.id || 'all'}
               renderItem={({ item }) => (
                 <Pressable
@@ -2008,6 +2122,7 @@ export default function WorksheetsScreen() {
                   onPress={() => {
                     setAdminStudentFilter(item.id);
                     setShowAdminStudentPicker(false);
+                    setAdminStudentPickerSearch('');
                   }}
                 >
                   <View style={styles.pickerItemLeft}>
@@ -2055,6 +2170,11 @@ export default function WorksheetsScreen() {
               )}
               style={styles.pickerList}
               contentContainerStyle={styles.pickerListContent}
+              ListEmptyComponent={
+                <View style={styles.pickerEmptyContainer}>
+                  <Text style={styles.pickerEmptyText}>No students found</Text>
+                </View>
+              }
             />
           </Pressable>
         </Pressable>
@@ -2662,6 +2782,31 @@ const styles = StyleSheet.create({
   },
   pickerCloseButton: {
     padding: spacing.xs,
+  },
+  pickerSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    fontSize: typography.sizes.base,
+    color: colors.neutral.text,
+    padding: 0,
+  },
+  pickerEmptyContainer: {
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  pickerEmptyText: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.textMuted,
   },
   pickerList: {
     flexGrow: 0,

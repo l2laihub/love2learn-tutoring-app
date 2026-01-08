@@ -286,9 +286,10 @@ export async function getParentByUserId(
   console.log('[getParentByUserId] Using RPC function to get parent');
 
   try {
-    // Add timeout to detect hanging queries (10s for mobile SecureStore operations)
+    // Use longer timeout on Android cold start - storage/network can be slow
+    const timeoutMs = Platform.OS === 'android' ? 20000 : 15000;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Parent query timeout after 10s')), 10000);
+      setTimeout(() => reject(new Error(`Parent query timeout after ${timeoutMs / 1000}s`)), timeoutMs);
     });
 
     // Use RPC function that bypasses RLS to avoid circular dependency
@@ -314,8 +315,13 @@ export async function getParentByUserId(
     console.log('[getParentByUserId] Found parent:', { role: parentRecord.role });
     return { parent: parentRecord as Parent, error: null };
   } catch (error) {
-    console.error('[getParentByUserId] Unexpected error:', error);
+    // Log as warning instead of error for timeouts - they're expected on cold start
     const isTimeout = error instanceof Error && error.message.includes('timeout');
+    if (isTimeout) {
+      console.log('[getParentByUserId] Query timeout (expected on cold start):', error instanceof Error ? error.message : 'unknown');
+    } else {
+      console.error('[getParentByUserId] Unexpected error:', error);
+    }
     return { parent: null, error: isTimeout ? 'timeout' : 'query_error' };
   }
 }
@@ -352,71 +358,36 @@ export function useAuth(): AuthState {
   }, [user?.id, fetchParent]);
 
   useEffect(() => {
-    // Get initial session with timeout and retry to prevent hanging
-    const initializeAuth = async (retryCount = 0) => {
-      const maxRetries = 2;
-      const timeoutMs = 10000; // 10s timeout for mobile SecureStore operations
+    let isMounted = true;
+    let authInitialized = false;
 
-      console.log('[useAuth] initializeAuth starting...', retryCount > 0 ? `(retry ${retryCount})` : '');
-      try {
-        // Add timeout to prevent infinite hang
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`getSession timeout after ${timeoutMs / 1000}s`)), timeoutMs);
-        });
-
-        const sessionPromise = supabase.auth.getSession();
-
-        const { data: { session: initialSession } } = await Promise.race([
-          sessionPromise,
-          timeoutPromise
-        ]) as Awaited<typeof sessionPromise>;
-
-        console.log('[useAuth] getSession result:', !!initialSession);
-        setSession(initialSession);
-        setUser(initialSession?.user ?? null);
-
-        if (initialSession?.user) {
-          await fetchParent(initialSession.user.id);
-        }
-        setIsLoading(false);
-        console.log('[useAuth] Auth initialization complete, isLoading set to false');
-      } catch (error) {
-        console.error('[useAuth] Error initializing auth:', error);
-
-        // Retry on timeout if we haven't exhausted retries
-        if (retryCount < maxRetries && error instanceof Error && error.message.includes('timeout')) {
-          console.log('[useAuth] Retrying auth initialization...');
-          // Small delay before retry to let SecureStore settle
-          await new Promise(resolve => setTimeout(resolve, 500));
-          return initializeAuth(retryCount + 1);
-        }
-
-        // On final failure, set session to null and continue
-        // The onAuthStateChange listener will pick up the session if it eventually loads
-        setSession(null);
-        setUser(null);
-        setParent(null);
-        setParentQueryError('timeout');
-        setIsLoading(false);
-        console.log('[useAuth] Auth initialization failed after retries, isLoading set to false');
-      }
-    };
-
-    initializeAuth();
-
-    // Subscribe to auth state changes
+    // Subscribe to auth state changes FIRST - this is the primary source of truth
+    // onAuthStateChange fires reliably even when getSession is slow on cold start
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(
       async (event: AuthChangeEvent, newSession: Session | null) => {
+        if (!isMounted) return;
+
+        console.log('[useAuth] onAuthStateChange:', event, 'hasSession:', !!newSession);
+
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
         if (newSession?.user) {
+          // Only fetch parent if we haven't already or if user changed
           await fetchParent(newSession.user.id);
         } else {
           setParent(null);
           setParentQueryError(null);
+        }
+
+        // Mark as initialized once we get any auth state change
+        // This handles the case where getSession times out but onAuthStateChange works
+        if (!authInitialized) {
+          authInitialized = true;
+          setIsLoading(false);
+          console.log('[useAuth] Auth initialized via onAuthStateChange');
         }
 
         // Handle specific auth events
@@ -442,8 +413,69 @@ export function useAuth(): AuthState {
       }
     );
 
+    // Try to get initial session, but don't block the UI on it
+    // On Android cold start, storage operations can be slow
+    const initializeAuth = async () => {
+      // Use longer timeout on first attempt (cold start is slower)
+      // Android AsyncStorage can take 15-20s on first access after app restart
+      const timeoutMs = Platform.OS === 'android' ? 20000 : 15000;
+
+      console.log('[useAuth] initializeAuth starting...');
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`getSession timeout after ${timeoutMs / 1000}s`)), timeoutMs);
+        });
+
+        const sessionPromise = supabase.auth.getSession();
+
+        const { data: { session: initialSession } } = await Promise.race([
+          sessionPromise,
+          timeoutPromise
+        ]) as Awaited<typeof sessionPromise>;
+
+        if (!isMounted) return;
+
+        console.log('[useAuth] getSession result:', !!initialSession);
+
+        // Only update state if onAuthStateChange hasn't already done it
+        if (!authInitialized) {
+          setSession(initialSession);
+          setUser(initialSession?.user ?? null);
+
+          if (initialSession?.user) {
+            await fetchParent(initialSession.user.id);
+          }
+          authInitialized = true;
+          setIsLoading(false);
+          console.log('[useAuth] Auth initialized via getSession');
+        }
+      } catch (error) {
+        // Don't log as error on first timeout - this is expected on cold start
+        console.log('[useAuth] getSession slow/timeout:', error instanceof Error ? error.message : 'unknown');
+
+        if (!isMounted) return;
+
+        // If onAuthStateChange hasn't fired yet, set a fallback timeout
+        // to ensure we don't hang forever
+        if (!authInitialized) {
+          // Wait a bit more for onAuthStateChange to fire
+          setTimeout(() => {
+            if (!isMounted || authInitialized) return;
+
+            console.log('[useAuth] Fallback: setting loading to false after extended wait');
+            // Don't set error state - just stop loading and let onAuthStateChange catch up
+            setIsLoading(false);
+            authInitialized = true;
+          }, 5000);
+        }
+      }
+    };
+
+    initializeAuth();
+
     // Cleanup subscription on unmount
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, [fetchParent]);
