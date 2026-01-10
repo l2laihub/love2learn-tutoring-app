@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Input } from './ui/Input';
@@ -28,6 +29,8 @@ interface StudentFormModalProps {
   student?: Student | null;
   parents: Parent[];
   loading?: boolean;
+  /** If true, shows only name and birthday fields for parent editing */
+  parentEditMode?: boolean;
 }
 
 const GRADE_OPTIONS = [
@@ -40,6 +43,11 @@ const GRADE_OPTIONS = [
   { value: '5th', label: '5th Grade' },
   { value: '6th', label: '6th Grade' },
   { value: '7th', label: '7th Grade' },
+  { value: '8th', label: '8th Grade' },
+  { value: '9th', label: '9th Grade' },
+  { value: '10th', label: '10th Grade' },
+  { value: '11th', label: '11th Grade' },
+  { value: '12th', label: '12th Grade' },
 ];
 
 const SUBJECT_OPTIONS = [
@@ -50,6 +58,82 @@ const SUBJECT_OPTIONS = [
   { value: 'english', label: 'English', icon: 'language', color: '#2196F3' },
 ];
 
+// Helper function to calculate age from birthday
+function calculateAgeFromBirthday(birthday: string | null): number | null {
+  if (!birthday) return null;
+  const birthDate = new Date(birthday);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+// Helper function to suggest grade level from birthday
+function suggestGradeFromBirthday(birthday: string | null): string | null {
+  if (!birthday) return null;
+
+  const birthDate = new Date(birthday);
+  const today = new Date();
+
+  // Determine school year start date (September 1st)
+  let schoolYearStart: Date;
+  if (today.getMonth() >= 8) { // September or later
+    schoolYearStart = new Date(today.getFullYear(), 8, 1); // Sept 1 of current year
+  } else {
+    schoolYearStart = new Date(today.getFullYear() - 1, 8, 1); // Sept 1 of previous year
+  }
+
+  // Calculate age at school year start
+  let ageAtSchoolStart = schoolYearStart.getFullYear() - birthDate.getFullYear();
+  const monthDiff = schoolYearStart.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && schoolYearStart.getDate() < birthDate.getDate())) {
+    ageAtSchoolStart--;
+  }
+
+  // Map age to grade level
+  const ageToGrade: Record<number, string> = {
+    3: 'Preschool',
+    4: 'Preschool',
+    5: 'K',
+    6: '1st',
+    7: '2nd',
+    8: '3rd',
+    9: '4th',
+    10: '5th',
+    11: '6th',
+    12: '7th',
+    13: '8th',
+    14: '9th',
+    15: '10th',
+    16: '11th',
+    17: '12th',
+  };
+
+  if (ageAtSchoolStart < 3) return 'Preschool';
+  if (ageAtSchoolStart > 17) return '12th';
+  return ageToGrade[ageAtSchoolStart] || null;
+}
+
+// Format date for display (MM/DD/YYYY)
+function formatDateForDisplay(dateString: string | null): string {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+// Parse date from display format (MM/DD/YYYY) to ISO format (YYYY-MM-DD)
+function parseDateFromDisplay(displayDate: string): string | null {
+  const match = displayDate.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return null;
+  const [, month, day, year] = match;
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  if (isNaN(date.getTime())) return null;
+  return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
 export function StudentFormModal({
   visible,
   onClose,
@@ -57,21 +141,32 @@ export function StudentFormModal({
   student,
   parents,
   loading = false,
+  parentEditMode = false,
 }: StudentFormModalProps) {
   const isEditing = !!student;
 
   // Form state
   const [name, setName] = useState('');
+  const [birthday, setBirthday] = useState('');
+  const [birthdayDisplay, setBirthdayDisplay] = useState('');
   const [age, setAge] = useState('');
   const [gradeLevel, setGradeLevel] = useState('');
   const [parentId, setParentId] = useState('');
   const [subjects, setSubjects] = useState<string[]>([]);
+  const [autoGradeEnabled, setAutoGradeEnabled] = useState(true);
 
   // Confirmation dialog state (for web platform)
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   // Track original values to detect actual changes
-  const originalValues = useRef({ name: '', age: '', gradeLevel: '', parentId: '', subjects: [] as string[] });
+  const originalValues = useRef({
+    name: '',
+    birthday: '',
+    age: '',
+    gradeLevel: '',
+    parentId: '',
+    subjects: [] as string[]
+  });
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -81,13 +176,17 @@ export function StudentFormModal({
     if (visible) {
       if (student) {
         setName(student.name);
+        setBirthday(student.birthday || '');
+        setBirthdayDisplay(formatDateForDisplay(student.birthday || null));
         setAge(student.age.toString());
         setGradeLevel(student.grade_level);
         setParentId(student.parent_id);
         setSubjects(student.subjects || []);
+        setAutoGradeEnabled(!!student.birthday);
         // Store original values for change detection
         originalValues.current = {
           name: student.name,
+          birthday: student.birthday || '',
           age: student.age.toString(),
           gradeLevel: student.grade_level,
           parentId: student.parent_id,
@@ -95,13 +194,17 @@ export function StudentFormModal({
         };
       } else {
         setName('');
+        setBirthday('');
+        setBirthdayDisplay('');
         setAge('');
         setGradeLevel('');
         setParentId(parents.length === 1 ? parents[0].id : '');
         setSubjects([]);
+        setAutoGradeEnabled(true);
         // Store original values for change detection
         originalValues.current = {
           name: '',
+          birthday: '',
           age: '',
           gradeLevel: '',
           parentId: parents.length === 1 ? parents[0].id : '',
@@ -113,6 +216,46 @@ export function StudentFormModal({
     }
   }, [visible, student, parents]);
 
+  // Update age and grade level when birthday changes
+  const handleBirthdayChange = (text: string) => {
+    // Allow only numbers and forward slashes
+    const cleaned = text.replace(/[^0-9/]/g, '');
+
+    // Auto-format as user types (MM/DD/YYYY)
+    let formatted = cleaned;
+    if (cleaned.length >= 2 && !cleaned.includes('/')) {
+      formatted = cleaned.slice(0, 2) + '/' + cleaned.slice(2);
+    }
+    if (cleaned.replace(/\//g, '').length >= 4 && formatted.split('/').length === 2) {
+      const parts = formatted.split('/');
+      formatted = parts[0] + '/' + parts[1].slice(0, 2) + '/' + parts[1].slice(2);
+    }
+
+    setBirthdayDisplay(formatted);
+
+    // Try to parse the date
+    const isoDate = parseDateFromDisplay(formatted);
+    if (isoDate) {
+      setBirthday(isoDate);
+
+      // Auto-calculate age
+      const calculatedAge = calculateAgeFromBirthday(isoDate);
+      if (calculatedAge !== null && calculatedAge >= 0 && calculatedAge <= 100) {
+        setAge(calculatedAge.toString());
+
+        // Auto-suggest grade level if enabled
+        if (autoGradeEnabled) {
+          const suggestedGrade = suggestGradeFromBirthday(isoDate);
+          if (suggestedGrade) {
+            setGradeLevel(suggestedGrade);
+          }
+        }
+      }
+    } else {
+      setBirthday('');
+    }
+  };
+
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -120,23 +263,37 @@ export function StudentFormModal({
       newErrors.name = 'Name is required';
     }
 
-    const ageNum = parseInt(age, 10);
-    if (!age || isNaN(ageNum)) {
-      newErrors.age = 'Age is required';
-    } else if (ageNum < 3 || ageNum > 18) {
-      newErrors.age = 'Age must be between 3 and 18';
-    }
+    // In parent edit mode, only validate name and birthday
+    if (parentEditMode) {
+      // Birthday is optional but if provided must be valid
+      if (birthdayDisplay && !birthday) {
+        newErrors.birthday = 'Invalid date format (use MM/DD/YYYY)';
+      }
+    } else {
+      // Full validation for admin mode
+      const ageNum = parseInt(age, 10);
+      if (!age || isNaN(ageNum)) {
+        newErrors.age = 'Age is required';
+      } else if (ageNum < 3 || ageNum > 18) {
+        newErrors.age = 'Age must be between 3 and 18';
+      }
 
-    if (!gradeLevel) {
-      newErrors.gradeLevel = 'Grade level is required';
-    }
+      if (!gradeLevel) {
+        newErrors.gradeLevel = 'Grade level is required';
+      }
 
-    if (!parentId) {
-      newErrors.parentId = 'Parent is required';
-    }
+      if (!parentId) {
+        newErrors.parentId = 'Parent is required';
+      }
 
-    if (subjects.length === 0) {
-      newErrors.subjects = 'At least one subject is required';
+      if (subjects.length === 0) {
+        newErrors.subjects = 'At least one subject is required';
+      }
+
+      // Birthday validation (optional but must be valid if provided)
+      if (birthdayDisplay && !birthday) {
+        newErrors.birthday = 'Invalid date format (use MM/DD/YYYY)';
+      }
     }
 
     setErrors(newErrors);
@@ -146,13 +303,27 @@ export function StudentFormModal({
   const handleSave = async () => {
     if (!validate()) return;
 
-    const data: CreateStudentInput | UpdateStudentInput = {
-      name: name.trim(),
-      age: parseInt(age, 10),
-      grade_level: gradeLevel,
-      parent_id: parentId,
-      subjects: subjects,
-    };
+    let data: CreateStudentInput | UpdateStudentInput;
+
+    if (parentEditMode) {
+      // Parent can update name, birthday, and grade level
+      data = {
+        name: name.trim(),
+        birthday: birthday || null,
+        grade_level: gradeLevel,
+        // Include age if birthday is set
+        ...(birthday && { age: calculateAgeFromBirthday(birthday) || parseInt(age, 10) }),
+      } as UpdateStudentInput;
+    } else {
+      data = {
+        name: name.trim(),
+        age: parseInt(age, 10),
+        grade_level: gradeLevel,
+        parent_id: parentId,
+        subjects: subjects,
+        birthday: birthday || null,
+      };
+    }
 
     const success = await onSave(data);
     if (success) {
@@ -169,6 +340,7 @@ export function StudentFormModal({
 
     return (
       name !== orig.name ||
+      birthday !== orig.birthday ||
       age !== orig.age ||
       gradeLevel !== orig.gradeLevel ||
       parentId !== orig.parentId ||
@@ -218,7 +390,11 @@ export function StudentFormModal({
             <Ionicons name="close" size={24} color={colors.neutral.text} />
           </TouchableOpacity>
           <Text style={styles.title}>
-            {isEditing ? 'Edit Student' : 'Add Student'}
+            {parentEditMode
+              ? 'Edit Child Info'
+              : isEditing
+                ? 'Edit Student'
+                : 'Add Student'}
           </Text>
           <View style={styles.headerSpacer} />
         </View>
@@ -235,20 +411,50 @@ export function StudentFormModal({
             autoFocus
           />
 
-          {/* Age Input */}
-          <Input
-            label="Age"
-            placeholder="Enter age"
-            value={age}
-            onChangeText={(text) => setAge(text.replace(/[^0-9]/g, ''))}
-            error={errors.age}
-            keyboardType="number-pad"
-            maxLength={2}
-          />
-
-          {/* Grade Level Selector */}
+          {/* Birthday Input */}
           <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Grade Level</Text>
+            <Text style={styles.label}>Birthday</Text>
+            <Input
+              placeholder="MM/DD/YYYY"
+              value={birthdayDisplay}
+              onChangeText={handleBirthdayChange}
+              error={errors.birthday}
+              keyboardType="number-pad"
+              maxLength={10}
+            />
+            {birthday ? (
+              <View style={styles.birthdayInfo}>
+                <Ionicons name="information-circle" size={16} color={colors.primary.main} />
+                <Text style={styles.birthdayInfoText}>
+                  Age will be calculated as {calculateAgeFromBirthday(birthday)} years old
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Grade Level Selector - shown for both parent and admin edit modes */}
+          <View style={styles.fieldContainer}>
+            <View style={styles.gradeLevelHeader}>
+              <Text style={styles.label}>Grade Level</Text>
+              {birthday ? (
+                <Pressable
+                  style={styles.autoGradeToggle}
+                  onPress={() => setAutoGradeEnabled(!autoGradeEnabled)}
+                >
+                  <Ionicons
+                    name={autoGradeEnabled ? 'checkbox' : 'square-outline'}
+                    size={18}
+                    color={autoGradeEnabled ? colors.primary.main : colors.neutral.textMuted}
+                  />
+                  <Text style={[
+                    styles.autoGradeText,
+                    autoGradeEnabled && styles.autoGradeTextActive
+                  ]}>
+                    Auto from birthday
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <View style={styles.gradeGrid}>
               {GRADE_OPTIONS.map((option) => (
                 <TouchableOpacity
@@ -257,7 +463,10 @@ export function StudentFormModal({
                     styles.gradeOption,
                     gradeLevel === option.value && styles.gradeOptionSelected,
                   ]}
-                  onPress={() => setGradeLevel(option.value)}
+                  onPress={() => {
+                    setGradeLevel(option.value);
+                    setAutoGradeEnabled(false); // Disable auto when manually selected
+                  }}
                 >
                   <Text
                     style={[
@@ -270,104 +479,120 @@ export function StudentFormModal({
                 </TouchableOpacity>
               ))}
             </View>
-            {errors.gradeLevel && (
+            {errors.gradeLevel ? (
               <Text style={styles.errorText}>{errors.gradeLevel}</Text>
-            )}
+            ) : null}
           </View>
 
-          {/* Subjects Selector */}
-          <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Subjects</Text>
-            <View style={styles.subjectsGrid}>
-              {SUBJECT_OPTIONS.map((option) => {
-                const isSelected = subjects.includes(option.value);
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[
-                      styles.subjectOption,
-                      isSelected && { backgroundColor: option.color + '20', borderColor: option.color },
-                    ]}
-                    onPress={() => {
-                      if (isSelected) {
-                        setSubjects(subjects.filter((s) => s !== option.value));
-                      } else {
-                        setSubjects([...subjects, option.value]);
-                      }
-                    }}
-                  >
-                    <Ionicons
-                      name={option.icon as any}
-                      size={18}
-                      color={isSelected ? option.color : colors.neutral.textMuted}
-                    />
-                    <Text
-                      style={[
-                        styles.subjectOptionText,
-                        isSelected && { color: option.color, fontWeight: typography.weights.medium },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                    {isSelected && (
-                      <Ionicons name="checkmark-circle" size={16} color={option.color} />
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {errors.subjects && (
-              <Text style={styles.errorText}>{errors.subjects}</Text>
-            )}
-          </View>
+          {/* Show remaining fields only for admin (not parent edit mode) */}
+          {!parentEditMode && (
+            <>
+              {/* Age Input */}
+              <Input
+                label="Age"
+                placeholder="Enter age"
+                value={age}
+                onChangeText={(text) => setAge(text.replace(/[^0-9]/g, ''))}
+                error={errors.age}
+                keyboardType="number-pad"
+                maxLength={2}
+              />
 
-          {/* Parent Selector */}
-          <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Parent/Guardian</Text>
-            {parents.length === 0 ? (
-              <View style={styles.noParentsWarning}>
-                <Ionicons name="warning" size={20} color={colors.status.warning} />
-                <Text style={styles.noParentsText}>
-                  No parents available. Please add a parent first.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.parentsList}>
-                {parents.map((parent) => (
-                  <TouchableOpacity
-                    key={parent.id}
-                    style={[
-                      styles.parentOption,
-                      parentId === parent.id && styles.parentOptionSelected,
-                    ]}
-                    onPress={() => setParentId(parent.id)}
-                  >
-                    <View style={styles.parentInfo}>
-                      <Text
+              {/* Subjects Selector */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Subjects</Text>
+                <View style={styles.subjectsGrid}>
+                  {SUBJECT_OPTIONS.map((option) => {
+                    const isSelected = subjects.includes(option.value);
+                    return (
+                      <TouchableOpacity
+                        key={option.value}
                         style={[
-                          styles.parentName,
-                          parentId === parent.id && styles.parentNameSelected,
+                          styles.subjectOption,
+                          isSelected && { backgroundColor: option.color + '20', borderColor: option.color },
                         ]}
+                        onPress={() => {
+                          if (isSelected) {
+                            setSubjects(subjects.filter((s) => s !== option.value));
+                          } else {
+                            setSubjects([...subjects, option.value]);
+                          }
+                        }}
                       >
-                        {parent.name}
-                      </Text>
-                      <Text style={styles.parentEmail}>{parent.email}</Text>
-                    </View>
-                    {parentId === parent.id && (
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={22}
-                        color={colors.piano.primary}
-                      />
-                    )}
-                  </TouchableOpacity>
-                ))}
+                        <Ionicons
+                          name={option.icon as any}
+                          size={18}
+                          color={isSelected ? option.color : colors.neutral.textMuted}
+                        />
+                        <Text
+                          style={[
+                            styles.subjectOptionText,
+                            isSelected && { color: option.color, fontWeight: typography.weights.medium },
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                        {isSelected ? (
+                          <Ionicons name="checkmark-circle" size={16} color={option.color} />
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {errors.subjects ? (
+                  <Text style={styles.errorText}>{errors.subjects}</Text>
+                ) : null}
               </View>
-            )}
-            {errors.parentId && (
-              <Text style={styles.errorText}>{errors.parentId}</Text>
-            )}
-          </View>
+
+              {/* Parent Selector */}
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Parent/Guardian</Text>
+                {parents.length === 0 ? (
+                  <View style={styles.noParentsWarning}>
+                    <Ionicons name="warning" size={20} color={colors.status.warning} />
+                    <Text style={styles.noParentsText}>
+                      No parents available. Please add a parent first.
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={styles.parentsList}>
+                    {parents.map((parent) => (
+                      <TouchableOpacity
+                        key={parent.id}
+                        style={[
+                          styles.parentOption,
+                          parentId === parent.id && styles.parentOptionSelected,
+                        ]}
+                        onPress={() => setParentId(parent.id)}
+                      >
+                        <View style={styles.parentInfo}>
+                          <Text
+                            style={[
+                              styles.parentName,
+                              parentId === parent.id && styles.parentNameSelected,
+                            ]}
+                          >
+                            {parent.name}
+                          </Text>
+                          <Text style={styles.parentEmail}>{parent.email}</Text>
+                        </View>
+                        {parentId === parent.id ? (
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={22}
+                            color={colors.piano.primary}
+                          />
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {errors.parentId ? (
+                  <Text style={styles.errorText}>{errors.parentId}</Text>
+                ) : null}
+              </View>
+            </>
+          )}
 
           {/* Bottom Spacing */}
           <View style={styles.bottomSpacer} />
@@ -385,7 +610,7 @@ export function StudentFormModal({
             title={isEditing ? 'Save Changes' : 'Add Student'}
             onPress={handleSave}
             loading={loading}
-            disabled={loading || parents.length === 0}
+            disabled={loading || (!parentEditMode && parents.length === 0)}
             style={styles.saveButton}
           />
         </View>
@@ -457,6 +682,34 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.medium,
     color: colors.neutral.text,
     marginBottom: spacing.sm,
+  },
+  birthdayInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    gap: spacing.xs,
+  },
+  birthdayInfoText: {
+    fontSize: typography.sizes.sm,
+    color: colors.primary.main,
+  },
+  gradeLevelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  autoGradeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  autoGradeText: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+  },
+  autoGradeTextActive: {
+    color: colors.primary.main,
   },
   gradeGrid: {
     flexDirection: 'row',

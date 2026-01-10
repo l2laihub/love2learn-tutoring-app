@@ -20,6 +20,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { StudentWithParent, TutoringSubject, ScheduledLessonWithStudent } from '../types/database';
+import { supabase } from '../lib/supabase';
 
 interface LessonFormModalProps {
   visible: boolean;
@@ -384,11 +385,68 @@ export function LessonFormModal({
       return;
     }
 
+    // Check for scheduling conflicts (overlapping sessions)
+    const [hours, minutes] = selectedTime.split(':').map(Number);
+
+    for (const date of selectedDates) {
+      const scheduledAt = new Date(date);
+      scheduledAt.setHours(hours, minutes, 0, 0);
+      const endAt = new Date(scheduledAt.getTime() + duration * 60 * 1000);
+
+      // Format date for database query (YYYY-MM-DD)
+      const dateStr = `${scheduledAt.getFullYear()}-${String(scheduledAt.getMonth() + 1).padStart(2, '0')}-${String(scheduledAt.getDate()).padStart(2, '0')}`;
+
+      // Get busy slots for this date
+      const { data: busySlots, error: fetchError } = await supabase
+        .rpc('get_busy_slots_for_date', { check_date: dateStr });
+
+      if (fetchError) {
+        console.error('Error checking busy slots:', fetchError);
+        // Continue without blocking if there's an error fetching slots
+      } else if (busySlots && busySlots.length > 0) {
+        // Check for overlaps: new lesson overlaps with existing if:
+        // new_start < existing_end AND new_end > existing_start
+        for (const slot of busySlots) {
+          const slotStart = new Date(slot.start_time);
+          const slotEnd = new Date(slot.end_time);
+
+          // Skip if this is the same lesson being edited
+          if (mode === 'edit' && initialData) {
+            const editingStart = new Date(initialData.scheduled_at);
+            const editingEnd = new Date(editingStart.getTime() + initialData.duration_min * 60 * 1000);
+            if (slotStart.getTime() === editingStart.getTime() && slotEnd.getTime() === editingEnd.getTime()) {
+              continue;
+            }
+          }
+
+          // Check for overlap
+          if (scheduledAt < slotEnd && endAt > slotStart) {
+            const conflictTime = slotStart.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+            const conflictEndTime = slotEnd.toLocaleTimeString('en-US', {
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            });
+            const conflictDate = scheduledAt.toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            });
+            setError(`Scheduling conflict: There is already a session from ${conflictTime} to ${conflictEndTime} on ${conflictDate}. Please choose a different time.`);
+            return;
+          }
+        }
+      }
+    }
+
     setSubmitting(true);
     setError(null);
 
     try {
-      const [hours, minutes] = selectedTime.split(':').map(Number);
 
       // For edit mode or single student+subject, submit directly
       // For multiple students/subjects/dates in create mode, submit each combination

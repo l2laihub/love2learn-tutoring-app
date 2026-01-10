@@ -121,14 +121,35 @@ export function useParentAgreement(): UseParentAgreementResult {
       setLoading(true);
       setError(null);
 
-      const { data, error: queryError } = await supabase
+      console.log('useParentAgreement: Fetching agreement for parent:', parentId);
+
+      // First try to get a signed agreement
+      let { data, error: queryError } = await supabase
         .from('parent_agreements')
         .select('*')
         .eq('parent_id', parentId)
-        .eq('agreement_type', 'tutoring_services')
+        .eq('status', 'signed')
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
+
+      console.log('useParentAgreement: Signed agreement query result:', data ? 'Found' : 'Not found', queryError?.message || '');
+
+      // If no signed agreement, try to get any agreement (including pending)
+      if (!data && !queryError) {
+        console.log('useParentAgreement: No signed agreement, checking for any agreement');
+        const result = await supabase
+          .from('parent_agreements')
+          .select('*')
+          .eq('parent_id', parentId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        data = result.data;
+        queryError = result.error;
+        console.log('useParentAgreement: Any agreement query result:', data ? `Found (status: ${data?.status})` : 'Not found', queryError?.message || '');
+      }
 
       if (queryError) {
         if (queryError.code === 'PGRST116') {
@@ -137,6 +158,10 @@ export function useParentAgreement(): UseParentAgreementResult {
         }
         console.error('Error fetching agreement:', queryError);
         throw new Error(queryError.message);
+      }
+
+      if (!data) {
+        return null;
       }
 
       const agreementData: Agreement = {

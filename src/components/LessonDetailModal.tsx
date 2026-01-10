@@ -42,6 +42,7 @@ interface LessonDetailModalProps {
   groupedLesson?: GroupedLesson | null;
   onClose: () => void;
   onEdit: () => void;
+  onEditSeries?: () => void; // Edit all lessons in the recurring series
   onComplete: (notes?: string) => Promise<void>;
   onCancel: (reason?: string) => Promise<void>;
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
@@ -58,6 +59,7 @@ export function LessonDetailModal({
   groupedLesson,
   onClose,
   onEdit,
+  onEditSeries,
   onComplete,
   onCancel,
   onUncomplete,
@@ -577,6 +579,12 @@ export function LessonDetailModal({
               <Ionicons name="create-outline" size={20} color={colors.neutral.textSecondary} />
               <Text style={styles.editButtonText}>Edit</Text>
             </Pressable>
+            {onEditSeries && seriesCount > 1 && (
+              <Pressable style={styles.editButton} onPress={onEditSeries}>
+                <Ionicons name="albums-outline" size={20} color={colors.neutral.textSecondary} />
+                <Text style={styles.editButtonText}>Edit Series ({seriesCount})</Text>
+              </Pressable>
+            )}
             <Pressable
               style={styles.cancelButton}
               onPress={() => setShowCancelConfirm(true)}

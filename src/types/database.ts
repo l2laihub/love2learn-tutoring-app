@@ -179,6 +179,7 @@ export type Database = {
           avatar_url: string | null;
           hourly_rate: number;
           subject_rates: Json;
+          birthday: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -192,6 +193,7 @@ export type Database = {
           avatar_url?: string | null;
           hourly_rate?: number;
           subject_rates?: Json;
+          birthday?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -205,6 +207,7 @@ export type Database = {
           avatar_url?: string | null;
           hourly_rate?: number;
           subject_rates?: Json;
+          birthday?: string | null;
           created_at?: string;
           updated_at?: string;
         };

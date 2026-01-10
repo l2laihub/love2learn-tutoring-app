@@ -29,13 +29,19 @@ export default function AgreementScreen() {
 
   useEffect(() => {
     async function loadAgreement() {
-      if (!parent?.id) return;
+      if (!parent?.id) {
+        console.log('Agreement screen: No parent ID available');
+        return;
+      }
+
+      console.log('Agreement screen: Loading agreement for parent:', parent.id);
 
       try {
         const data = await getAgreement(parent.id);
+        console.log('Agreement screen: Data received:', data ? `Found (status: ${data.status})` : 'Not found');
         setAgreement(data);
       } catch (err) {
-        console.error('Error loading agreement:', err);
+        console.error('Agreement screen: Error loading agreement:', err);
         setLoadError('Failed to load agreement');
       }
     }

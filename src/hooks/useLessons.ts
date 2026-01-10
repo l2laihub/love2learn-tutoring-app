@@ -45,6 +45,7 @@ export function useLessons(options: LessonsFilterOptions = {}): ListQueryState<S
   const { startDate, endDate, studentId, status } = options;
 
   const fetchLessons = useCallback(async () => {
+    console.log('useLessons: fetchLessons called', { startDate, endDate, studentId, status });
     try {
       setLoading(true);
       setError(null);
@@ -84,6 +85,7 @@ export function useLessons(options: LessonsFilterOptions = {}): ListQueryState<S
         throw new Error(fetchError.message);
       }
 
+      console.log('useLessons: fetched', lessons?.length, 'lessons');
       setData((lessons as ScheduledLessonWithStudent[]) || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch lessons');
@@ -400,6 +402,115 @@ export function useUpdateLesson() {
   }, []);
 
   return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Hook for updating all lessons in a series
+ * Updates the time for each lesson while keeping the same day
+ * @returns Mutation state with update function
+ */
+export function useUpdateLessonSeries() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  /**
+   * Update a series of lessons with new time/duration
+   * @param lessonIds - Array of lesson IDs to update
+   * @param updates - The updates to apply (time, duration, notes)
+   * @param originalScheduledAt - The original scheduled_at of the clicked lesson (for time offset calculation)
+   */
+  const mutate = useCallback(async (
+    lessonIds: string[],
+    updates: {
+      newTime?: string; // New time in HH:MM format
+      duration_min?: number;
+      notes?: string;
+    },
+    originalScheduledAt?: string
+  ): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('useUpdateLessonSeries: Starting update for', lessonIds.length, 'lessons');
+      console.log('useUpdateLessonSeries: Lesson IDs:', lessonIds);
+      console.log('useUpdateLessonSeries: Updates:', updates);
+
+      // First, fetch all lessons to get their current scheduled_at
+      const { data: lessons, error: fetchError } = await supabase
+        .from('scheduled_lessons')
+        .select('id, scheduled_at, duration_min')
+        .in('id', lessonIds);
+
+      if (fetchError) {
+        console.error('useUpdateLessonSeries: Fetch error:', fetchError);
+        throw new Error(fetchError.message);
+      }
+
+      if (!lessons || lessons.length === 0) {
+        console.error('useUpdateLessonSeries: No lessons found for IDs:', lessonIds);
+        throw new Error('No lessons found');
+      }
+
+      console.log('useUpdateLessonSeries: Found', lessons.length, 'lessons to update');
+
+      // Update each lesson
+      for (const lesson of lessons) {
+        const updateData: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        };
+
+        // If new time is provided, update scheduled_at while keeping the same date
+        if (updates.newTime) {
+          const currentDate = new Date(lesson.scheduled_at);
+          const [hours, minutes] = updates.newTime.split(':').map(Number);
+          currentDate.setHours(hours, minutes, 0, 0);
+          updateData.scheduled_at = currentDate.toISOString();
+        }
+
+        // Update duration if provided
+        if (updates.duration_min !== undefined) {
+          updateData.duration_min = updates.duration_min;
+        }
+
+        // Update notes if provided
+        if (updates.notes !== undefined) {
+          updateData.notes = updates.notes;
+        }
+
+        console.log('useUpdateLessonSeries: Updating lesson', lesson.id, 'with data:', updateData);
+
+        const { error: updateError } = await supabase
+          .from('scheduled_lessons')
+          .update(updateData)
+          .eq('id', lesson.id);
+
+        if (updateError) {
+          console.error('useUpdateLessonSeries: Update error for lesson', lesson.id, ':', updateError);
+          throw new Error(`Failed to update lesson ${lesson.id}: ${updateError.message}`);
+        }
+
+        console.log('useUpdateLessonSeries: Successfully updated lesson', lesson.id);
+      }
+
+      console.log('useUpdateLessonSeries: All lessons updated successfully');
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to update lesson series');
+      setError(errorMessage);
+      console.error('useUpdateLessonSeries error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
 }
 
 /**

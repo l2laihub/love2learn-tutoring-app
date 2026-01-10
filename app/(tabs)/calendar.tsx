@@ -18,10 +18,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
 import { useResponsive } from '../../src/hooks/useResponsive';
+import { supabase } from '../../src/lib/supabase';
 import {
   useWeekGroupedLessons,
   useCreateLesson,
   useUpdateLesson,
+  useUpdateLessonSeries,
   useCompleteLesson,
   useCancelLesson,
   useUncompleteLesson,
@@ -84,6 +86,25 @@ function formatDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+// Helper to format ISO timestamp to date key in Pacific timezone
+// This ensures lessons are displayed on the correct day regardless of user's local timezone
+// since the tutoring business operates in Pacific timezone
+function formatISOToPacificDateKey(isoString: string): string {
+  // Parse the ISO string and format in Pacific timezone
+  const date = new Date(isoString);
+
+  // Use Intl.DateTimeFormat to get the date parts in Pacific timezone
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  // Returns YYYY-MM-DD format
+  return formatter.format(date);
+}
+
 // Days of the week
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -124,6 +145,7 @@ export default function CalendarScreen() {
   const createLesson = useCreateLesson();
   const createGroupedLesson = useCreateGroupedLesson();
   const updateLesson = useUpdateLesson();
+  const updateLessonSeries = useUpdateLessonSeries();
   const completeLesson = useCompleteLesson();
   const cancelLesson = useCancelLesson();
   const uncompleteLesson = useUncompleteLesson();
@@ -132,10 +154,11 @@ export default function CalendarScreen() {
   const { findSeries, findSessionSeries } = useFindRecurringSeries();
   const deleteLessonSeries = useDeleteLessonSeries();
 
-  // Series state for delete series functionality
+  // Series state for delete/edit series functionality
   const [seriesLessonIds, setSeriesLessonIds] = useState<string[]>([]);
   const [seriesSessionIds, setSeriesSessionIds] = useState<string[]>([]);
   const [isSessionSeries, setIsSessionSeries] = useState(false);
+  const [isEditSeriesMode, setIsEditSeriesMode] = useState(false); // true when editing entire series
 
   // Multi-select handlers
   const toggleSelectMode = useCallback(() => {
@@ -194,11 +217,12 @@ export default function CalendarScreen() {
   }, [selectedIds, groupedLessons, deleteLessonSession, deleteLesson, refetch]);
 
   // Group lessons by date for calendar display
+  // Use Pacific timezone for consistent display since the tutoring business operates in Pacific
   const lessonsByDate = useMemo(() => {
     const map = new Map<string, GroupedLesson[]>();
 
     groupedLessons.forEach(group => {
-      const dateKey = formatDateKey(new Date(group.scheduled_at));
+      const dateKey = formatISOToPacificDateKey(group.scheduled_at);
       const existing = map.get(dateKey) || [];
       map.set(dateKey, [...existing, group]);
     });
@@ -260,16 +284,22 @@ export default function CalendarScreen() {
     setSelectedLesson(groupedLesson.lessons[0]);
     setShowDetailModal(true);
 
+    console.log('=== Lesson Selected ===');
+    console.log('Session ID:', groupedLesson.session_id);
+    console.log('Lesson count:', groupedLesson.lessons.length);
+
     // Find recurring series for delete series functionality
     if (groupedLesson.session_id) {
       // Combined Session - find recurring sessions
       const sessionIds = await findSessionSeries(groupedLesson);
+      console.log('Found session series IDs:', sessionIds);
       setSeriesSessionIds(sessionIds);
       setSeriesLessonIds([]);
       setIsSessionSeries(true);
     } else if (groupedLesson.lessons.length === 1) {
       // Standalone lesson - find recurring lessons
       const seriesIds = await findSeries(groupedLesson.lessons[0]);
+      console.log('Found lesson series IDs:', seriesIds);
       setSeriesLessonIds(seriesIds);
       setSeriesSessionIds([]);
       setIsSessionSeries(false);
@@ -478,17 +508,76 @@ export default function CalendarScreen() {
 
   const handleUpdateLesson = async (data: LessonFormData) => {
     if (!selectedLesson) return;
-    const input: UpdateScheduledLessonInput = {
-      student_id: data.student_id,
-      subject: data.subject,
-      scheduled_at: data.scheduled_at,
-      duration_min: data.duration_min,
-      notes: data.notes,
-    };
-    await updateLesson.mutate(selectedLesson.id, input);
+
+    // Extract the new time from the scheduled_at
+    const newDate = new Date(data.scheduled_at);
+    const newTime = `${newDate.getHours().toString().padStart(2, '0')}:${newDate.getMinutes().toString().padStart(2, '0')}`;
+
+    // If editing entire series, update all lessons in the series
+    if (isEditSeriesMode && seriesLessonIds.length > 1) {
+      console.log('=== Updating Standalone Lesson Series ===');
+      console.log('Series lesson IDs:', seriesLessonIds);
+      console.log('New time:', newTime);
+      console.log('Duration:', data.duration_min);
+      console.log('Notes:', data.notes);
+
+      const success = await updateLessonSeries.mutate(seriesLessonIds, {
+        newTime,
+        duration_min: data.duration_min,
+        notes: data.notes,
+      });
+
+      console.log('Series update result:', success);
+    } else if (isEditSeriesMode && seriesSessionIds.length > 1 && selectedGroupedLesson) {
+      // For combined sessions, we need to find all lessons across the session series
+      // and update them with the new time
+      console.log('=== Updating Combined Session Series ===');
+      console.log('Series session IDs:', seriesSessionIds);
+
+      // Get all lesson IDs from all sessions in the series
+      const { data: allSessionLessons, error: fetchError } = await supabase
+        .from('scheduled_lessons')
+        .select('id')
+        .in('session_id', seriesSessionIds);
+
+      if (fetchError) {
+        console.error('Error fetching session lessons:', fetchError);
+      } else if (allSessionLessons && allSessionLessons.length > 0) {
+        const allLessonIds = allSessionLessons.map(l => l.id);
+        console.log('Found', allLessonIds.length, 'lessons across', seriesSessionIds.length, 'sessions');
+
+        const success = await updateLessonSeries.mutate(allLessonIds, {
+          newTime,
+          duration_min: data.duration_min,
+          notes: data.notes,
+        });
+
+        console.log('Session series update result:', success);
+      }
+    } else {
+      // Single lesson update
+      const input: UpdateScheduledLessonInput = {
+        student_id: data.student_id,
+        subject: data.subject,
+        scheduled_at: data.scheduled_at,
+        duration_min: data.duration_min,
+        notes: data.notes,
+      };
+      console.log('=== Updating Single Lesson ===');
+      console.log('Lesson ID:', selectedLesson.id);
+      console.log('Update input:', input);
+      await updateLesson.mutate(selectedLesson.id, input);
+    }
+
+    console.log('Calling refetch...');
     await refetch();
+    console.log('Refetch complete, closing modals...');
+    setShowEditModal(false);
     setSelectedLesson(null);
     setSelectedGroupedLesson(null);
+    setSeriesLessonIds([]);
+    setSeriesSessionIds([]);
+    setIsEditSeriesMode(false);
   };
 
   const handleCompleteLesson = async (notes?: string) => {
@@ -556,6 +645,13 @@ export default function CalendarScreen() {
   };
 
   const handleEditFromDetail = () => {
+    setIsEditSeriesMode(false);
+    setShowDetailModal(false);
+    setShowEditModal(true);
+  };
+
+  const handleEditSeriesFromDetail = () => {
+    setIsEditSeriesMode(true);
     setShowDetailModal(false);
     setShowEditModal(true);
   };
@@ -682,7 +778,8 @@ export default function CalendarScreen() {
           }
         >
           {weekDays.map((day, index) => {
-            const dateKey = formatDateKey(day);
+            // Use Pacific timezone for consistency with lesson grouping
+            const dateKey = formatISOToPacificDateKey(day.toISOString());
             const dayLessons = lessonsByDate.get(dateKey) || [];
             const dayBreaks = getBreaksForDate(day);
             const today = isToday(day);
@@ -1018,6 +1115,7 @@ export default function CalendarScreen() {
           setShowEditModal(false);
           setSelectedLesson(null);
           setSelectedGroupedLesson(null);
+          setIsEditSeriesMode(false);
         }}
         onSubmit={handleUpdateLesson}
         students={students}
@@ -1038,8 +1136,14 @@ export default function CalendarScreen() {
           setSeriesLessonIds([]);
           setSeriesSessionIds([]);
           setIsSessionSeries(false);
+          setIsEditSeriesMode(false);
         }}
         onEdit={handleEditFromDetail}
+        onEditSeries={
+          isTutor && (seriesLessonIds.length > 1 || seriesSessionIds.length > 1)
+            ? handleEditSeriesFromDetail
+            : undefined
+        }
         onComplete={handleCompleteLesson}
         onCancel={handleCancelLesson}
         onUncomplete={isTutor ? handleUncompleteLesson : undefined}

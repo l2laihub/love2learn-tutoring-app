@@ -88,7 +88,17 @@ export default function TabLayout() {
             options={{
               title: 'Resources',
               headerTitle: 'Shared Resources',
-              href: isTutor ? null : undefined,
+              // Show Resources tab for parents only (tutors see Library in Worksheets)
+              href: isParent ? undefined : null,
+            }}
+          />
+          <Tabs.Screen
+            name="profile"
+            options={{
+              title: 'Profile',
+              headerTitle: 'My Profile',
+              // Only show Profile tab for parents
+              href: isParent ? undefined : null,
             }}
           />
           <Tabs.Screen
@@ -196,8 +206,20 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="folder-open" color={color} size={size} />
           ),
-          // Hide Resources tab for tutors (they see Library in Worksheets tab)
-          href: isTutor ? null : undefined,
+          // Show Resources tab for parents only (tutors see Library in Worksheets)
+          href: isParent ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          headerTitle: 'My Profile',
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="person" color={color} size={size} />
+          ),
+          // Only show Profile tab for parents
+          href: isParent ? undefined : null,
         }}
       />
       <Tabs.Screen

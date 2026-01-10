@@ -1,5 +1,5 @@
 /**
- * Parent Profile Screen
+ * Parent Profile Tab Screen
  * Shows parent info, preferences, and their children
  */
 
@@ -15,13 +15,13 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, router } from 'expo-router';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthContext } from '../src/contexts/AuthContext';
-import { useStudents, useUpdateStudent } from '../src/hooks/useStudents';
-import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../src/theme';
-import { Student, UpdateStudentInput } from '../src/types/database';
-import { StudentFormModal } from '../src/components/StudentFormModal';
+import { useAuthContext } from '../../src/contexts/AuthContext';
+import { useStudentsByParent, useUpdateStudent } from '../../src/hooks/useStudents';
+import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
+import { Student, UpdateStudentInput } from '../../src/types/database';
+import { StudentFormModal } from '../../src/components/StudentFormModal';
 
 // Subject display names
 const subjectNames: Record<Subject, string> = {
@@ -41,9 +41,9 @@ const subjectEmojis: Record<Subject, string> = {
   english: '📝',
 };
 
-export default function ProfileScreen() {
+export default function ProfileTabScreen() {
   const { parent, signOut, isTutor } = useAuthContext();
-  const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
+  const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudentsByParent(parent?.id || null);
   const updateStudent = useUpdateStudent();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -134,218 +134,182 @@ export default function ProfileScreen() {
   const notificationPrefs = getNotificationPreferences();
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: 'My Profile',
-          headerStyle: { backgroundColor: colors.primary.main },
-          headerTintColor: colors.neutral.white,
-          headerBackTitle: 'Back',
-        }}
-      />
-      <SafeAreaView style={styles.container} edges={['bottom']}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-          }
-        >
-          {/* Profile Header */}
-          <View style={styles.profileHeader}>
-            <View style={styles.avatarContainer}>
-              <Ionicons name="person" size={40} color={colors.primary.main} />
-            </View>
-            <Text style={styles.profileName}>{parent?.name || 'Parent'}</Text>
-            <Text style={styles.profileEmail}>{parent?.email}</Text>
-            {parent?.phone ? (
-              <Text style={styles.profilePhone}>{parent.phone}</Text>
-            ) : null}
+    <SafeAreaView style={styles.container} edges={['bottom']}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+      >
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <Ionicons name="person" size={40} color={colors.primary.main} />
           </View>
-
-          {/* Contact Preference */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Contact Preference</Text>
-            <View style={styles.card}>
-              <View style={styles.infoRow}>
-                <View style={styles.infoIcon}>
-                  <Ionicons
-                    name={parent?.preferences?.contact_preference === 'phone' ? 'call' : 'mail'}
-                    size={20}
-                    color={colors.primary.main}
-                  />
-                </View>
-                <View style={styles.infoContent}>
-                  <Text style={styles.infoLabel}>Preferred Contact Method</Text>
-                  <Text style={styles.infoValue}>
-                    {(parent?.preferences?.contact_preference || 'email').charAt(0).toUpperCase() +
-                      (parent?.preferences?.contact_preference || 'email').slice(1)}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Notification Preferences */}
-          {notificationPrefs.length > 0 ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Notifications</Text>
-              <View style={styles.card}>
-                {notificationPrefs.map((pref, index) => (
-                  <View
-                    key={pref.label}
-                    style={[
-                      styles.infoRow,
-                      index < notificationPrefs.length - 1 && styles.infoRowBorder,
-                    ]}
-                  >
-                    <View style={styles.infoIcon}>
-                      <Ionicons name={pref.icon} size={20} color={colors.primary.main} />
-                    </View>
-                    <View style={styles.infoContent}>
-                      <Text style={styles.infoLabel}>{pref.label}</Text>
-                      <Text style={styles.infoValue}>{pref.value}</Text>
-                    </View>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.status.success} />
-                  </View>
-                ))}
-              </View>
-            </View>
+          <Text style={styles.profileName}>{parent?.name || 'Parent'}</Text>
+          <Text style={styles.profileEmail}>{parent?.email}</Text>
+          {parent?.phone ? (
+            <Text style={styles.profilePhone}>{parent.phone}</Text>
           ) : null}
+        </View>
 
-          {/* My Children */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Children</Text>
-            {students.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons name="people-outline" size={48} color={colors.neutral.textMuted} />
-                <Text style={styles.emptyTitle}>No children yet</Text>
-                <Text style={styles.emptyText}>
-                  Your tutor will add your children to the system.
+        {/* Contact Preference */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Contact Preference</Text>
+          <View style={styles.card}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Ionicons
+                  name={parent?.preferences?.contact_preference === 'phone' ? 'call' : 'mail'}
+                  size={20}
+                  color={colors.primary.main}
+                />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Preferred Contact Method</Text>
+                <Text style={styles.infoValue}>
+                  {(parent?.preferences?.contact_preference || 'email').charAt(0).toUpperCase() +
+                    (parent?.preferences?.contact_preference || 'email').slice(1)}
                 </Text>
               </View>
-            ) : (
-              <View style={styles.childrenList}>
-                {students.map((student) => (
-                  <ChildCard
-                    key={student.id}
-                    student={student}
-                    onEdit={() => handleEditChild(student)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-
-          {/* Quick Links */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Links</Text>
-            <View style={styles.linksCard}>
-              {isTutor && (
-                <>
-                  <Pressable
-                    style={styles.linkRow}
-                    onPress={() => router.push('/availability')}
-                  >
-                    <View style={[styles.linkIcon, { backgroundColor: colors.primary.subtle }]}>
-                      <Ionicons name="time" size={20} color={colors.primary.main} />
-                    </View>
-                    <Text style={styles.linkLabel}>My Availability</Text>
-                    <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-                  </Pressable>
-
-                  <View style={styles.linkDivider} />
-
-                  <Pressable
-                    style={styles.linkRow}
-                    onPress={() => router.push('/requests')}
-                  >
-                    <View style={[styles.linkIcon, { backgroundColor: colors.status.warningBg }]}>
-                      <Ionicons name="git-pull-request" size={20} color={colors.status.warning} />
-                    </View>
-                    <Text style={styles.linkLabel}>Lesson Requests</Text>
-                    <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-                  </Pressable>
-
-                  <View style={styles.linkDivider} />
-                </>
-              )}
-
-              <Pressable
-                style={styles.linkRow}
-                onPress={() => router.push('/agreement')}
-              >
-                <View style={[styles.linkIcon, { backgroundColor: colors.status.successBg }]}>
-                  <Ionicons name="document-text" size={20} color={colors.status.success} />
-                </View>
-                <Text style={styles.linkLabel}>View Service Agreement</Text>
-                <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-              </Pressable>
-
-              <View style={styles.linkDivider} />
-
-              <Pressable
-                style={styles.linkRow}
-                onPress={() => router.push('/(tabs)/calendar')}
-              >
-                <View style={[styles.linkIcon, { backgroundColor: colors.accent.subtle }]}>
-                  <Ionicons name="calendar" size={20} color={colors.accent.main} />
-                </View>
-                <Text style={styles.linkLabel}>Lesson Schedule</Text>
-                <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-              </Pressable>
-
-              <View style={styles.linkDivider} />
-
-              <Pressable
-                style={styles.linkRow}
-                onPress={() => router.push('/(tabs)/worksheets')}
-              >
-                <View style={[styles.linkIcon, { backgroundColor: colors.status.infoBg }]}>
-                  <Ionicons name="document" size={20} color={colors.status.info} />
-                </View>
-                <Text style={styles.linkLabel}>Worksheets</Text>
-                <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
-              </Pressable>
             </View>
           </View>
+        </View>
 
-          {/* Sign Out Button */}
+        {/* Notification Preferences */}
+        {notificationPrefs.length > 0 ? (
           <View style={styles.section}>
-            <Pressable style={styles.signOutButton} onPress={handleSignOut}>
-              <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
-              <Text style={styles.signOutText}>Sign Out</Text>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            <View style={styles.card}>
+              {notificationPrefs.map((pref, index) => (
+                <View
+                  key={pref.label}
+                  style={[
+                    styles.infoRow,
+                    index < notificationPrefs.length - 1 && styles.infoRowBorder,
+                  ]}
+                >
+                  <View style={styles.infoIcon}>
+                    <Ionicons name={pref.icon} size={20} color={colors.primary.main} />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>{pref.label}</Text>
+                    <Text style={styles.infoValue}>{pref.value}</Text>
+                  </View>
+                  <Ionicons name="checkmark-circle" size={20} color={colors.status.success} />
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {/* My Children */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>My Children</Text>
+          {students.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Ionicons name="people-outline" size={48} color={colors.neutral.textMuted} />
+              <Text style={styles.emptyTitle}>No children yet</Text>
+              <Text style={styles.emptyText}>
+                Your tutor will add your children to the system.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.childrenList}>
+              {students.map((student) => (
+                <ChildCard
+                  key={student.id}
+                  student={student}
+                  onEdit={() => handleEditChild(student)}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Quick Links */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Quick Links</Text>
+          <View style={styles.linksCard}>
+            {isTutor ? (
+              <>
+                <Pressable
+                  style={styles.linkRow}
+                  onPress={() => router.push('/availability')}
+                >
+                  <View style={[styles.linkIcon, { backgroundColor: colors.primary.subtle }]}>
+                    <Ionicons name="time" size={20} color={colors.primary.main} />
+                  </View>
+                  <Text style={styles.linkLabel}>My Availability</Text>
+                  <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+                </Pressable>
+
+                <View style={styles.linkDivider} />
+
+                <Pressable
+                  style={styles.linkRow}
+                  onPress={() => router.push('/requests')}
+                >
+                  <View style={[styles.linkIcon, { backgroundColor: colors.status.warningBg }]}>
+                    <Ionicons name="git-pull-request" size={20} color={colors.status.warning} />
+                  </View>
+                  <Text style={styles.linkLabel}>Lesson Requests</Text>
+                  <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
+                </Pressable>
+
+                <View style={styles.linkDivider} />
+              </>
+            ) : null}
+
+            <Pressable
+              style={styles.linkRow}
+              onPress={() => router.push('/agreement')}
+            >
+              <View style={[styles.linkIcon, { backgroundColor: colors.status.successBg }]}>
+                <Ionicons name="document-text" size={20} color={colors.status.success} />
+              </View>
+              <Text style={styles.linkLabel}>View Service Agreement</Text>
+              <Ionicons name="chevron-forward" size={20} color={colors.neutral.textMuted} />
             </Pressable>
           </View>
+        </View>
 
-          {/* Account Info */}
-          <View style={styles.accountInfo}>
-            <Text style={styles.accountInfoText}>
-              Member since {parent?.created_at
-                ? new Date(parent.created_at).toLocaleDateString('en-US', {
-                    month: 'long',
-                    year: 'numeric',
-                  })
-                : 'N/A'}
-            </Text>
-          </View>
-        </ScrollView>
+        {/* Sign Out Button */}
+        <View style={styles.section}>
+          <Pressable style={styles.signOutButton} onPress={handleSignOut}>
+            <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </Pressable>
+        </View>
 
-        {/* Edit Child Modal */}
-        <StudentFormModal
-          visible={showEditChildModal}
-          onClose={() => {
-            setShowEditChildModal(false);
-            setSelectedChild(null);
-          }}
-          onSave={handleSaveChild}
-          student={selectedChild}
-          parents={[]}
-          loading={updateStudent.loading}
-          parentEditMode={true}
-        />
-      </SafeAreaView>
-    </>
+        {/* Account Info */}
+        <View style={styles.accountInfo}>
+          <Text style={styles.accountInfoText}>
+            Member since {parent?.created_at
+              ? new Date(parent.created_at).toLocaleDateString('en-US', {
+                  month: 'long',
+                  year: 'numeric',
+                })
+              : 'N/A'}
+          </Text>
+        </View>
+      </ScrollView>
+
+      {/* Edit Child Modal */}
+      <StudentFormModal
+        visible={showEditChildModal}
+        onClose={() => {
+          setShowEditChildModal(false);
+          setSelectedChild(null);
+        }}
+        onSave={handleSaveChild}
+        student={selectedChild}
+        parents={[]}
+        loading={updateStudent.loading}
+        parentEditMode={true}
+      />
+    </SafeAreaView>
   );
 }
 
