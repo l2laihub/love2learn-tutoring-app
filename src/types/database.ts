@@ -40,6 +40,7 @@ export type Database = {
           email: string;
           phone: string | null;
           role: UserRole;
+          avatar_url: string | null;
           onboarding_completed_at: string | null;
           preferences: ParentPreferences | null;
           invitation_token: string | null;
@@ -58,6 +59,7 @@ export type Database = {
           email: string;
           phone?: string | null;
           role?: UserRole;
+          avatar_url?: string | null;
           onboarding_completed_at?: string | null;
           preferences?: ParentPreferences | null;
           invitation_token?: string | null;
@@ -76,6 +78,7 @@ export type Database = {
           email?: string;
           phone?: string | null;
           role?: UserRole;
+          avatar_url?: string | null;
           onboarding_completed_at?: string | null;
           preferences?: ParentPreferences | null;
           invitation_token?: string | null;
@@ -1241,6 +1244,7 @@ export interface UpdateParentInput {
   name?: string;
   email?: string;
   phone?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface CreateLessonSessionInput {

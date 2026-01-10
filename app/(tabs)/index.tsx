@@ -16,6 +16,7 @@ import { useResponsive } from '../../src/hooks/useResponsive';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { ScheduledLessonWithStudent, AssignmentWithStudent, GroupedLesson } from '../../src/types/database';
+import { AvatarDisplay } from '../../src/components/AvatarUpload';
 
 // Layout constants for responsive design
 const layoutConstants = {
@@ -191,16 +192,17 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.userInfo}>
-              <View style={[
-                styles.avatarContainer,
-                isTutor && styles.tutorAvatarContainer
-              ]}>
-                <Ionicons
-                  name={isTutor ? 'school' : 'person'}
-                  size={24}
-                  color={isTutor ? colors.piano.primary : colors.piano.primary}
+              {isTutor ? (
+                <View style={[styles.avatarContainer, styles.tutorAvatarContainer]}>
+                  <Ionicons name="school" size={24} color={colors.piano.primary} />
+                </View>
+              ) : (
+                <AvatarDisplay
+                  avatarUrl={parent?.avatar_url}
+                  name={parent?.name || 'Parent'}
+                  size={48}
                 />
-              </View>
+              )}
               <View>
                 <Text style={styles.greeting}>
                   {greeting}{firstName ? `, ${firstName}` : ''}!
@@ -538,9 +540,11 @@ export default function HomeScreen() {
             <View style={[styles.childrenGrid, responsiveStyles.statsGrid]}>
               {students.map((student) => (
                 <View key={student.id} style={[styles.childCard, { minWidth: responsive.isDesktop ? '20%' : responsive.isTablet ? '30%' : '45%' }]}>
-                  <View style={styles.childAvatar}>
-                    <Ionicons name="person" size={20} color={colors.piano.primary} />
-                  </View>
+                  <AvatarDisplay
+                    avatarUrl={student.avatar_url}
+                    name={student.name}
+                    size={40}
+                  />
                   <Text style={styles.childName} numberOfLines={1}>{student.name}</Text>
                   <View style={styles.childSubjects}>
                     {student.subjects?.slice(0, 3).map((subject) => (
@@ -754,6 +758,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    gap: spacing.md,
   },
   avatarContainer: {
     width: 48,

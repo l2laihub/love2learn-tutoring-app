@@ -49,6 +49,7 @@ import { RescheduleRequestModal } from '../../src/components/RescheduleRequestMo
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { TutorBreak } from '../../src/types/database';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
+import { StackedAvatars } from '../../src/components/AvatarUpload';
 
 // Subject emoji mapping
 const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
@@ -284,22 +285,16 @@ export default function CalendarScreen() {
     setSelectedLesson(groupedLesson.lessons[0]);
     setShowDetailModal(true);
 
-    console.log('=== Lesson Selected ===');
-    console.log('Session ID:', groupedLesson.session_id);
-    console.log('Lesson count:', groupedLesson.lessons.length);
-
-    // Find recurring series for delete series functionality
+    // Find recurring series for delete/edit series functionality
     if (groupedLesson.session_id) {
       // Combined Session - find recurring sessions
       const sessionIds = await findSessionSeries(groupedLesson);
-      console.log('Found session series IDs:', sessionIds);
       setSeriesSessionIds(sessionIds);
       setSeriesLessonIds([]);
       setIsSessionSeries(true);
     } else if (groupedLesson.lessons.length === 1) {
       // Standalone lesson - find recurring lessons
       const seriesIds = await findSeries(groupedLesson.lessons[0]);
-      console.log('Found lesson series IDs:', seriesIds);
       setSeriesLessonIds(seriesIds);
       setSeriesSessionIds([]);
       setIsSessionSeries(false);
@@ -515,26 +510,14 @@ export default function CalendarScreen() {
 
     // If editing entire series, update all lessons in the series
     if (isEditSeriesMode && seriesLessonIds.length > 1) {
-      console.log('=== Updating Standalone Lesson Series ===');
-      console.log('Series lesson IDs:', seriesLessonIds);
-      console.log('New time:', newTime);
-      console.log('Duration:', data.duration_min);
-      console.log('Notes:', data.notes);
-
-      const success = await updateLessonSeries.mutate(seriesLessonIds, {
+      // Standalone lesson series - update all lessons with same IDs
+      await updateLessonSeries.mutate(seriesLessonIds, {
         newTime,
         duration_min: data.duration_min,
         notes: data.notes,
       });
-
-      console.log('Series update result:', success);
     } else if (isEditSeriesMode && seriesSessionIds.length > 1 && selectedGroupedLesson) {
-      // For combined sessions, we need to find all lessons across the session series
-      // and update them with the new time
-      console.log('=== Updating Combined Session Series ===');
-      console.log('Series session IDs:', seriesSessionIds);
-
-      // Get all lesson IDs from all sessions in the series
+      // Combined session series - find all lessons across the session series
       const { data: allSessionLessons, error: fetchError } = await supabase
         .from('scheduled_lessons')
         .select('id')
@@ -544,15 +527,11 @@ export default function CalendarScreen() {
         console.error('Error fetching session lessons:', fetchError);
       } else if (allSessionLessons && allSessionLessons.length > 0) {
         const allLessonIds = allSessionLessons.map(l => l.id);
-        console.log('Found', allLessonIds.length, 'lessons across', seriesSessionIds.length, 'sessions');
-
-        const success = await updateLessonSeries.mutate(allLessonIds, {
+        await updateLessonSeries.mutate(allLessonIds, {
           newTime,
           duration_min: data.duration_min,
           notes: data.notes,
         });
-
-        console.log('Session series update result:', success);
       }
     } else {
       // Single lesson update
@@ -563,15 +542,10 @@ export default function CalendarScreen() {
         duration_min: data.duration_min,
         notes: data.notes,
       };
-      console.log('=== Updating Single Lesson ===');
-      console.log('Lesson ID:', selectedLesson.id);
-      console.log('Update input:', input);
       await updateLesson.mutate(selectedLesson.id, input);
     }
 
-    console.log('Calling refetch...');
     await refetch();
-    console.log('Refetch complete, closing modals...');
     setShowEditModal(false);
     setSelectedLesson(null);
     setSelectedGroupedLesson(null);
@@ -933,6 +907,16 @@ export default function CalendarScreen() {
                             <Text style={styles.lessonTimeText}>{startTimeString}</Text>
                             <Text style={styles.lessonTimeEndText}>–{endTimeString}</Text>
                           </View>
+                          {/* Student Avatars */}
+                          <StackedAvatars
+                            students={group.lessons.map(l => ({
+                              id: l.student.id,
+                              name: l.student.name,
+                              avatar_url: l.student.avatar_url,
+                            }))}
+                            size={28}
+                            maxVisible={2}
+                          />
                           <View style={styles.lessonInfo}>
                             <Text style={styles.lessonStudent} numberOfLines={1}>
                               {studentNamesDisplay}
@@ -1321,6 +1305,7 @@ const styles = StyleSheet.create({
   lessonCard: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
     backgroundColor: colors.neutral.white,
     borderRadius: borderRadius.md,
     padding: spacing.sm,
@@ -1381,7 +1366,6 @@ const styles = StyleSheet.create({
   },
   lessonTime: {
     width: 70,
-    marginRight: spacing.sm,
   },
   lessonTimeText: {
     fontSize: typography.sizes.sm,

@@ -19,9 +19,11 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudentsByParent, useUpdateStudent } from '../../src/hooks/useStudents';
+import { useUpdateParent } from '../../src/hooks/useParents';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { Student, UpdateStudentInput } from '../../src/types/database';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
+import { AvatarUpload, AvatarDisplay } from '../../src/components/AvatarUpload';
 
 // Subject display names
 const subjectNames: Record<Subject, string> = {
@@ -42,9 +44,10 @@ const subjectEmojis: Record<Subject, string> = {
 };
 
 export default function ProfileTabScreen() {
-  const { parent, signOut, isTutor } = useAuthContext();
+  const { parent, signOut, isTutor, refreshParent } = useAuthContext();
   const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudentsByParent(parent?.id || null);
   const updateStudent = useUpdateStudent();
+  const updateParent = useUpdateParent();
   const [refreshing, setRefreshing] = useState(false);
 
   // State for editing child info
@@ -53,9 +56,66 @@ export default function ProfileTabScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetchStudents();
+    await Promise.all([refetchStudents(), refreshParent?.()]);
     setRefreshing(false);
-  }, [refetchStudents]);
+  }, [refetchStudents, refreshParent]);
+
+  // Handle parent avatar upload
+  const handleParentAvatarUpload = async (url: string) => {
+    if (!parent?.id) {
+      console.error('Cannot update parent avatar: no parent ID');
+      Alert.alert('Error', 'Unable to update avatar. Please try again.');
+      return;
+    }
+    try {
+      console.log('Updating parent avatar:', { parentId: parent.id, url });
+      const result = await updateParent.mutate(parent.id, { avatar_url: url });
+      console.log('Parent avatar update result:', result);
+      if (result) {
+        // Refresh parent data to get updated avatar
+        await refreshParent?.();
+      } else {
+        Alert.alert('Error', 'Failed to save avatar. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error updating parent avatar:', err);
+      Alert.alert('Error', 'Failed to save avatar. Please try again.');
+    }
+  };
+
+  // Handle parent avatar removal
+  const handleParentAvatarRemove = async () => {
+    if (!parent?.id) {
+      console.error('Cannot remove parent avatar: no parent ID');
+      Alert.alert('Error', 'Unable to remove avatar. Please try again.');
+      return;
+    }
+    try {
+      console.log('Removing parent avatar:', { parentId: parent.id });
+      const result = await updateParent.mutate(parent.id, { avatar_url: null });
+      console.log('Parent avatar removal result:', result);
+      if (result) {
+        await refreshParent?.();
+      } else {
+        Alert.alert('Error', 'Failed to remove avatar. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error removing parent avatar:', err);
+      Alert.alert('Error', 'Failed to remove avatar. Please try again.');
+    }
+  };
+
+  // Handle child avatar upload
+  const handleChildAvatarUpload = async (studentId: string, url: string) => {
+    await updateStudent.mutate(studentId, { avatar_url: url });
+    await refetchStudents();
+  };
+
+  // Handle child avatar removal
+  const handleChildAvatarRemove = async (studentId: string) => {
+    await updateStudent.mutate(studentId, { avatar_url: null });
+    await refetchStudents();
+  };
 
   const handleEditChild = (student: Student) => {
     setSelectedChild(student);
@@ -144,14 +204,23 @@ export default function ProfileTabScreen() {
       >
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <Ionicons name="person" size={40} color={colors.primary.main} />
-          </View>
+          {parent && (
+            <AvatarUpload
+              type="parent"
+              entityId={parent.id}
+              currentAvatarUrl={parent.avatar_url}
+              name={parent.name}
+              size={100}
+              onUpload={handleParentAvatarUpload}
+              onRemove={handleParentAvatarRemove}
+            />
+          )}
           <Text style={styles.profileName}>{parent?.name || 'Parent'}</Text>
           <Text style={styles.profileEmail}>{parent?.email}</Text>
           {parent?.phone ? (
             <Text style={styles.profilePhone}>{parent.phone}</Text>
           ) : null}
+          <Text style={styles.tapToChange}>Tap photo to change</Text>
         </View>
 
         {/* Contact Preference */}
@@ -222,6 +291,8 @@ export default function ProfileTabScreen() {
                   key={student.id}
                   student={student}
                   onEdit={() => handleEditChild(student)}
+                  onAvatarUpload={(url) => handleChildAvatarUpload(student.id, url)}
+                  onAvatarRemove={() => handleChildAvatarRemove(student.id)}
                 />
               ))}
             </View>
@@ -314,7 +385,14 @@ export default function ProfileTabScreen() {
 }
 
 // Child Card Component
-function ChildCard({ student, onEdit }: { student: Student; onEdit?: () => void }) {
+interface ChildCardProps {
+  student: Student;
+  onEdit?: () => void;
+  onAvatarUpload?: (url: string) => void;
+  onAvatarRemove?: () => void;
+}
+
+function ChildCard({ student, onEdit, onAvatarUpload, onAvatarRemove }: ChildCardProps) {
   const subjects = student.subjects || [];
 
   // Format birthday for display
@@ -327,9 +405,15 @@ function ChildCard({ student, onEdit }: { student: Student; onEdit?: () => void 
   return (
     <View style={styles.childCard}>
       <View style={styles.childHeader}>
-        <View style={styles.childAvatar}>
-          <Ionicons name="person" size={24} color={colors.primary.main} />
-        </View>
+        <AvatarUpload
+          type="student"
+          entityId={student.id}
+          currentAvatarUrl={student.avatar_url}
+          name={student.name}
+          size={56}
+          onUpload={onAvatarUpload}
+          onRemove={onAvatarRemove}
+        />
         <View style={styles.childInfo}>
           <Text style={styles.childName}>{student.name}</Text>
           <Text style={styles.childMeta}>
@@ -392,19 +476,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xl,
     marginBottom: spacing.lg,
   },
-  avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
+  tapToChange: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginTop: spacing.xs,
   },
   profileName: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.neutral.text,
+    marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
   profileEmail: {
@@ -493,15 +574,7 @@ const styles = StyleSheet.create({
   childHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  childAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
+    gap: spacing.md,
   },
   childInfo: {
     flex: 1,

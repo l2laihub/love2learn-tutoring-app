@@ -27,6 +27,7 @@ import { ParentFormModal } from '../../src/components/ParentFormModal';
 import { ImportDataModal } from '../../src/components/ImportDataModal';
 import { EmptyState } from '../../src/components/ui/EmptyState';
 import { SearchInput } from '../../src/components/ui/Input';
+import { AvatarDisplay } from '../../src/components/AvatarUpload';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import {
   useStudents,
@@ -903,6 +904,7 @@ export default function StudentsScreen() {
                           grade={parseInt(student.grade_level) || 0}
                           subjects={student.subjects || []}
                           parentName={student.parent?.name || 'Unknown'}
+                          avatarUrl={student.avatar_url}
                           onPress={() => toggleStudentSelection(student.id)}
                         />
                       </View>
@@ -922,6 +924,7 @@ export default function StudentsScreen() {
                       grade={parseInt(student.grade_level) || 0}
                       subjects={student.subjects || []}
                       parentName={student.parent?.name || 'Unknown'}
+                      avatarUrl={student.avatar_url}
                       onPress={() => handleStudentPress(student.id)}
                     />
                   </TouchableOpacity>
@@ -973,6 +976,7 @@ export default function StudentsScreen() {
                                   grade={parseInt(student.grade_level) || 0}
                                   subjects={student.subjects || []}
                                   parentName={student.parent?.name || 'Unknown'}
+                                  avatarUrl={student.avatar_url}
                                   onPress={() => toggleStudentSelection(student.id)}
                                 />
                               </View>
@@ -992,6 +996,7 @@ export default function StudentsScreen() {
                               grade={parseInt(student.grade_level) || 0}
                               subjects={student.subjects || []}
                               parentName={student.parent?.name || 'Unknown'}
+                              avatarUrl={student.avatar_url}
                               onPress={() => handleStudentPress(student.id)}
                             />
                           </TouchableOpacity>
@@ -1082,16 +1087,11 @@ export default function StudentsScreen() {
                     onPress={() => handleParentPress(parent.id)}
                     onLongPress={() => handleParentLongPress(parent)}
                   >
-                    <View style={styles.parentAvatar}>
-                      <Text style={styles.parentAvatarText}>
-                        {parent.name
-                          .split(' ')
-                          .map((n) => n[0])
-                          .join('')
-                          .substring(0, 2)
-                          .toUpperCase()}
-                      </Text>
-                    </View>
+                    <AvatarDisplay
+                      avatarUrl={parent.avatar_url}
+                      name={parent.name}
+                      size={48}
+                    />
                     <View style={styles.parentInfo}>
                       <Text style={styles.parentName}>{parent.name}</Text>
                       <Text style={styles.parentEmail}>{parent.email}</Text>

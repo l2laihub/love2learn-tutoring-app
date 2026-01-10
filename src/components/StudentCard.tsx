@@ -11,6 +11,7 @@ interface StudentCardProps {
   grade: number;
   subjects: string[];
   parentName: string;
+  avatarUrl?: string | null;
   pianoLevel?: 'beginner' | 'intermediate' | 'advanced';
   nextLesson?: string;
   onPress?: () => void;
@@ -33,6 +34,7 @@ export function StudentCard({
   grade,
   subjects,
   parentName,
+  avatarUrl,
   pianoLevel,
   nextLesson,
   onPress,
@@ -40,7 +42,7 @@ export function StudentCard({
   return (
     <Card onPress={onPress} style={styles.card}>
       <View style={styles.header}>
-        <Avatar name={name} size="lg" />
+        <Avatar name={name} size="lg" imageUrl={avatarUrl || undefined} />
         <View style={styles.headerText}>
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.grade}>{gradeToString(grade)}</Text>

@@ -312,7 +312,13 @@ export async function getParentByUserId(
       return { parent: null, error: 'not_found' };
     }
 
-    console.log('[getParentByUserId] Found parent:', { role: parentRecord.role });
+    console.log('[getParentByUserId] Found parent:', {
+      id: parentRecord.id,
+      name: parentRecord.name,
+      role: parentRecord.role,
+      avatar_url: parentRecord.avatar_url,
+      hasAllFields: !!(parentRecord.id && parentRecord.name && parentRecord.email)
+    });
     return { parent: parentRecord as Parent, error: null };
   } catch (error) {
     // Log as warning instead of error for timeouts - they're expected on cold start
@@ -341,19 +347,28 @@ export function useAuth(): AuthState {
   const [parentQueryError, setParentQueryError] = useState<'timeout' | 'not_found' | 'query_error' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchParent = useCallback(async (userId: string) => {
-    console.log('[useAuth] Fetching parent for:', userId);
+  const fetchParent = useCallback(async (userId: string, preserveOnError = false) => {
+    console.log('[useAuth] Fetching parent for:', userId, 'preserveOnError:', preserveOnError);
     const result = await getParentByUserId(userId);
-    console.log('[useAuth] Parent result:', result.parent?.role, 'error:', result.error);
+    console.log('[useAuth] Parent result:', result.parent?.role, result.parent?.name, 'error:', result.error);
+
+    // If preserveOnError is true and we got an error, don't clear existing data
+    if (preserveOnError && result.error && !result.parent) {
+      console.log('[useAuth] Preserving existing parent data due to error');
+      setParentQueryError(result.error);
+      return;
+    }
+
     setParent(result.parent);
     setParentQueryError(result.error);
   }, []);
 
-  // Function to refresh parent data (useful after onboarding completion)
+  // Function to refresh parent data (useful after onboarding completion or avatar update)
+  // preserveOnError=true ensures we don't lose existing data if refresh fails
   const refreshParent = useCallback(async () => {
     if (user?.id) {
       console.log('[useAuth] Refreshing parent data');
-      await fetchParent(user.id);
+      await fetchParent(user.id, true);
     }
   }, [user?.id, fetchParent]);
 

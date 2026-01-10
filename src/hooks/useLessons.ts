@@ -45,7 +45,6 @@ export function useLessons(options: LessonsFilterOptions = {}): ListQueryState<S
   const { startDate, endDate, studentId, status } = options;
 
   const fetchLessons = useCallback(async () => {
-    console.log('useLessons: fetchLessons called', { startDate, endDate, studentId, status });
     try {
       setLoading(true);
       setError(null);
@@ -85,7 +84,6 @@ export function useLessons(options: LessonsFilterOptions = {}): ListQueryState<S
         throw new Error(fetchError.message);
       }
 
-      console.log('useLessons: fetched', lessons?.length, 'lessons');
       setData((lessons as ScheduledLessonWithStudent[]) || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch lessons');
@@ -432,10 +430,6 @@ export function useUpdateLessonSeries() {
       setLoading(true);
       setError(null);
 
-      console.log('useUpdateLessonSeries: Starting update for', lessonIds.length, 'lessons');
-      console.log('useUpdateLessonSeries: Lesson IDs:', lessonIds);
-      console.log('useUpdateLessonSeries: Updates:', updates);
-
       // First, fetch all lessons to get their current scheduled_at
       const { data: lessons, error: fetchError } = await supabase
         .from('scheduled_lessons')
@@ -443,16 +437,12 @@ export function useUpdateLessonSeries() {
         .in('id', lessonIds);
 
       if (fetchError) {
-        console.error('useUpdateLessonSeries: Fetch error:', fetchError);
         throw new Error(fetchError.message);
       }
 
       if (!lessons || lessons.length === 0) {
-        console.error('useUpdateLessonSeries: No lessons found for IDs:', lessonIds);
         throw new Error('No lessons found');
       }
-
-      console.log('useUpdateLessonSeries: Found', lessons.length, 'lessons to update');
 
       // Update each lesson
       for (const lesson of lessons) {
@@ -478,22 +468,16 @@ export function useUpdateLessonSeries() {
           updateData.notes = updates.notes;
         }
 
-        console.log('useUpdateLessonSeries: Updating lesson', lesson.id, 'with data:', updateData);
-
         const { error: updateError } = await supabase
           .from('scheduled_lessons')
           .update(updateData)
           .eq('id', lesson.id);
 
         if (updateError) {
-          console.error('useUpdateLessonSeries: Update error for lesson', lesson.id, ':', updateError);
           throw new Error(`Failed to update lesson ${lesson.id}: ${updateError.message}`);
         }
-
-        console.log('useUpdateLessonSeries: Successfully updated lesson', lesson.id);
       }
 
-      console.log('useUpdateLessonSeries: All lessons updated successfully');
       return true;
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to update lesson series');

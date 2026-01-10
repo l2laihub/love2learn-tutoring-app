@@ -1,7 +1,8 @@
 import { Tabs } from 'expo-router';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../src/theme';
+import { colors, spacing } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
@@ -21,7 +22,11 @@ function TabIcon({ name, color, size }: TabIconProps) {
 
 // Header right component with notification bell
 function HeaderRight() {
-  return <NotificationBell color={colors.neutral.textInverse} />;
+  return (
+    <View style={{ marginRight: spacing.md }}>
+      <NotificationBell color={colors.neutral.textInverse} />
+    </View>
+  );
 }
 
 export default function TabLayout() {
