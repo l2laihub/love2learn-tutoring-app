@@ -4,7 +4,7 @@
  * Supports both parent and student avatars
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -99,10 +99,36 @@ export function AvatarUpload({
 }: AvatarUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  // Track image key for cache busting on mobile
+  const [imageKey, setImageKey] = useState(() => Date.now());
+  // Track previous URL to detect changes
+  const prevUrlRef = useRef(currentAvatarUrl);
 
   const initials = getInitials(name);
   const backgroundColor = getColorFromName(name);
   const fontSize = size * 0.35;
+
+  // When the avatar URL changes externally (e.g., after upload and refresh),
+  // increment the cache key to force image reload on mobile
+  useEffect(() => {
+    if (currentAvatarUrl !== prevUrlRef.current) {
+      console.log('Avatar URL changed, busting cache:', {
+        old: prevUrlRef.current?.substring(0, 50),
+        new: currentAvatarUrl?.substring(0, 50),
+      });
+      prevUrlRef.current = currentAvatarUrl;
+      setImageKey(Date.now());
+      setImageError(false);
+    }
+  }, [currentAvatarUrl]);
+
+  // Add cache-busting query param to URL for mobile devices
+  const getImageUri = (url: string): string => {
+    if (Platform.OS === 'web') return url;
+    // Add timestamp to bust mobile cache when URL changes
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}t=${imageKey}`;
+  };
 
   const handlePickImage = async (useCamera: boolean) => {
     if (disabled || uploading) return;
@@ -288,6 +314,11 @@ export function AvatarUpload({
       const publicUrl = urlData.publicUrl;
       console.log('Avatar uploaded successfully:', { type, entityId, publicUrl });
 
+      // Increment image key to bust cache on mobile
+      setImageKey(prev => prev + 1);
+      // Reset image error state for new image
+      setImageError(false);
+
       // Notify parent component
       onUpload?.(publicUrl);
     } catch (err) {
@@ -381,7 +412,7 @@ export function AvatarUpload({
       {/* Avatar Image or Initials */}
       {hasValidImage ? (
         <Image
-          source={{ uri: currentAvatarUrl }}
+          source={{ uri: getImageUri(currentAvatarUrl) }}
           style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
           onError={() => setImageError(true)}
         />
@@ -447,16 +478,36 @@ export function AvatarDisplay({
   onPress,
 }: AvatarDisplayProps) {
   const [imageError, setImageError] = useState(false);
+  // Track image key for cache busting on mobile
+  const [imageKey, setImageKey] = useState(() => Date.now());
+  // Track previous URL to detect changes
+  const prevUrlRef = useRef(avatarUrl);
 
   const initials = getInitials(name);
   const backgroundColor = getColorFromName(name);
   const fontSize = size * 0.4;
 
+  // When the avatar URL changes, bust the cache
+  useEffect(() => {
+    if (avatarUrl !== prevUrlRef.current) {
+      prevUrlRef.current = avatarUrl;
+      setImageKey(Date.now());
+      setImageError(false);
+    }
+  }, [avatarUrl]);
+
+  // Add cache-busting query param to URL for mobile devices
+  const getImageUri = (url: string): string => {
+    if (Platform.OS === 'web') return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}t=${imageKey}`;
+  };
+
   const hasValidImage = avatarUrl && !imageError;
 
   const content = hasValidImage ? (
     <Image
-      source={{ uri: avatarUrl }}
+      source={{ uri: getImageUri(avatarUrl) }}
       style={[styles.image, { width: size, height: size, borderRadius: size / 2 }]}
       onError={() => setImageError(true)}
     />
