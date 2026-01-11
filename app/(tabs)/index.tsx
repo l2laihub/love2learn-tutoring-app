@@ -11,7 +11,7 @@ import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
 import { usePendingAssignments } from '../../src/hooks/useAssignments';
-import { usePaymentSummary, useOverduePayments } from '../../src/hooks/usePayments';
+import { usePaymentSummary, useOverduePayments, useParentPaymentSummary, ParentPaymentSummary } from '../../src/hooks/usePayments';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
@@ -49,6 +49,7 @@ export default function HomeScreen() {
   const { data: pendingAssignments, loading: assignmentsLoading, refetch: refetchAssignments } = usePendingAssignments();
   const { summary: paymentSummary, refetch: refetchPayments } = usePaymentSummary();
   const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
+  const { data: parentPaymentSummary, refetch: refetchParentPayment } = useParentPaymentSummary(parent?.id || null);
   const [refreshing, setRefreshing] = useState(false);
   const responsive = useResponsive();
 
@@ -99,9 +100,10 @@ export default function HomeScreen() {
       refetchAssignments(),
       refetchPayments(),
       refetchOverdue(),
+      refetchParentPayment(),
     ]);
     setRefreshing(false);
-  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments, refetchPayments, refetchOverdue]);
+  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments, refetchPayments, refetchOverdue, refetchParentPayment]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
@@ -240,6 +242,14 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Parent: Overdue Payment Alert Banner */}
+        {!isTutor && parentPaymentSummary?.hasOverdueBalance && (
+          <OverdueAlertBanner
+            overdueAmount={parentPaymentSummary.overdueAmount}
+            overdueMonths={parentPaymentSummary.overdueMonths}
+          />
+        )}
+
         {/* Today's Schedule */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -280,48 +290,46 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Quick Stats */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {isTutor ? 'Quick Stats' : 'Overview'}
-          </Text>
-          <View style={[styles.statsGrid, responsiveStyles.statsGrid]}>
-            {/* Dynamic subject cards - show active subjects */}
-            {subjectCounts.activeSubjects.map((subject) => {
-              const subjectColor = getSubjectColor(subject);
-              return (
-                <Pressable
-                  key={subject}
-                  style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: subjectColor.primary }]}
-                  onPress={() => router.push('/(tabs)/students')}
-                >
-                  {studentsLoading ? (
-                    <ActivityIndicator color={colors.neutral.white} size="small" />
-                  ) : (
-                    <Text style={styles.statNumber}>{subjectCounts.counts[subject]}</Text>
-                  )}
-                  <Text style={styles.statLabel}>{subjectNames[subject]}</Text>
-                  <View style={styles.statIcon}>
-                    <Text style={{ fontSize: 20 }}>{subjectEmojis[subject]}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+        {/* Quick Stats (Tutor only) */}
+        {isTutor && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Stats</Text>
+            <View style={[styles.statsGrid, responsiveStyles.statsGrid]}>
+              {/* Dynamic subject cards - show active subjects */}
+              {subjectCounts.activeSubjects.map((subject) => {
+                const subjectColor = getSubjectColor(subject);
+                return (
+                  <Pressable
+                    key={subject}
+                    style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: subjectColor.primary }]}
+                    onPress={() => router.push('/(tabs)/students')}
+                  >
+                    {studentsLoading ? (
+                      <ActivityIndicator color={colors.neutral.white} size="small" />
+                    ) : (
+                      <Text style={styles.statNumber}>{subjectCounts.counts[subject]}</Text>
+                    )}
+                    <Text style={styles.statLabel}>{subjectNames[subject]}</Text>
+                    <View style={styles.statIcon}>
+                      <Text style={{ fontSize: 20 }}>{subjectEmojis[subject]}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
 
-            {/* Today's lessons card */}
-            <Pressable
-              style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: colors.accent.main }]}
-              onPress={() => router.push('/(tabs)/calendar')}
-            >
-              <Text style={styles.statNumber}>{todayStats.scheduled}</Text>
-              <Text style={styles.statLabel}>Today</Text>
-              <View style={styles.statIcon}>
-                <Ionicons name="today" size={20} color={colors.neutral.white} style={{ opacity: 0.8 }} />
-              </View>
-            </Pressable>
+              {/* Today's lessons card */}
+              <Pressable
+                style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: colors.accent.main }]}
+                onPress={() => router.push('/(tabs)/calendar')}
+              >
+                <Text style={styles.statNumber}>{todayStats.scheduled}</Text>
+                <Text style={styles.statLabel}>Today</Text>
+                <View style={styles.statIcon}>
+                  <Ionicons name="today" size={20} color={colors.neutral.white} style={{ opacity: 0.8 }} />
+                </View>
+              </Pressable>
 
-            {/* Done card - tutor only */}
-            {isTutor && (
+              {/* Done card */}
               <View style={[styles.statCard, responsiveStyles.statCard, { backgroundColor: colors.status.success }]}>
                 <Text style={styles.statNumber}>{todayStats.completed}</Text>
                 <Text style={styles.statLabel}>Done</Text>
@@ -329,9 +337,17 @@ export default function HomeScreen() {
                   <Ionicons name="checkmark-circle" size={20} color={colors.neutral.white} style={{ opacity: 0.8 }} />
                 </View>
               </View>
-            )}
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* Parent: Payment Summary Card */}
+        {!isTutor && parentPaymentSummary && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment Status</Text>
+            <ParentPaymentCard summary={parentPaymentSummary} />
+          </View>
+        )}
 
         {/* Upcoming Lessons (Tutor only) */}
         {isTutor && upcomingLessons.length > 0 && (
@@ -497,12 +513,12 @@ export default function HomeScreen() {
 
               <Pressable
                 style={[styles.parentActionCard, responsiveStyles.actionCard]}
-                onPress={() => router.push('/agreement' as any)}
+                onPress={() => router.push('/(tabs)/payments' as any)}
               >
-                <View style={[styles.parentActionIcon, { backgroundColor: colors.status.successBg }]}>
-                  <Ionicons name="document-text" size={24} color={colors.status.success} />
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.status.warningBg }]}>
+                  <Ionicons name="wallet" size={24} color={colors.status.warning} />
                 </View>
-                <Text style={styles.parentActionLabel}>View Agreement</Text>
+                <Text style={styles.parentActionLabel}>Payments</Text>
               </Pressable>
 
               <Pressable
@@ -523,6 +539,16 @@ export default function HomeScreen() {
                   <Ionicons name="document" size={24} color={colors.status.info} />
                 </View>
                 <Text style={styles.parentActionLabel}>Worksheets</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.parentActionCard, responsiveStyles.actionCard]}
+                onPress={() => router.push('/agreement' as any)}
+              >
+                <View style={[styles.parentActionIcon, { backgroundColor: colors.status.successBg }]}>
+                  <Ionicons name="document-text" size={24} color={colors.status.success} />
+                </View>
+                <Text style={styles.parentActionLabel}>Agreement</Text>
               </Pressable>
             </View>
           </View>
@@ -735,6 +761,154 @@ function AssignmentCard({ assignment }: { assignment: AssignmentWithStudent }) {
         </View>
       )}
     </View>
+  );
+}
+
+// Parent Payment Summary Card Component
+function ParentPaymentCard({ summary }: { summary: ParentPaymentSummary }) {
+  // Determine payment status display
+  const getStatusInfo = () => {
+    if (!summary.hasPaymentRecord) {
+      // No invoice yet - show sessions info
+      if (summary.completedSessions === 0 && summary.scheduledSessions === 0) {
+        return {
+          icon: 'calendar-outline' as const,
+          text: 'No sessions this month',
+          color: colors.neutral.textMuted,
+          bgColor: colors.neutral.borderLight,
+        };
+      }
+      return {
+        icon: 'time-outline' as const,
+        text: 'Invoice pending',
+        color: colors.status.info,
+        bgColor: colors.status.infoBg,
+      };
+    }
+
+    switch (summary.status) {
+      case 'paid':
+        return {
+          icon: 'checkmark-circle' as const,
+          text: 'Paid',
+          color: colors.status.success,
+          bgColor: colors.status.successBg,
+        };
+      case 'partial':
+        return {
+          icon: 'time-outline' as const,
+          text: 'Partial',
+          color: colors.status.warning,
+          bgColor: colors.status.warningBg,
+        };
+      case 'unpaid':
+        return {
+          icon: 'alert-circle' as const,
+          text: 'Payment Due',
+          color: colors.status.error,
+          bgColor: colors.status.errorBg,
+        };
+      default:
+        return {
+          icon: 'help-circle-outline' as const,
+          text: 'Unknown',
+          color: colors.neutral.textMuted,
+          bgColor: colors.neutral.borderLight,
+        };
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+  const totalSessions = summary.completedSessions + summary.scheduledSessions;
+
+  return (
+    <Pressable
+      style={styles.parentPaymentCard}
+      onPress={() => router.push('/(tabs)/payments' as any)}
+    >
+      {/* Header */}
+      <View style={styles.parentPaymentHeader}>
+        <View style={styles.parentPaymentTitleRow}>
+          <Ionicons name="wallet-outline" size={20} color={colors.piano.primary} />
+          <Text style={styles.parentPaymentTitle}>{summary.currentMonthDisplay}</Text>
+        </View>
+        <Text style={styles.parentPaymentViewAll}>View all</Text>
+      </View>
+
+      {/* Stats Row */}
+      <View style={styles.parentPaymentStats}>
+        {/* Amount Due */}
+        <View style={styles.parentPaymentStatItem}>
+          <Text style={styles.parentPaymentStatLabel}>Total Due</Text>
+          <Text style={[styles.parentPaymentStatAmount, { color: colors.neutral.text }]}>
+            ${summary.amountDue.toFixed(0)}
+          </Text>
+        </View>
+
+        <View style={styles.parentPaymentStatDivider} />
+
+        {/* Amount Paid */}
+        <View style={styles.parentPaymentStatItem}>
+          <Text style={styles.parentPaymentStatLabel}>Paid</Text>
+          <Text style={[styles.parentPaymentStatAmount, { color: colors.status.success }]}>
+            ${summary.amountPaid.toFixed(0)}
+          </Text>
+        </View>
+
+        <View style={styles.parentPaymentStatDivider} />
+
+        {/* Balance */}
+        <View style={styles.parentPaymentStatItem}>
+          <Text style={styles.parentPaymentStatLabel}>Balance</Text>
+          <Text style={[
+            styles.parentPaymentStatAmount,
+            { color: summary.balance > 0 ? colors.status.warning : colors.status.success }
+          ]}>
+            ${summary.balance.toFixed(0)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Status Badge and Sessions */}
+      <View style={styles.parentPaymentFooter}>
+        <View style={[styles.parentPaymentStatusBadge, { backgroundColor: statusInfo.bgColor }]}>
+          <Ionicons name={statusInfo.icon} size={14} color={statusInfo.color} />
+          <Text style={[styles.parentPaymentStatusText, { color: statusInfo.color }]}>
+            {statusInfo.text}
+          </Text>
+        </View>
+
+        <View style={styles.parentPaymentSessions}>
+          <Ionicons name="book-outline" size={14} color={colors.neutral.textSecondary} />
+          <Text style={styles.parentPaymentSessionsText}>
+            {totalSessions} session{totalSessions !== 1 ? 's' : ''} this month
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// Overdue Payment Alert Banner Component
+function OverdueAlertBanner({ overdueAmount, overdueMonths }: { overdueAmount: number; overdueMonths: number }) {
+  return (
+    <Pressable
+      style={styles.overdueAlertBanner}
+      onPress={() => router.push('/(tabs)/payments' as any)}
+    >
+      <View style={styles.overdueAlertContent}>
+        <View style={styles.overdueAlertIconContainer}>
+          <Ionicons name="alert-circle" size={20} color={colors.neutral.white} />
+        </View>
+        <View style={styles.overdueAlertTextContainer}>
+          <Text style={styles.overdueAlertTitle}>Outstanding Balance</Text>
+          <Text style={styles.overdueAlertSubtitle}>
+            ${overdueAmount.toFixed(0)} from {overdueMonths} previous month{overdueMonths > 1 ? 's' : ''}
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.neutral.white} style={{ opacity: 0.7 }} />
+    </Pressable>
   );
 }
 
@@ -1195,5 +1369,124 @@ const styles = StyleSheet.create({
   },
   childSubjectEmoji: {
     fontSize: 14,
+  },
+  // Parent Payment Card styles
+  parentPaymentCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  parentPaymentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  parentPaymentTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  parentPaymentTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  parentPaymentViewAll: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  parentPaymentStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  parentPaymentStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  parentPaymentStatLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  parentPaymentStatAmount: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+  },
+  parentPaymentStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: colors.neutral.border,
+  },
+  parentPaymentFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+  },
+  parentPaymentStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  parentPaymentStatusText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+  },
+  parentPaymentSessions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  parentPaymentSessionsText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  // Overdue Alert Banner styles
+  overdueAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.status.error,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  overdueAlertContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  overdueAlertIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  overdueAlertTextContainer: {
+    flex: 1,
+  },
+  overdueAlertTitle: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.white,
+  },
+  overdueAlertSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.white,
+    opacity: 0.9,
+    marginTop: 2,
   },
 });

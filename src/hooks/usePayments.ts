@@ -1655,3 +1655,165 @@ export function useQuickInvoice() {
 
   return { loading, error, generateQuickInvoice, reset };
 }
+
+// ============================================================================
+// PARENT PAYMENT SUMMARY (For Parent Dashboard)
+// ============================================================================
+
+/**
+ * Summary of a parent's payment status for display on their dashboard
+ */
+export interface ParentPaymentSummary {
+  // Current month info
+  currentMonth: string;
+  currentMonthDisplay: string;
+
+  // Payment status
+  hasPaymentRecord: boolean;
+  status: PaymentStatus | null;
+
+  // Amounts
+  amountDue: number;
+  amountPaid: number;
+  balance: number;
+
+  // Session counts for current month
+  completedSessions: number;
+  scheduledSessions: number;
+
+  // Outstanding balance from previous months
+  hasOverdueBalance: boolean;
+  overdueAmount: number;
+  overdueMonths: number;
+}
+
+/**
+ * Hook for fetching payment summary for the logged-in parent
+ * Used on the Parent Dashboard to show payment status at a glance
+ *
+ * @param parentId - Parent UUID from auth context
+ * @returns Parent's payment summary with current month and overdue info
+ */
+export function useParentPaymentSummary(parentId: string | null) {
+  const [data, setData] = useState<ParentPaymentSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const currentDate = new Date();
+  const monthStart = getMonthStart(currentDate);
+  const monthEnd = getMonthEnd(currentDate);
+
+  const fetchSummary = useCallback(async () => {
+    if (!parentId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // 1. Get current month's payment record for this parent
+      const { data: currentPayment, error: paymentError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .maybeSingle();
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
+
+      // 2. Get overdue payments (unpaid or partial from previous months)
+      const { data: overduePayments, error: overdueError } = await supabase
+        .from('payments')
+        .select('amount_due, amount_paid')
+        .eq('parent_id', parentId)
+        .lt('month', monthStart)
+        .in('status', ['unpaid', 'partial']);
+
+      if (overdueError) {
+        throw new Error(overdueError.message);
+      }
+
+      // 3. Get student IDs for this parent to count sessions
+      const { data: students, error: studentsError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('parent_id', parentId);
+
+      if (studentsError) {
+        throw new Error(studentsError.message);
+      }
+
+      let completedSessions = 0;
+      let scheduledSessions = 0;
+
+      if (students && students.length > 0) {
+        const studentIds = students.map(s => s.id);
+
+        // 4. Count sessions for current month
+        const { data: lessons, error: lessonsError } = await supabase
+          .from('scheduled_lessons')
+          .select('status')
+          .in('student_id', studentIds)
+          .gte('scheduled_at', monthStart)
+          .lte('scheduled_at', monthEnd + 'T23:59:59.999Z')
+          .neq('status', 'cancelled');
+
+        if (lessonsError) {
+          throw new Error(lessonsError.message);
+        }
+
+        if (lessons) {
+          completedSessions = lessons.filter(l => l.status === 'completed').length;
+          scheduledSessions = lessons.filter(l => l.status === 'scheduled').length;
+        }
+      }
+
+      // Calculate overdue totals
+      const overdueAmount = (overduePayments || []).reduce(
+        (sum, p) => sum + (p.amount_due - p.amount_paid),
+        0
+      );
+      const overdueMonths = (overduePayments || []).length;
+
+      // Format month for display
+      const monthDisplay = currentDate.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+
+      const summary: ParentPaymentSummary = {
+        currentMonth: monthStart,
+        currentMonthDisplay: monthDisplay,
+        hasPaymentRecord: currentPayment !== null,
+        status: currentPayment?.status || null,
+        amountDue: currentPayment?.amount_due || 0,
+        amountPaid: currentPayment?.amount_paid || 0,
+        balance: currentPayment ? currentPayment.amount_due - currentPayment.amount_paid : 0,
+        completedSessions,
+        scheduledSessions,
+        hasOverdueBalance: overdueAmount > 0,
+        overdueAmount: Math.round(overdueAmount * 100) / 100,
+        overdueMonths,
+      };
+
+      setData(summary);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch payment summary');
+      setError(errorMessage);
+      console.error('useParentPaymentSummary error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [parentId, monthStart, monthEnd]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { data, loading, error, refetch: fetchSummary };
+}
