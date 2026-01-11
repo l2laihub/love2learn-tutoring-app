@@ -5,7 +5,7 @@
  * Provides authentication functions and hooks for managing user sessions
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   User,
   Session,
@@ -340,12 +340,15 @@ export async function getParentByUserId(
  * @returns AuthState object with user, session, parent, loading, and authenticated status
  */
 export function useAuth(): AuthState {
-  console.log('[useAuth] Hook called');
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [parent, setParent] = useState<Parent | null>(null);
   const [parentQueryError, setParentQueryError] = useState<'timeout' | 'not_found' | 'query_error' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Track if we've successfully loaded parent data (persists across effect re-runs)
+  const parentLoadedRef = useRef(false);
+  const currentUserIdRef = useRef<string | null>(null);
 
   const fetchParent = useCallback(async (userId: string, preserveOnError = false) => {
     console.log('[useAuth] Fetching parent for:', userId, 'preserveOnError:', preserveOnError);
@@ -361,6 +364,9 @@ export function useAuth(): AuthState {
 
     setParent(result.parent);
     setParentQueryError(result.error);
+    if (result.parent) {
+      parentLoadedRef.current = true;
+    }
   }, []);
 
   // Function to refresh parent data (useful after onboarding completion or avatar update)
@@ -390,11 +396,78 @@ export function useAuth(): AuthState {
         setUser(newSession?.user ?? null);
 
         if (newSession?.user) {
-          // Only fetch parent if we haven't already or if user changed
-          await fetchParent(newSession.user.id);
+          const userId = newSession.user.id;
+          const isNewUser = userId !== currentUserIdRef.current;
+          currentUserIdRef.current = userId;
+
+          // Only fetch parent if:
+          // 1. This is a new/different user, OR
+          // 2. We haven't successfully loaded parent data yet
+          // Always preserve existing data on errors if we've already loaded data
+          const shouldPreserve = parentLoadedRef.current && !isNewUser;
+          console.log('[useAuth] Fetching parent:', { isNewUser, parentLoaded: parentLoadedRef.current, shouldPreserve });
+
+          const result = await getParentByUserId(userId);
+
+          if (!isMounted) return;
+
+          console.log('[useAuth] Parent result:', result.parent?.role, result.parent?.name, 'error:', result.error);
+
+          if (result.parent) {
+            // Successfully got parent data
+            setParent(result.parent);
+            setParentQueryError(null);
+            parentLoadedRef.current = true;
+          } else if (result.error === 'timeout') {
+            // Timeout - preserve existing data if we have it, otherwise retry
+            if (shouldPreserve) {
+              console.log('[useAuth] Timeout but preserving existing parent data');
+            } else {
+              console.log('[useAuth] First fetch timeout, will retry...');
+            }
+            setParentQueryError(result.error);
+            // Schedule a retry after a delay (whether first attempt or not)
+            setTimeout(async () => {
+              if (!isMounted || !currentUserIdRef.current) return;
+              console.log('[useAuth] Retrying parent fetch after timeout...');
+              const retryResult = await getParentByUserId(currentUserIdRef.current);
+              if (!isMounted) return;
+              if (retryResult.parent) {
+                setParent(retryResult.parent);
+                setParentQueryError(null);
+                parentLoadedRef.current = true;
+              } else if (retryResult.error === 'timeout') {
+                // Second timeout - try one more time
+                console.log('[useAuth] Second timeout, final retry...');
+                setTimeout(async () => {
+                  if (!isMounted || !currentUserIdRef.current) return;
+                  const finalResult = await getParentByUserId(currentUserIdRef.current);
+                  if (!isMounted) return;
+                  if (finalResult.parent) {
+                    setParent(finalResult.parent);
+                    setParentQueryError(null);
+                    parentLoadedRef.current = true;
+                  } else {
+                    setParentQueryError(finalResult.error);
+                  }
+                }, 3000);
+              } else {
+                setParentQueryError(retryResult.error);
+              }
+            }, 3000);
+          } else {
+            // Non-timeout error - set whatever we got
+            setParent(result.parent);
+            setParentQueryError(result.error);
+            if (result.parent) {
+              parentLoadedRef.current = true;
+            }
+          }
         } else {
           setParent(null);
           setParentQueryError(null);
+          currentUserIdRef.current = null;
+          parentLoadedRef.current = false;
         }
 
         // Mark as initialized once we get any auth state change
@@ -493,7 +566,8 @@ export function useAuth(): AuthState {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchParent]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // No dependencies - subscription setup runs once
 
   return {
     user,
