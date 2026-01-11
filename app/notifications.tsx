@@ -59,11 +59,19 @@ export default function NotificationsScreen() {
     // Mark as read
     await markAsRead(notification.id);
 
-    // Navigate to action URL if present, otherwise show detail modal
-    if (notification.action_url) {
+    // For rejected reschedule responses, always show the detail modal so parent can see the rejection note
+    const notificationData = notification.data as Record<string, unknown> | null;
+    const isRejectedReschedule = notification.type === 'reschedule_response' &&
+      notificationData?.status === 'rejected';
+
+    if (isRejectedReschedule) {
+      // Show detail modal with rejection note
+      setSelectedNotification(notification);
+    } else if (notification.action_url) {
+      // Navigate to action URL for other notifications
       router.push(notification.action_url as any);
     } else {
-      // Show notification detail modal
+      // Show notification detail modal for notifications without action URL
       setSelectedNotification(notification);
     }
   };
@@ -302,6 +310,12 @@ function NotificationDetailModal({ notification, visible, onClose }: Notificatio
   const priorityInfo = getNotificationPriorityInfo(notification.priority);
   const createdAt = new Date(notification.created_at);
 
+  // Extract tutor response from notification data for reschedule responses
+  const notificationData = notification.data as Record<string, unknown> | null;
+  const isRejectedReschedule = notification.type === 'reschedule_response' &&
+    notificationData?.status === 'rejected';
+  const tutorResponse = notificationData?.tutor_response as string | null;
+
   const formatDate = (date: Date): string => {
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -365,6 +379,19 @@ function NotificationDetailModal({ notification, visible, onClose }: Notificatio
           <View style={styles.modalMessageContainer}>
             <Text style={styles.modalMessage}>{notification.message}</Text>
           </View>
+
+          {/* Rejection Note Section - shown for rejected reschedule responses */}
+          {isRejectedReschedule && (
+            <View style={styles.rejectionNoteContainer}>
+              <View style={styles.rejectionNoteHeader}>
+                <Ionicons name="chatbubble-outline" size={18} color={colors.status.error} />
+                <Text style={styles.rejectionNoteTitle}>Tutor's Note</Text>
+              </View>
+              <Text style={styles.rejectionNoteText}>
+                {tutorResponse || 'No specific reason was provided. Please contact your tutor for more details.'}
+              </Text>
+            </View>
+          )}
         </ScrollView>
 
         {/* Footer */}
@@ -679,6 +706,31 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.neutral.text,
     lineHeight: 24,
+  },
+  rejectionNoteContainer: {
+    backgroundColor: colors.status.errorBg,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.status.error,
+  },
+  rejectionNoteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  rejectionNoteTitle: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.status.error,
+  },
+  rejectionNoteText: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.text,
+    lineHeight: 22,
+    fontStyle: 'italic',
   },
   modalFooter: {
     padding: spacing.lg,

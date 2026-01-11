@@ -353,10 +353,28 @@ export function useRejectLessonRequest(): {
         setLoading(true);
         setError(null);
 
+        // First get the request details with student info for the email
+        const { data: requestData, error: fetchError } = await supabase
+          .from('lesson_requests')
+          .select(`
+            parent_id,
+            subject,
+            preferred_date,
+            request_group_id,
+            student:students (name)
+          `)
+          .eq('id', id)
+          .single();
+
+        if (fetchError) {
+          throw new Error(fetchError.message);
+        }
+
+        // Update the request status
         const { data, error: updateError } = await supabase
           .from('lesson_requests')
           .update({
-            status: 'rejected',
+            status: 'rejected' as const,
             tutor_response: reason || null,
           })
           .eq('id', id)
@@ -365,6 +383,22 @@ export function useRejectLessonRequest(): {
 
         if (updateError) {
           throw new Error(updateError.message);
+        }
+
+        // Send rejection email via edge function (fire-and-forget to not block UI)
+        if (requestData) {
+          const studentData = requestData.student as { name: string } | null;
+          sendRejectionEmail({
+            parent_id: requestData.parent_id,
+            student_name: studentData?.name || 'Student',
+            subject: requestData.subject,
+            preferred_date: requestData.preferred_date,
+            tutor_response: reason || null,
+            request_group_id: requestData.request_group_id,
+          }).catch((emailError) => {
+            // Log but don't fail the rejection if email fails
+            console.error('Failed to send rejection email:', emailError);
+          });
         }
 
         return data as LessonRequest;
@@ -382,6 +416,26 @@ export function useRejectLessonRequest(): {
   );
 
   return { rejectRequest, loading, error };
+}
+
+/**
+ * Helper function to send rejection email via edge function
+ */
+async function sendRejectionEmail(data: {
+  parent_id: string;
+  student_name: string;
+  subject: string;
+  preferred_date: string;
+  tutor_response: string | null;
+  request_group_id: string | null;
+}): Promise<void> {
+  const response = await supabase.functions.invoke('send-reschedule-rejection', {
+    body: data,
+  });
+
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
 }
 
 /**
