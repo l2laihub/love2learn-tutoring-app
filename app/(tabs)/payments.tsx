@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,13 +29,39 @@ import {
   useDeletePayment,
   useMonthlyLessonSummary,
   useQuickInvoice,
+  useCreatePrepaidPayment,
+  usePrepaidPayments,
+  useMarkPrepaidPaymentPaid,
+  useUpdatePrepaidSessionsUsed,
 } from '../../src/hooks/usePayments';
-import { useParents } from '../../src/hooks/useParents';
-import { PaymentWithParent, CreatePaymentInput, UpdatePaymentInput } from '../../src/types/database';
+import { useParents, useUpdateBillingMode } from '../../src/hooks/useParents';
+import { PaymentWithParent, CreatePaymentInput, UpdatePaymentInput, ParentWithStudents } from '../../src/types/database';
 import { PaymentFormModal, PaymentFormData } from '../../src/components/PaymentFormModal';
 import { GenerateInvoiceModal } from '../../src/components/GenerateInvoiceModal';
 import { RateSettingsModal } from '../../src/components/RateSettingsModal';
 import { MonthlyPaymentSummary } from '../../src/components/MonthlyPaymentSummary';
+import { PrepaidStatusCard } from '../../src/components/PrepaidStatusCard';
+import { CreatePrepaidModal } from '../../src/components/CreatePrepaidModal';
+import { ParentViewPreviewModal } from '../../src/components/ParentViewPreviewModal';
+import { LessonDetailsModal, LessonFilterType, PrepaidPaymentDisplay } from '../../src/components/LessonDetailsModal';
+import { StatusFilterType } from '../../src/components/MonthlyPaymentSummary';
+
+type PaymentViewMode = 'invoice' | 'prepaid';
+
+// Type for storing preview data
+interface PreviewData {
+  parentName: string;
+  studentNames: string[];
+  monthDisplay: string;
+  sessionsTotal: number;
+  sessionsUsed: number;
+  sessionsRemaining: number;
+  sessionsRolledOver: number;
+  amountDue: number;
+  isPaid: boolean;
+  paidAt?: string;
+  notes?: string;
+}
 
 export default function PaymentsScreen() {
   const { isTutor, parent } = useAuthContext();
@@ -45,6 +72,16 @@ export default function PaymentsScreen() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<PaymentWithParent | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Prepaid-specific state
+  const [viewMode, setViewMode] = useState<PaymentViewMode>('invoice');
+  const [showPrepaidModal, setShowPrepaidModal] = useState(false);
+  const [selectedPrepaidParent, setSelectedPrepaidParent] = useState<ParentWithStudents | null>(null);
+  // Preview modal state
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  // Lesson details modal state
+  const [showLessonDetailsModal, setShowLessonDetailsModal] = useState(false);
+  const [lessonFilterType, setLessonFilterType] = useState<LessonFilterType>('all');
 
   // Fetch data
   const { data: payments, loading, error, refetch } = usePayments(selectedMonth);
@@ -56,6 +93,12 @@ export default function PaymentsScreen() {
     loading: lessonSummaryLoading,
     refetch: refetchLessonSummary,
   } = useMonthlyLessonSummary(selectedMonth);
+  // Prepaid data
+  const {
+    data: prepaidPayments,
+    loading: prepaidLoading,
+    refetch: refetchPrepaid,
+  } = usePrepaidPayments(selectedMonth);
 
   // Mutations
   const createPayment = useCreatePayment();
@@ -63,12 +106,51 @@ export default function PaymentsScreen() {
   const markPaid = useMarkPaymentPaid();
   const deletePayment = useDeletePayment();
   const quickInvoice = useQuickInvoice();
+  // Prepaid mutations
+  const createPrepaid = useCreatePrepaidPayment();
+  const markPrepaidPaid = useMarkPrepaidPaymentPaid();
+  const updateBillingMode = useUpdateBillingMode();
+  const updateSessionsUsed = useUpdatePrepaidSessionsUsed();
+
+  // Filter prepaid families (families set to prepaid billing mode)
+  const prepaidFamilies = useMemo(() => {
+    return parents.filter(p => p.billing_mode === 'prepaid');
+  }, [parents]);
+
+  // Filter invoice families (families set to invoice billing mode or default)
+  const invoiceFamilies = useMemo(() => {
+    return parents.filter(p => !p.billing_mode || p.billing_mode === 'invoice');
+  }, [parents]);
 
   // Filter payments for parents (only show their own)
+  // For tutors on Invoice tab, only show invoice-based families (not prepaid)
   const displayPayments = useMemo(() => {
-    if (isTutor) return payments;
-    return payments.filter(p => p.parent_id === parent?.id);
-  }, [payments, isTutor, parent?.id]);
+    if (!isTutor) {
+      return payments.filter(p => p.parent_id === parent?.id);
+    }
+    // For tutor: filter out prepaid families from invoice payments list
+    const prepaidParentIds = new Set(prepaidFamilies.map(p => p.id));
+    return payments.filter(p => !prepaidParentIds.has(p.parent_id));
+  }, [payments, isTutor, parent?.id, prepaidFamilies]);
+
+  // Convert paid prepaid payments to display format for the Collected modal
+  const paidPrepaidForDisplay: PrepaidPaymentDisplay[] = useMemo(() => {
+    return prepaidPayments
+      .filter(p => p.status === 'paid')
+      .map(p => ({
+        id: p.id,
+        parentId: p.parent_id,
+        parentName: p.parent?.name || 'Unknown',
+        studentNames: p.parent?.students?.map(s => s.name) || [],
+        sessionsTotal: p.sessions_prepaid || 0,
+        sessionsUsed: p.sessions_used || 0,
+        amountPaid: p.amount_paid || 0,
+        paidAt: p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }) : undefined,
+      }));
+  }, [prepaidPayments]);
 
   // Month navigation
   const goToPreviousMonth = () => {
@@ -89,7 +171,13 @@ export default function PaymentsScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetch(), refetchSummary(), refetchOverdue(), refetchLessonSummary()]);
+    await Promise.all([
+      refetch(),
+      refetchSummary(),
+      refetchOverdue(),
+      refetchLessonSummary(),
+      refetchPrepaid(),
+    ]);
     setRefreshing(false);
   };
 
@@ -159,10 +247,149 @@ export default function PaymentsScreen() {
     await handleRefresh();
   };
 
+  // Prepaid handlers
+  const handleCreatePrepaid = async (data: {
+    parent_id: string;
+    sessions_count: number;
+    amount: number;
+    notes?: string;
+  }) => {
+    const payment = await createPrepaid.mutate({
+      parent_id: data.parent_id,
+      month: selectedMonth.toISOString(),
+      sessions_count: data.sessions_count,
+      amount: data.amount,
+      notes: data.notes,
+    });
+
+    if (payment) {
+      Alert.alert('Success', 'Prepaid plan created successfully!');
+      await handleRefresh();
+    } else if (createPrepaid.error) {
+      throw createPrepaid.error;
+    }
+  };
+
+  const handleMarkPrepaidPaid = async (paymentId: string, parentName: string) => {
+    // Use window.confirm for web, Alert for native
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Confirm that ${parentName} has paid for their prepaid sessions?`);
+      if (confirmed) {
+        const payment = await markPrepaidPaid.mutate(paymentId);
+        if (payment) {
+          window.alert('Payment marked as paid!');
+          await handleRefresh();
+        } else {
+          window.alert('Failed to mark payment as paid.');
+        }
+      }
+    } else {
+      Alert.alert(
+        'Mark as Paid',
+        `Confirm that ${parentName} has paid for their prepaid sessions?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              const payment = await markPrepaidPaid.mutate(paymentId);
+              if (payment) {
+                await handleRefresh();
+              } else {
+                Alert.alert('Error', 'Failed to mark payment as paid.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleOpenPrepaidModal = (parentData: ParentWithStudents) => {
+    setSelectedPrepaidParent(parentData);
+    setShowPrepaidModal(true);
+  };
+
+  const handleUpdateSessionsUsed = async (paymentId: string, newCount: number) => {
+    const result = await updateSessionsUsed.mutate(paymentId, newCount);
+    if (result) {
+      await handleRefresh();
+    } else if (Platform.OS === 'web') {
+      window.alert('Failed to update sessions count.');
+    } else {
+      Alert.alert('Error', 'Failed to update sessions count.');
+    }
+  };
+
+  const handlePreviewParentView = (
+    parentData: ParentWithStudents,
+    prepaidPayment: PaymentWithParent
+  ) => {
+    setPreviewData({
+      parentName: parentData.name,
+      studentNames: parentData.students?.map(s => s.name) || [],
+      monthDisplay,
+      sessionsTotal: prepaidPayment.sessions_prepaid || 0,
+      sessionsUsed: prepaidPayment.sessions_used || 0,
+      sessionsRemaining: Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0)),
+      sessionsRolledOver: prepaidPayment.sessions_rolled_over || 0,
+      amountDue: prepaidPayment.amount_due,
+      isPaid: prepaidPayment.status === 'paid',
+      paidAt: prepaidPayment.paid_at ? new Date(prepaidPayment.paid_at).toLocaleDateString() : undefined,
+      notes: prepaidPayment.notes || undefined,
+    });
+    setShowPreviewModal(true);
+  };
+
+  const handleToggleBillingMode = async (parentData: ParentWithStudents) => {
+    const newMode = parentData.billing_mode === 'prepaid' ? 'invoice' : 'prepaid';
+    const modeName = newMode === 'prepaid' ? 'Prepaid' : 'Invoice';
+
+    // Use window.confirm for web, Alert for native
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(`Switch ${parentData.name} to ${modeName} billing mode?`);
+      if (confirmed) {
+        const result = await updateBillingMode.mutate(parentData.id, newMode);
+        if (result) {
+          window.alert(`${parentData.name} is now on ${modeName} billing.`);
+          await handleRefresh();
+        } else {
+          window.alert('Failed to update billing mode.');
+        }
+      }
+    } else {
+      Alert.alert(
+        'Change Billing Mode',
+        `Switch ${parentData.name} to ${modeName} billing mode?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Confirm',
+            onPress: async () => {
+              const result = await updateBillingMode.mutate(parentData.id, newMode);
+              if (result) {
+                Alert.alert('Success', `${parentData.name} is now on ${modeName} billing.`);
+                await handleRefresh();
+              } else {
+                Alert.alert('Error', 'Failed to update billing mode.');
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
   const monthDisplay = selectedMonth.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   });
+
+  // Handler for showing lesson details modal
+  const handleStatusClick = (status: StatusFilterType) => {
+    setLessonFilterType(status as LessonFilterType);
+    setShowLessonDetailsModal(true);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -221,6 +448,50 @@ export default function PaymentsScreen() {
           )}
         </View>
 
+        {/* View Mode Toggle (Tutor only) */}
+        {isTutor && (
+          <View style={styles.viewModeToggle}>
+            <Pressable
+              style={[
+                styles.viewModeButton,
+                viewMode === 'invoice' && styles.viewModeButtonActive,
+              ]}
+              onPress={() => setViewMode('invoice')}
+            >
+              <Ionicons
+                name="receipt-outline"
+                size={16}
+                color={viewMode === 'invoice' ? colors.piano.primary : colors.neutral.textSecondary}
+              />
+              <Text style={[
+                styles.viewModeText,
+                viewMode === 'invoice' && styles.viewModeTextActive,
+              ]}>
+                Invoice ({invoiceFamilies.length})
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.viewModeButton,
+                viewMode === 'prepaid' && styles.viewModeButtonActive,
+              ]}
+              onPress={() => setViewMode('prepaid')}
+            >
+              <Ionicons
+                name="calendar-outline"
+                size={16}
+                color={viewMode === 'prepaid' ? colors.piano.primary : colors.neutral.textSecondary}
+              />
+              <Text style={[
+                styles.viewModeText,
+                viewMode === 'prepaid' && styles.viewModeTextActive,
+              ]}>
+                Prepaid ({prepaidFamilies.length})
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Month Navigation */}
         <View style={styles.monthNav}>
           <Pressable style={styles.navButton} onPress={goToPreviousMonth}>
@@ -242,47 +513,118 @@ export default function PaymentsScreen() {
         }
       >
         {/* Monthly Lesson Summary (Hybrid Approach) - Tutor only */}
-        {isTutor && (
+        {isTutor && viewMode === 'invoice' && (
           <MonthlyPaymentSummary
             summary={monthlyLessonSummary}
             loading={lessonSummaryLoading}
             onGenerateInvoice={handleQuickInvoice}
+            onStatusClick={handleStatusClick}
+            onSwitchToPrepaid={(parentId) => {
+              const parentData = parents.find(p => p.id === parentId);
+              if (parentData) {
+                handleToggleBillingMode(parentData);
+              } else {
+                console.error('Parent not found:', parentId, 'Available parents:', parents.map(p => ({ id: p.id, name: p.name })));
+                if (Platform.OS === 'web') {
+                  window.alert('Parent not found. Please refresh the page and try again.');
+                } else {
+                  Alert.alert('Error', 'Parent not found. Please refresh and try again.');
+                }
+              }
+            }}
             compact={false}
           />
         )}
 
-        {/* Legacy Summary Cards - now as secondary info */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryCard}>
-            <Ionicons name="wallet-outline" size={24} color={colors.status.success} />
-            <Text style={styles.summaryAmount}>
-              ${summary.totalPaid.toFixed(2)}
-            </Text>
-            <Text style={styles.summaryLabel}>Invoiced Collected</Text>
+        {/* Parent Prepaid Status - Show if parent is on prepaid billing */}
+        {!isTutor && parent?.billing_mode === 'prepaid' && (
+          <View style={styles.parentPrepaidSection}>
+            {prepaidPayments.find(p => p.parent_id === parent?.id) ? (
+              (() => {
+                const prepaidPayment = prepaidPayments.find(p => p.parent_id === parent?.id)!;
+                return (
+                  <PrepaidStatusCard
+                    parentName={parent.name}
+                    studentNames={[]}
+                    month={selectedMonth.toISOString().split('T')[0]}
+                    monthDisplay={monthDisplay}
+                    sessionsTotal={prepaidPayment.sessions_prepaid || 0}
+                    sessionsUsed={prepaidPayment.sessions_used || 0}
+                    sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
+                    sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
+                    amountDue={prepaidPayment.amount_due}
+                    isPaid={prepaidPayment.status === 'paid'}
+                    paidAt={prepaidPayment.paid_at ? new Date(prepaidPayment.paid_at).toLocaleDateString() : undefined}
+                    notes={prepaidPayment.notes || undefined}
+                  />
+                );
+              })()
+            ) : (
+              <View style={styles.parentNoPrepaidCard}>
+                <Ionicons name="calendar-outline" size={32} color={colors.neutral.textMuted} />
+                <Text style={styles.parentNoPrepaidTitle}>No Prepaid Plan</Text>
+                <Text style={styles.parentNoPrepaidText}>
+                  Your tutor hasn't set up a prepaid plan for {monthDisplay} yet.
+                </Text>
+              </View>
+            )}
           </View>
-          <View style={styles.summaryCard}>
-            <Ionicons name="time-outline" size={24} color={colors.status.error} />
-            <Text style={[styles.summaryAmount, { color: colors.status.error }]}>
-              ${summary.totalOutstanding.toFixed(2)}
-            </Text>
-            <Text style={styles.summaryLabel}>Invoiced Outstanding</Text>
-          </View>
-        </View>
+        )}
 
-        {/* Status Breakdown */}
-        {isTutor && summary.totalFamilies > 0 && (
-          <View style={styles.statusBreakdown}>
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.status.success }]} />
-              <Text style={styles.statusText}>{summary.paidCount} Paid</Text>
+        {/* Prepaid Summary (when in prepaid mode) */}
+        {isTutor && viewMode === 'prepaid' && (
+          <View style={styles.prepaidSummaryContainer}>
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryCardHeader}>
+                <Ionicons name="wallet-outline" size={24} color={colors.status.success} />
+                <Pressable
+                  style={styles.infoButton}
+                  onPress={() => {
+                    const message = 'Total payments received from families who have paid for their prepaid session packages this month.';
+                    if (Platform.OS === 'web') {
+                      window.alert(`Prepaid Collected\n\n${message}`);
+                    } else {
+                      Alert.alert('Prepaid Collected', message);
+                    }
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color={colors.status.success} />
+                </Pressable>
+              </View>
+              <Text style={styles.summaryAmount}>
+                ${prepaidPayments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount_paid, 0).toFixed(2)}
+              </Text>
+              <Text style={styles.summaryLabel}>Prepaid Collected</Text>
+              <Text style={styles.summaryCount}>
+                {prepaidPayments.filter(p => p.status === 'paid').length} families
+              </Text>
             </View>
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.status.warning }]} />
-              <Text style={styles.statusText}>{summary.partialCount} Partial</Text>
-            </View>
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: colors.status.error }]} />
-              <Text style={styles.statusText}>{summary.unpaidCount} Unpaid</Text>
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryCardHeader}>
+                <Ionicons name="time-outline" size={24} color={colors.status.warning} />
+                <Pressable
+                  style={styles.infoButton}
+                  onPress={() => {
+                    const message = 'Prepaid session packages that have been created but payment hasn\'t been received yet. Follow up with these families to collect payment.';
+                    if (Platform.OS === 'web') {
+                      window.alert(`Prepaid Pending\n\n${message}`);
+                    } else {
+                      Alert.alert('Prepaid Pending', message);
+                    }
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="information-circle-outline" size={16} color={colors.status.warning} />
+                </Pressable>
+              </View>
+              <Text style={[styles.summaryAmount, { color: colors.status.warning }]}>
+                ${prepaidPayments.filter(p => p.status === 'unpaid').reduce((sum, p) => sum + p.amount_due, 0).toFixed(2)}
+              </Text>
+              <Text style={styles.summaryLabel}>Prepaid Pending</Text>
+              <Text style={styles.summaryCount}>
+                {prepaidPayments.filter(p => p.status === 'unpaid').length} families
+              </Text>
             </View>
           </View>
         )}
@@ -298,10 +640,99 @@ export default function PaymentsScreen() {
           </Pressable>
         )}
 
-        {/* Payment List */}
+        {/* Prepaid Families Section (when in prepaid mode) */}
+        {isTutor && viewMode === 'prepaid' && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Prepaid Families</Text>
+              <Pressable
+                style={styles.addPrepaidButton}
+                onPress={() => {
+                  // Show picker to select a family to add prepaid
+                  if (parents.length > 0) {
+                    // For now, show alert with instruction
+                    Alert.alert(
+                      'Add Prepaid Plan',
+                      'Tap on a family below and select "Create Prepaid Plan" to set up prepaid billing.',
+                    );
+                  }
+                }}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={colors.piano.primary} />
+              </Pressable>
+            </View>
+
+            {prepaidLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.piano.primary} />
+              </View>
+            ) : prepaidFamilies.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="calendar-outline" size={48} color={colors.neutral.textMuted} />
+                <Text style={styles.emptyTitle}>No prepaid families</Text>
+                <Text style={styles.emptySubtitle}>
+                  Switch a family to prepaid mode from Invoice view to get started
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.prepaidList}>
+                {prepaidFamilies.map((parentData) => {
+                  const prepaidPayment = prepaidPayments.find(p => p.parent_id === parentData.id);
+
+                  if (prepaidPayment) {
+                    return (
+                      <PrepaidStatusCard
+                        key={parentData.id}
+                        parentName={parentData.name}
+                        studentNames={parentData.students?.map(s => s.name) || []}
+                        month={selectedMonth.toISOString().split('T')[0]}
+                        monthDisplay={monthDisplay}
+                        sessionsTotal={prepaidPayment.sessions_prepaid || 0}
+                        sessionsUsed={prepaidPayment.sessions_used || 0}
+                        sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
+                        sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
+                        amountDue={prepaidPayment.amount_due}
+                        isPaid={prepaidPayment.status === 'paid'}
+                        paidAt={prepaidPayment.paid_at ? new Date(prepaidPayment.paid_at).toLocaleDateString() : undefined}
+                        notes={prepaidPayment.notes || undefined}
+                        onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
+                        onPress={() => handleToggleBillingMode(parentData)}
+                        onUpdateSessionsUsed={(newCount) => handleUpdateSessionsUsed(prepaidPayment.id, newCount)}
+                        onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
+                      />
+                    );
+                  }
+
+                  // No prepaid payment for this month yet
+                  return (
+                    <View key={parentData.id} style={styles.noPrepaidCard}>
+                      <View style={styles.noPrepaidHeader}>
+                        <Text style={styles.noPrepaidName}>{parentData.name}</Text>
+                        <Text style={styles.noPrepaidStudents}>
+                          {parentData.students?.map(s => s.name).join(', ')}
+                        </Text>
+                      </View>
+                      <Text style={styles.noPrepaidText}>No prepaid plan for {monthDisplay}</Text>
+                      <Pressable
+                        style={styles.createPrepaidButton}
+                        onPress={() => handleOpenPrepaidModal(parentData)}
+                      >
+                        <Ionicons name="add" size={18} color={colors.neutral.white} />
+                        <Text style={styles.createPrepaidText}>Create Plan</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Payment List (Invoice mode or parent view) */}
+        {(!isTutor || viewMode === 'invoice') && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            {isTutor ? 'All Families' : 'Payment History'}
+            {isTutor ? 'Invoice Families' : 'Payment History'}
           </Text>
 
           {loading ? (
@@ -371,6 +802,19 @@ export default function PaymentsScreen() {
                       )}
                       {isTutor && (
                         <Pressable
+                          style={styles.switchModeButton}
+                          onPress={() => {
+                            const parentData = parents.find(p => p.id === payment.parent_id);
+                            if (parentData) {
+                              handleToggleBillingMode(parentData);
+                            }
+                          }}
+                        >
+                          <Ionicons name="swap-horizontal" size={16} color={colors.piano.primary} />
+                        </Pressable>
+                      )}
+                      {isTutor && (
+                        <Pressable
                           style={styles.deleteButton}
                           onPress={() => handleDeletePayment(payment)}
                         >
@@ -390,6 +834,7 @@ export default function PaymentsScreen() {
             </View>
           )}
         </View>
+        )}
       </ScrollView>
 
       {/* Create Modal */}
@@ -431,6 +876,59 @@ export default function PaymentsScreen() {
         visible={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
       />
+
+      {/* Create Prepaid Modal */}
+      <CreatePrepaidModal
+        visible={showPrepaidModal}
+        onClose={() => {
+          setShowPrepaidModal(false);
+          setSelectedPrepaidParent(null);
+        }}
+        onSubmit={handleCreatePrepaid}
+        parent={selectedPrepaidParent}
+        month={selectedMonth}
+        loading={createPrepaid.loading}
+      />
+
+      {/* Parent View Preview Modal */}
+      {previewData && (
+        <ParentViewPreviewModal
+          visible={showPreviewModal}
+          onClose={() => {
+            setShowPreviewModal(false);
+            setPreviewData(null);
+          }}
+          parentName={previewData.parentName}
+          studentNames={previewData.studentNames}
+          monthDisplay={previewData.monthDisplay}
+          sessionsTotal={previewData.sessionsTotal}
+          sessionsUsed={previewData.sessionsUsed}
+          sessionsRemaining={previewData.sessionsRemaining}
+          sessionsRolledOver={previewData.sessionsRolledOver}
+          amountDue={previewData.amountDue}
+          isPaid={previewData.isPaid}
+          paidAt={previewData.paidAt}
+          notes={previewData.notes}
+        />
+      )}
+
+      {/* Lesson Details Modal */}
+      {monthlyLessonSummary && (
+        <LessonDetailsModal
+          visible={showLessonDetailsModal}
+          onClose={() => setShowLessonDetailsModal(false)}
+          filterType={lessonFilterType}
+          families={monthlyLessonSummary.families}
+          monthDisplay={monthDisplay}
+          prepaidPayments={paidPrepaidForDisplay}
+          onGenerateInvoice={(parentId, lessonIds) => {
+            // For now, just call the quick invoice for the family
+            // In a future enhancement, this could filter to specific lessons
+            handleQuickInvoice(parentId);
+            setShowLessonDetailsModal(false);
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -527,6 +1025,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...shadows.sm,
   },
+  summaryCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  infoButton: {
+    padding: 2,
+    borderRadius: borderRadius.full,
+  },
   summaryAmount: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
@@ -538,25 +1046,15 @@ const styles = StyleSheet.create({
     color: colors.neutral.textSecondary,
     marginTop: spacing.xs,
   },
-  statusBreakdown: {
+  summaryCount: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginTop: 2,
+  },
+  prepaidSummaryContainer: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.lg,
+    gap: spacing.md,
     marginBottom: spacing.lg,
-  },
-  statusItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  statusText: {
-    fontSize: typography.sizes.sm,
-    color: colors.neutral.textSecondary,
   },
   overdueAlert: {
     flexDirection: 'row',
@@ -692,10 +1190,124 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.status.error,
   },
+  switchModeButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
   paymentNotes: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.textMuted,
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+
+  // View mode toggle styles
+  viewModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  viewModeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  viewModeButtonActive: {
+    backgroundColor: colors.neutral.white,
+    ...shadows.sm,
+  },
+  viewModeText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  viewModeTextActive: {
+    color: colors.piano.primary,
+  },
+
+  // Section header with action
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  addPrepaidButton: {
+    padding: spacing.xs,
+  },
+
+  // Prepaid list styles
+  prepaidList: {
+    gap: spacing.md,
+  },
+  noPrepaidCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  noPrepaidHeader: {
+    marginBottom: spacing.sm,
+  },
+  noPrepaidName: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  noPrepaidStudents: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    marginTop: 2,
+  },
+  noPrepaidText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    marginBottom: spacing.md,
+  },
+  createPrepaidButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.piano.primary,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+  },
+  createPrepaidText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.white,
+  },
+
+  // Parent prepaid section styles
+  parentPrepaidSection: {
+    marginBottom: spacing.lg,
+  },
+  parentNoPrepaidCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  parentNoPrepaidTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  parentNoPrepaidText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
   },
 });

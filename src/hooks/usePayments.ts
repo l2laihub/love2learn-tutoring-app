@@ -17,6 +17,9 @@ import {
   TutoringSubject,
   SubjectRates,
   TutorSettings,
+  CreatePrepaidPaymentInput,
+  PaymentType,
+  PrepaidStatus,
 } from '../types/database';
 
 /**
@@ -1199,10 +1202,11 @@ export function useMonthlyLessonSummary(month?: Date) {
         .limit(1)
         .maybeSingle();
 
-      // 2. Fetch all parents with students
+      // 2. Fetch all parents with students (only invoice billing mode, not prepaid)
       const { data: parents, error: parentsError } = await supabase
         .from('parents')
-        .select('id, name, students(id, name)');
+        .select('id, name, billing_mode, students(id, name)')
+        .or('billing_mode.is.null,billing_mode.eq.invoice');
 
       if (parentsError) throw new Error(parentsError.message);
       if (!parents || parents.length === 0) {
@@ -1230,7 +1234,7 @@ export function useMonthlyLessonSummary(month?: Date) {
       const parentMap = new Map<string, { name: string; studentIds: string[] }>();
       const studentToParentMap = new Map<string, string>();
 
-      parents.forEach((parent: { id: string; name: string; students: { id: string; name: string }[] }) => {
+      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; students: { id: string; name: string }[] }) => {
         const studentIds = parent.students?.map((s: { id: string }) => s.id) || [];
         parentMap.set(parent.id, { name: parent.name, studentIds });
         studentIds.forEach((sid: string) => studentToParentMap.set(sid, parent.id));
@@ -1306,7 +1310,7 @@ export function useMonthlyLessonSummary(month?: Date) {
 
       // Create student id to name mapping
       const studentIdToName = new Map<string, string>();
-      parents.forEach((parent: { id: string; name: string; students: { id: string; name: string }[] }) => {
+      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; students: { id: string; name: string }[] }) => {
         (parent.students || []).forEach((s: { id: string; name: string }) => {
           studentIdToName.set(s.id, s.name);
         });
@@ -1816,4 +1820,668 @@ export function useParentPaymentSummary(parentId: string | null) {
   }, [fetchSummary]);
 
   return { data, loading, error, refetch: fetchSummary };
+}
+
+// ============================================================================
+// PREPAID PAYMENT HOOKS
+// ============================================================================
+
+/**
+ * Get rollover sessions from previous month for a parent
+ * @param parentId - Parent UUID
+ * @param currentMonth - Current month Date object
+ * @returns Number of sessions to roll over
+ */
+async function getRolloverSessions(parentId: string, currentMonth: Date): Promise<number> {
+  const previousMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+  const previousMonthStart = getMonthStart(previousMonth);
+
+  const { data: prevPayment } = await supabase
+    .from('payments')
+    .select('sessions_prepaid, sessions_used')
+    .eq('parent_id', parentId)
+    .eq('month', previousMonthStart)
+    .eq('payment_type', 'prepaid')
+    .maybeSingle();
+
+  if (!prevPayment) return 0;
+
+  return Math.max(0, (prevPayment.sessions_prepaid || 0) - (prevPayment.sessions_used || 0));
+}
+
+/**
+ * Hook for creating a prepaid payment record
+ * @returns Mutation state with create function
+ */
+export function useCreatePrepaidPayment() {
+  const [data, setData] = useState<Payment | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (input: CreatePrepaidPaymentInput): Promise<Payment | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const monthStart = getMonthStart(new Date(input.month));
+
+      // Check if a prepaid payment already exists for this month
+      const { data: existingPayment } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('parent_id', input.parent_id)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .maybeSingle();
+
+      if (existingPayment) {
+        throw new Error('A prepaid payment already exists for this family and month');
+      }
+
+      // Get rollover sessions from previous month if not provided
+      const rolloverSessions = input.sessions_rolled_over ??
+        await getRolloverSessions(input.parent_id, new Date(input.month));
+
+      // Total sessions = new sessions + rollover
+      const totalSessions = input.sessions_count + rolloverSessions;
+
+      const { data: payment, error: createError } = await supabase
+        .from('payments')
+        .insert({
+          parent_id: input.parent_id,
+          month: monthStart,
+          amount_due: input.amount,
+          amount_paid: 0,
+          status: 'unpaid' as PaymentStatus,
+          payment_type: 'prepaid' as PaymentType,
+          sessions_prepaid: totalSessions,
+          sessions_used: 0,
+          sessions_rolled_over: rolloverSessions,
+          notes: input.notes || `Prepaid for ${input.sessions_count} sessions (${rolloverSessions} rolled over)`,
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(createError.message);
+      }
+
+      setData(payment);
+      return payment;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to create prepaid payment');
+      setError(errorMessage);
+      console.error('useCreatePrepaidPayment error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Hook for getting prepaid status for a parent in a specific month
+ * @param parentId - Parent UUID
+ * @param month - Month Date object (optional, defaults to current month)
+ * @returns Prepaid status summary
+ */
+export function usePrepaidStatus(parentId: string | null, month?: Date) {
+  const [data, setData] = useState<PrepaidStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const targetMonth = month || new Date();
+  const monthStart = getMonthStart(targetMonth);
+
+  const fetchStatus = useCallback(async () => {
+    if (!parentId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: payment, error: fetchError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      if (!payment) {
+        setData(null);
+        return;
+      }
+
+      const sessionsTotal = payment.sessions_prepaid || 0;
+      const sessionsUsed = payment.sessions_used || 0;
+      const sessionsRemaining = Math.max(0, sessionsTotal - sessionsUsed);
+      const usagePercentage = sessionsTotal > 0
+        ? Math.round((sessionsUsed / sessionsTotal) * 100)
+        : 0;
+
+      setData({
+        sessionsTotal,
+        sessionsUsed,
+        sessionsRemaining,
+        sessionsRolledOver: payment.sessions_rolled_over || 0,
+        usagePercentage,
+        isPaid: payment.status === 'paid',
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch prepaid status');
+      setError(errorMessage);
+      console.error('usePrepaidStatus error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [parentId, monthStart]);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  return { data, loading, error, refetch: fetchStatus };
+}
+
+/**
+ * Hook for incrementing session usage when a lesson is completed
+ * @returns Mutation function
+ */
+export function useIncrementSessionUsage() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (parentId: string, lessonDate: Date): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const monthStart = getMonthStart(lessonDate);
+
+      // Find the prepaid payment for this month
+      const { data: payment, error: fetchError } = await supabase
+        .from('payments')
+        .select('id, sessions_prepaid, sessions_used')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      // If no prepaid payment exists, this family uses invoice mode
+      if (!payment) {
+        return false;
+      }
+
+      // Increment sessions_used
+      const { error: updateError } = await supabase
+        .from('payments')
+        .update({
+          sessions_used: (payment.sessions_used || 0) + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payment.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to increment session usage');
+      setError(errorMessage);
+      console.error('useIncrementSessionUsage error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
+}
+
+/**
+ * Hook for decrementing session usage (e.g., when uncompleting a lesson)
+ * @returns Mutation function
+ */
+export function useDecrementSessionUsage() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (parentId: string, lessonDate: Date): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const monthStart = getMonthStart(lessonDate);
+
+      // Find the prepaid payment for this month
+      const { data: payment, error: fetchError } = await supabase
+        .from('payments')
+        .select('id, sessions_used')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      // If no prepaid payment exists, nothing to decrement
+      if (!payment) {
+        return false;
+      }
+
+      // Only decrement if sessions_used > 0
+      if ((payment.sessions_used || 0) > 0) {
+        const { error: updateError } = await supabase
+          .from('payments')
+          .update({
+            sessions_used: payment.sessions_used - 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', payment.id);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to decrement session usage');
+      setError(errorMessage);
+      console.error('useDecrementSessionUsage error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
+}
+
+/**
+ * Hook for fetching prepaid payments for a specific month
+ * @param month - Date object for the month
+ * @returns List of prepaid payments for the month
+ */
+export function usePrepaidPayments(month?: Date): ListQueryState<PaymentWithParent> {
+  const [data, setData] = useState<PaymentWithParent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const targetMonth = month || new Date();
+  const monthStart = getMonthStart(targetMonth);
+
+  const fetchPayments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: payments, error: fetchError } = await supabase
+        .from('payments')
+        .select(`
+          *,
+          parent:parents(
+            *,
+            students(*)
+          )
+        `)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      setData((payments as PaymentWithParent[]) || []);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch prepaid payments');
+      setError(errorMessage);
+      console.error('usePrepaidPayments error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [monthStart]);
+
+  useEffect(() => {
+    fetchPayments();
+  }, [fetchPayments]);
+
+  return { data, loading, error, refetch: fetchPayments };
+}
+
+/**
+ * Extended parent payment summary that includes prepaid status
+ */
+export interface ParentPaymentSummaryWithPrepaid extends ParentPaymentSummary {
+  // Prepaid-specific fields
+  isPrepaidFamily: boolean;
+  prepaidStatus: PrepaidStatus | null;
+  // Extra sessions beyond prepaid count
+  extraSessionsCount: number;
+  extraSessionsAmount: number;
+}
+
+/**
+ * Hook for fetching extended payment summary for a parent (includes prepaid info)
+ * @param parentId - Parent UUID
+ * @returns Extended payment summary with prepaid status
+ */
+export function useParentPaymentSummaryWithPrepaid(parentId: string | null) {
+  const [data, setData] = useState<ParentPaymentSummaryWithPrepaid | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const currentDate = new Date();
+  const monthStart = getMonthStart(currentDate);
+  const monthEnd = getMonthEnd(currentDate);
+
+  const fetchSummary = useCallback(async () => {
+    if (!parentId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get parent's billing mode
+      const { data: parent, error: parentError } = await supabase
+        .from('parents')
+        .select('billing_mode')
+        .eq('id', parentId)
+        .single();
+
+      if (parentError) {
+        throw new Error(parentError.message);
+      }
+
+      const isPrepaidFamily = parent?.billing_mode === 'prepaid';
+
+      // Get current month's payment record
+      const { data: currentPayment, error: paymentError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .maybeSingle();
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
+
+      // Get overdue payments
+      const { data: overduePayments, error: overdueError } = await supabase
+        .from('payments')
+        .select('amount_due, amount_paid')
+        .eq('parent_id', parentId)
+        .lt('month', monthStart)
+        .in('status', ['unpaid', 'partial']);
+
+      if (overdueError) {
+        throw new Error(overdueError.message);
+      }
+
+      // Get students for session counts
+      const { data: students, error: studentsError } = await supabase
+        .from('students')
+        .select('id')
+        .eq('parent_id', parentId);
+
+      if (studentsError) {
+        throw new Error(studentsError.message);
+      }
+
+      let completedSessions = 0;
+      let scheduledSessions = 0;
+
+      if (students && students.length > 0) {
+        const studentIds = students.map(s => s.id);
+
+        const { data: lessons } = await supabase
+          .from('scheduled_lessons')
+          .select('status')
+          .in('student_id', studentIds)
+          .gte('scheduled_at', monthStart)
+          .lte('scheduled_at', monthEnd + 'T23:59:59.999Z')
+          .neq('status', 'cancelled');
+
+        if (lessons) {
+          completedSessions = lessons.filter(l => l.status === 'completed').length;
+          scheduledSessions = lessons.filter(l => l.status === 'scheduled').length;
+        }
+      }
+
+      // Calculate overdue totals
+      const overdueAmount = (overduePayments || []).reduce(
+        (sum, p) => sum + (p.amount_due - p.amount_paid),
+        0
+      );
+      const overdueMonths = (overduePayments || []).length;
+
+      // Format month for display
+      const monthDisplay = currentDate.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric',
+      });
+
+      // Build prepaid status if applicable
+      let prepaidStatus: PrepaidStatus | null = null;
+      let extraSessionsCount = 0;
+      let extraSessionsAmount = 0;
+
+      if (isPrepaidFamily && currentPayment?.payment_type === 'prepaid') {
+        const sessionsTotal = currentPayment.sessions_prepaid || 0;
+        const sessionsUsed = currentPayment.sessions_used || 0;
+        const sessionsRemaining = Math.max(0, sessionsTotal - sessionsUsed);
+
+        prepaidStatus = {
+          sessionsTotal,
+          sessionsUsed,
+          sessionsRemaining,
+          sessionsRolledOver: currentPayment.sessions_rolled_over || 0,
+          usagePercentage: sessionsTotal > 0
+            ? Math.round((sessionsUsed / sessionsTotal) * 100)
+            : 0,
+          isPaid: currentPayment.status === 'paid',
+        };
+
+        // Calculate extra sessions (completed beyond prepaid count)
+        if (completedSessions > sessionsTotal) {
+          extraSessionsCount = completedSessions - sessionsTotal;
+          // TODO: Calculate extra sessions amount based on tutor settings
+        }
+      }
+
+      const summary: ParentPaymentSummaryWithPrepaid = {
+        currentMonth: monthStart,
+        currentMonthDisplay: monthDisplay,
+        hasPaymentRecord: currentPayment !== null,
+        status: currentPayment?.status || null,
+        amountDue: currentPayment?.amount_due || 0,
+        amountPaid: currentPayment?.amount_paid || 0,
+        balance: currentPayment ? currentPayment.amount_due - currentPayment.amount_paid : 0,
+        completedSessions,
+        scheduledSessions,
+        hasOverdueBalance: overdueAmount > 0,
+        overdueAmount: Math.round(overdueAmount * 100) / 100,
+        overdueMonths,
+        // Prepaid-specific fields
+        isPrepaidFamily,
+        prepaidStatus,
+        extraSessionsCount,
+        extraSessionsAmount,
+      };
+
+      setData(summary);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch extended payment summary');
+      setError(errorMessage);
+      console.error('useParentPaymentSummaryWithPrepaid error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [parentId, monthStart, monthEnd]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  return { data, loading, error, refetch: fetchSummary };
+}
+
+/**
+ * Hook for marking a prepaid payment as paid
+ * @returns Mutation function
+ */
+export function useMarkPrepaidPaymentPaid() {
+  const [data, setData] = useState<Payment | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (paymentId: string, notes?: string): Promise<Payment | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current payment
+      const { data: currentPayment, error: fetchError } = await supabase
+        .from('payments')
+        .select('amount_due')
+        .eq('id', paymentId)
+        .single();
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      const updateData: Partial<Payment> = {
+        amount_paid: currentPayment.amount_due,
+        status: 'paid' as PaymentStatus,
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (notes) {
+        updateData.notes = notes;
+      }
+
+      const { data: payment, error: updateError } = await supabase
+        .from('payments')
+        .update(updateData)
+        .eq('id', paymentId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setData(payment);
+      return payment;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to mark prepaid payment as paid');
+      setError(errorMessage);
+      console.error('useMarkPrepaidPaymentPaid error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Hook for updating sessions used count on a prepaid payment
+ * @returns Mutation function
+ */
+export function useUpdatePrepaidSessionsUsed() {
+  const [data, setData] = useState<Payment | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (paymentId: string, sessionsUsed: number): Promise<Payment | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Ensure sessions_used is not negative
+      const safeSessionsUsed = Math.max(0, sessionsUsed);
+
+      const { data: payment, error: updateError } = await supabase
+        .from('payments')
+        .update({
+          sessions_used: safeSessionsUsed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setData(payment);
+      return payment;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to update sessions used');
+      setError(errorMessage);
+      console.error('useUpdatePrepaidSessionsUsed error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
 }

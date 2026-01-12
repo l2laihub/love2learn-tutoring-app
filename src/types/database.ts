@@ -49,6 +49,7 @@ export type Database = {
           invitation_accepted_at: string | null;
           requires_agreement: boolean | null;
           agreement_signed_at: string | null;
+          billing_mode: 'invoice' | 'prepaid';
           created_at: string;
           updated_at: string;
         };
@@ -68,6 +69,7 @@ export type Database = {
           invitation_accepted_at?: string | null;
           requires_agreement?: boolean | null;
           agreement_signed_at?: string | null;
+          billing_mode?: 'invoice' | 'prepaid';
           created_at?: string;
           updated_at?: string;
         };
@@ -87,6 +89,7 @@ export type Database = {
           invitation_accepted_at?: string | null;
           requires_agreement?: boolean | null;
           agreement_signed_at?: string | null;
+          billing_mode?: 'invoice' | 'prepaid';
           created_at?: string;
           updated_at?: string;
         };
@@ -593,6 +596,10 @@ export type Database = {
           status: 'unpaid' | 'partial' | 'paid';
           paid_at: string | null;
           notes: string | null;
+          payment_type: 'invoice' | 'prepaid';
+          sessions_prepaid: number;
+          sessions_used: number;
+          sessions_rolled_over: number;
           created_at: string;
           updated_at: string;
         };
@@ -605,6 +612,10 @@ export type Database = {
           status?: 'unpaid' | 'partial' | 'paid';
           paid_at?: string | null;
           notes?: string | null;
+          payment_type?: 'invoice' | 'prepaid';
+          sessions_prepaid?: number;
+          sessions_used?: number;
+          sessions_rolled_over?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -617,6 +628,10 @@ export type Database = {
           status?: 'unpaid' | 'partial' | 'paid';
           paid_at?: string | null;
           notes?: string | null;
+          payment_type?: 'invoice' | 'prepaid';
+          sessions_prepaid?: number;
+          sessions_used?: number;
+          sessions_rolled_over?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -873,6 +888,12 @@ export type TutoringLessonStatus = 'scheduled' | 'completed' | 'cancelled';
 // Payment status
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid';
 
+// Payment type (invoice vs prepaid)
+export type PaymentType = 'invoice' | 'prepaid';
+
+// Billing mode for parents
+export type BillingMode = 'invoice' | 'prepaid';
+
 // Assignment status
 export type AssignmentStatus = 'assigned' | 'completed';
 
@@ -1062,8 +1083,23 @@ export interface Payment {
   status: PaymentStatus;
   paid_at: string | null;
   notes: string | null;
+  // Prepaid fields
+  payment_type: PaymentType;
+  sessions_prepaid: number; // Total sessions covered (includes rollover)
+  sessions_used: number; // Sessions consumed from prepayment
+  sessions_rolled_over: number; // Sessions rolled over from previous month
   created_at: string;
   updated_at: string;
+}
+
+// Prepaid status summary for display
+export interface PrepaidStatus {
+  sessionsTotal: number; // sessions_prepaid
+  sessionsUsed: number; // sessions_used
+  sessionsRemaining: number; // sessions_prepaid - sessions_used
+  sessionsRolledOver: number; // sessions_rolled_over
+  usagePercentage: number; // (sessions_used / sessions_prepaid) * 100
+  isPaid: boolean; // status === 'paid'
 }
 
 // Tutor settings for rate configuration
@@ -1280,6 +1316,11 @@ export interface CreatePaymentInput {
   amount_paid?: number;
   status?: PaymentStatus;
   notes?: string | null;
+  // Prepaid fields
+  payment_type?: PaymentType;
+  sessions_prepaid?: number;
+  sessions_used?: number;
+  sessions_rolled_over?: number;
 }
 
 export interface UpdatePaymentInput {
@@ -1288,6 +1329,26 @@ export interface UpdatePaymentInput {
   status?: PaymentStatus;
   paid_at?: string | null;
   notes?: string | null;
+  // Prepaid fields
+  payment_type?: PaymentType;
+  sessions_prepaid?: number;
+  sessions_used?: number;
+  sessions_rolled_over?: number;
+}
+
+// Input for creating a prepaid payment
+export interface CreatePrepaidPaymentInput {
+  parent_id: string;
+  month: string;
+  sessions_count: number; // Number of sessions for this month
+  amount: number; // Amount charged for the prepaid sessions
+  sessions_rolled_over?: number; // Sessions rolled over from previous month
+  notes?: string | null;
+}
+
+// Input for updating parent billing mode
+export interface UpdateParentBillingModeInput {
+  billing_mode: BillingMode;
 }
 
 export interface CreateAssignmentInput {

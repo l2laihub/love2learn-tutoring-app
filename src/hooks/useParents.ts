@@ -12,6 +12,7 @@ import {
   UpdateParentInput,
   ListQueryState,
   QueryState,
+  BillingMode,
 } from '../types/database';
 
 /**
@@ -411,4 +412,98 @@ export function useTutor(): QueryState<Parent> & { refetch: () => Promise<void> 
   }, [fetchTutor]);
 
   return { data, loading, error, refetch: fetchTutor };
+}
+
+/**
+ * Hook for updating a parent's billing mode
+ * @returns Mutation state with update function
+ */
+export function useUpdateBillingMode() {
+  const [data, setData] = useState<Parent | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (parentId: string, billingMode: BillingMode): Promise<Parent | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: parent, error: updateError } = await supabase
+        .from('parents')
+        .update({
+          billing_mode: billingMode,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', parentId)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setData(parent);
+      return parent;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to update billing mode');
+      setError(errorMessage);
+      console.error('useUpdateBillingMode error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Fetch parents filtered by billing mode
+ * @param billingMode - Filter by invoice or prepaid
+ * @returns List of parents with the specified billing mode
+ */
+export function useParentsByBillingMode(billingMode: BillingMode): ListQueryState<ParentWithStudents> {
+  const [data, setData] = useState<ParentWithStudents[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchParents = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data: parents, error: fetchError } = await supabase
+        .from('parents')
+        .select(`
+          *,
+          students(*)
+        `)
+        .eq('billing_mode', billingMode)
+        .order('name', { ascending: true });
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      setData((parents as ParentWithStudents[]) || []);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to fetch parents by billing mode');
+      setError(errorMessage);
+      console.error('useParentsByBillingMode error:', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [billingMode]);
+
+  useEffect(() => {
+    fetchParents();
+  }, [fetchParents]);
+
+  return { data, loading, error, refetch: fetchParents };
 }

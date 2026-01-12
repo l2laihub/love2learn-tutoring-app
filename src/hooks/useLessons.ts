@@ -595,6 +595,41 @@ export function useCompleteLesson() {
         throw new Error(updateError.message);
       }
 
+      // Update prepaid session usage if applicable
+      // First get the lesson details to find the parent
+      const { data: lessonDetails } = await supabase
+        .from('scheduled_lessons')
+        .select('scheduled_at, student:students(parent_id)')
+        .eq('id', id)
+        .single();
+
+      if (lessonDetails?.student?.parent_id) {
+        const parentId = lessonDetails.student.parent_id;
+        const lessonDate = new Date(lessonDetails.scheduled_at);
+        const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
+          .toISOString().split('T')[0];
+
+        // Check if parent has a prepaid payment for this month
+        const { data: prepaidPayment } = await supabase
+          .from('payments')
+          .select('id, sessions_used')
+          .eq('parent_id', parentId)
+          .eq('month', monthStart)
+          .eq('payment_type', 'prepaid')
+          .maybeSingle();
+
+        if (prepaidPayment) {
+          // Increment sessions_used
+          await supabase
+            .from('payments')
+            .update({
+              sessions_used: (prepaidPayment.sessions_used || 0) + 1,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', prepaidPayment.id);
+        }
+      }
+
       setData(lesson);
       return lesson;
     } catch (err) {
@@ -618,6 +653,7 @@ export function useCompleteLesson() {
 
 /**
  * Hook for reverting a completed lesson back to scheduled status
+ * Also decrements prepaid session usage if applicable
  * Admin/tutor only - allows undoing accidental completion
  * @returns Mutation state with uncomplete function
  */
@@ -643,6 +679,41 @@ export function useUncompleteLesson() {
 
       if (updateError) {
         throw new Error(updateError.message);
+      }
+
+      // Decrement prepaid session usage if applicable
+      // First get the lesson details to find the parent
+      const { data: lessonDetails } = await supabase
+        .from('scheduled_lessons')
+        .select('scheduled_at, student:students(parent_id)')
+        .eq('id', id)
+        .single();
+
+      if (lessonDetails?.student?.parent_id) {
+        const parentId = lessonDetails.student.parent_id;
+        const lessonDate = new Date(lessonDetails.scheduled_at);
+        const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
+          .toISOString().split('T')[0];
+
+        // Check if parent has a prepaid payment for this month
+        const { data: prepaidPayment } = await supabase
+          .from('payments')
+          .select('id, sessions_used')
+          .eq('parent_id', parentId)
+          .eq('month', monthStart)
+          .eq('payment_type', 'prepaid')
+          .maybeSingle();
+
+        if (prepaidPayment && (prepaidPayment.sessions_used || 0) > 0) {
+          // Decrement sessions_used (but not below 0)
+          await supabase
+            .from('payments')
+            .update({
+              sessions_used: Math.max(0, (prepaidPayment.sessions_used || 0) - 1),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', prepaidPayment.id);
+        }
       }
 
       setData(lesson);
