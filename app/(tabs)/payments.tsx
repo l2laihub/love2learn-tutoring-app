@@ -87,7 +87,7 @@ export default function PaymentsScreen() {
   const { data: payments, loading, error, refetch } = usePayments(selectedMonth);
   const { summary, refetch: refetchSummary } = usePaymentSummary(selectedMonth);
   const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
-  const { data: parents, loading: parentsLoading } = useParents();
+  const { data: parents, loading: parentsLoading, refetch: refetchParents } = useParents();
   const {
     data: monthlyLessonSummary,
     loading: lessonSummaryLoading,
@@ -177,6 +177,7 @@ export default function PaymentsScreen() {
       refetchOverdue(),
       refetchLessonSummary(),
       refetchPrepaid(),
+      refetchParents(), // Refetch parents to update billing mode and tab counts
     ]);
     setRefreshing(false);
   };

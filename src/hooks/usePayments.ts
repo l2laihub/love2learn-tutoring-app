@@ -1865,17 +1865,29 @@ export function useCreatePrepaidPayment() {
 
       const monthStart = getMonthStart(new Date(input.month));
 
-      // Check if a prepaid payment already exists for this month
+      // Check if ANY payment already exists for this month (constraint is on parent_id + month)
       const { data: existingPayment } = await supabase
         .from('payments')
-        .select('id')
+        .select('id, payment_type')
         .eq('parent_id', input.parent_id)
         .eq('month', monthStart)
-        .eq('payment_type', 'prepaid')
         .maybeSingle();
 
       if (existingPayment) {
-        throw new Error('A prepaid payment already exists for this family and month');
+        if (existingPayment.payment_type === 'prepaid') {
+          throw new Error('A prepaid payment already exists for this family and month');
+        } else {
+          // Delete existing invoice payment to allow prepaid plan creation
+          // This is safe because the family has been switched to prepaid billing mode
+          const { error: deleteError } = await supabase
+            .from('payments')
+            .delete()
+            .eq('id', existingPayment.id);
+
+          if (deleteError) {
+            throw new Error('Failed to remove existing invoice payment. Please try again.');
+          }
+        }
       }
 
       // Get rollover sessions from previous month if not provided

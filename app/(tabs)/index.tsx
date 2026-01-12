@@ -11,7 +11,7 @@ import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
 import { usePendingAssignments } from '../../src/hooks/useAssignments';
-import { usePaymentSummary, useOverduePayments, useParentPaymentSummary, ParentPaymentSummary } from '../../src/hooks/usePayments';
+import { usePaymentSummary, useOverduePayments, useParentPaymentSummary, usePrepaidPayments, ParentPaymentSummary } from '../../src/hooks/usePayments';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
@@ -50,6 +50,9 @@ export default function HomeScreen() {
   const { summary: paymentSummary, refetch: refetchPayments } = usePaymentSummary();
   const { data: overduePayments, refetch: refetchOverdue } = useOverduePayments();
   const { data: parentPaymentSummary, refetch: refetchParentPayment } = useParentPaymentSummary(parent?.id || null);
+  // Prepaid data for parents on prepaid billing
+  const currentMonth = useMemo(() => new Date(), []);
+  const { data: prepaidPayments, refetch: refetchPrepaidPayments } = usePrepaidPayments(currentMonth);
   const [refreshing, setRefreshing] = useState(false);
   const responsive = useResponsive();
 
@@ -91,6 +94,20 @@ export default function HomeScreen() {
     return { scheduled, completed, totalMinutes, total: todaysLessons.length };
   }, [todaysLessons]);
 
+  // Get parent's prepaid payment for current month (if exists)
+  const parentPrepaidPayment = useMemo(() => {
+    if (!parent) return null;
+    return prepaidPayments.find(p => p.parent_id === parent.id) || null;
+  }, [parent, prepaidPayments]);
+
+  // Current month display for prepaid section
+  const monthDisplay = useMemo(() => {
+    return currentMonth.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [currentMonth]);
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([
@@ -101,9 +118,10 @@ export default function HomeScreen() {
       refetchPayments(),
       refetchOverdue(),
       refetchParentPayment(),
+      refetchPrepaidPayments(),
     ]);
     setRefreshing(false);
-  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments, refetchPayments, refetchOverdue, refetchParentPayment]);
+  }, [refetchStudents, refetchLessons, refetchUpcoming, refetchAssignments, refetchPayments, refetchOverdue, refetchParentPayment, refetchPrepaidPayments]);
 
   const handleSignOut = async () => {
     console.log('Sign out button pressed');
@@ -342,10 +360,31 @@ export default function HomeScreen() {
         )}
 
         {/* Parent: Payment Summary Card */}
-        {!isTutor && parentPaymentSummary && (
+        {!isTutor && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Status</Text>
-            <ParentPaymentCard summary={parentPaymentSummary} />
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Payment Status</Text>
+              <Pressable onPress={() => router.push('/(tabs)/payments')}>
+                <Text style={styles.seeAllText}>View all</Text>
+              </Pressable>
+            </View>
+            {parentPrepaidPayment ? (
+              // Prepaid status view - show if there's a prepaid payment for this parent
+              <ParentPrepaidCard
+                parentName={parent?.name || ''}
+                monthDisplay={monthDisplay}
+                sessionsTotal={parentPrepaidPayment.sessions_prepaid || 0}
+                sessionsUsed={parentPrepaidPayment.sessions_used || 0}
+                sessionsRemaining={Math.max(0, (parentPrepaidPayment.sessions_prepaid || 0) - (parentPrepaidPayment.sessions_used || 0))}
+                sessionsRolledOver={parentPrepaidPayment.sessions_rolled_over || 0}
+                amountDue={parentPrepaidPayment.amount_due}
+                isPaid={parentPrepaidPayment.status === 'paid'}
+                paidAt={parentPrepaidPayment.paid_at ? new Date(parentPrepaidPayment.paid_at).toLocaleDateString() : undefined}
+              />
+            ) : (
+              // Invoice status view - show for invoice billing or no prepaid plan
+              parentPaymentSummary && <ParentPaymentCard summary={parentPaymentSummary} />
+            )}
           </View>
         )}
 
@@ -884,6 +923,100 @@ function ParentPaymentCard({ summary }: { summary: ParentPaymentSummary }) {
             {totalSessions} session{totalSessions !== 1 ? 's' : ''} this month
           </Text>
         </View>
+      </View>
+    </Pressable>
+  );
+}
+
+// Parent Prepaid Card Component - Similar to admin's Parent View Preview
+interface ParentPrepaidCardProps {
+  parentName: string;
+  monthDisplay: string;
+  sessionsTotal: number;
+  sessionsUsed: number;
+  sessionsRemaining: number;
+  sessionsRolledOver?: number;
+  amountDue: number;
+  isPaid: boolean;
+  paidAt?: string;
+}
+
+function ParentPrepaidCard({
+  parentName,
+  monthDisplay,
+  sessionsTotal,
+  sessionsUsed,
+  sessionsRemaining,
+  sessionsRolledOver = 0,
+  amountDue,
+  isPaid,
+  paidAt,
+}: ParentPrepaidCardProps) {
+  const progressPercent = sessionsTotal > 0 ? (sessionsUsed / sessionsTotal) * 100 : 0;
+
+  return (
+    <Pressable
+      style={styles.prepaidCard}
+      onPress={() => router.push('/(tabs)/payments' as any)}
+    >
+      {/* Header with month and session count */}
+      <View style={styles.prepaidHeader}>
+        <View style={styles.prepaidTitleRow}>
+          <Text style={styles.prepaidTitle}>{monthDisplay} Sessions</Text>
+          <View style={styles.prepaidBadge}>
+            <Text style={styles.prepaidBadgeText}>Prepaid</Text>
+          </View>
+        </View>
+        <View style={styles.prepaidCountContainer}>
+          <Text style={styles.prepaidCountLarge}>{sessionsUsed}</Text>
+          <Text style={styles.prepaidCountSlash}>/</Text>
+          <Text style={styles.prepaidCountTotal}>{sessionsTotal}</Text>
+          <Text style={styles.prepaidCountLabel}>used</Text>
+        </View>
+      </View>
+
+      {/* Progress bar */}
+      <View style={styles.prepaidProgressContainer}>
+        <View style={styles.prepaidProgressTrack}>
+          <View
+            style={[
+              styles.prepaidProgressFill,
+              { width: `${Math.min(progressPercent, 100)}%` }
+            ]}
+          />
+        </View>
+        <Text style={styles.prepaidRemainingText}>{sessionsRemaining} sessions remaining</Text>
+      </View>
+
+      {/* Usage indicator */}
+      <View style={styles.prepaidUsageRow}>
+        <View style={styles.prepaidUsageItem}>
+          <Ionicons name="checkmark-circle" size={14} color={colors.status.success} />
+          <Text style={styles.prepaidUsageText}>{sessionsUsed} used</Text>
+        </View>
+        <View style={styles.prepaidUsageItem}>
+          <Ionicons name="time-outline" size={14} color={colors.neutral.textSecondary} />
+          <Text style={styles.prepaidUsageText}>{sessionsRemaining} remaining</Text>
+        </View>
+      </View>
+
+      {/* Payment info */}
+      <View style={styles.prepaidPaymentSection}>
+        <View style={styles.prepaidPaymentRow}>
+          <View>
+            <Text style={styles.prepaidPaymentLabel}>Prepaid Amount</Text>
+            {isPaid && paidAt && (
+              <View style={styles.prepaidPaidRow}>
+                <Ionicons name="checkmark-circle" size={12} color={colors.status.success} />
+                <Text style={styles.prepaidPaidText}>Paid on {paidAt}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.prepaidPaymentAmount}>${amountDue.toFixed(2)}</Text>
+        </View>
+        <Text style={styles.prepaidSessionInfo}>
+          Prepaid for {sessionsTotal - sessionsRolledOver} sessions{sessionsRolledOver > 0 ? ` (${sessionsRolledOver} rolled over)` : ''}
+        </Text>
       </View>
     </Pressable>
   );
@@ -1488,5 +1621,153 @@ const styles = StyleSheet.create({
     color: colors.neutral.white,
     opacity: 0.9,
     marginTop: 2,
+  },
+  // Parent Prepaid Card styles
+  prepaidCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  prepaidHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  prepaidTitleRow: {
+    flex: 1,
+  },
+  prepaidTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginBottom: spacing.xs,
+  },
+  prepaidBadge: {
+    backgroundColor: colors.piano.subtle,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  prepaidBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
+  },
+  prepaidCountContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  prepaidCountLarge: {
+    fontSize: typography.sizes['2xl'],
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+  },
+  prepaidCountSlash: {
+    fontSize: typography.sizes.lg,
+    color: colors.neutral.textMuted,
+    marginHorizontal: 2,
+  },
+  prepaidCountTotal: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  prepaidCountLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    marginLeft: spacing.xs,
+  },
+  prepaidProgressContainer: {
+    marginBottom: spacing.md,
+  },
+  prepaidProgressTrack: {
+    height: 8,
+    backgroundColor: colors.neutral.borderLight,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  prepaidProgressFill: {
+    height: '100%',
+    backgroundColor: colors.piano.primary,
+    borderRadius: 4,
+  },
+  prepaidRemainingText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  prepaidUsageRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  prepaidUsageItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  prepaidUsageText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  prepaidPaymentSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+    paddingTop: spacing.md,
+  },
+  prepaidPaymentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  prepaidPaymentLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  prepaidPaidRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  prepaidPaidText: {
+    fontSize: typography.sizes.xs,
+    color: colors.status.success,
+  },
+  prepaidPaymentAmount: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.text,
+  },
+  prepaidSessionInfo: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
+  },
+  // No prepaid plan card styles
+  noPrepaidCard: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    ...shadows.sm,
+  },
+  noPrepaidTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  noPrepaidText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
   },
 });
