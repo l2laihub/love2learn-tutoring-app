@@ -3,25 +3,106 @@
  * Displays detailed information about a specific student
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Linking, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useStudent, useUpdateStudent, useDeleteStudent } from '../../src/hooks/useStudents';
 import { useParents } from '../../src/hooks/useParents';
+import { useLessons } from '../../src/hooks/useLessons';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
-import { UpdateStudentInput } from '../../src/types/database';
+import { UpdateStudentInput, ScheduledLessonWithStudent } from '../../src/types/database';
+
+// Helper to format date for display
+const formatLessonDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const isToday = date.toDateString() === today.toDateString();
+  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+  if (isToday) return 'Today';
+  if (isTomorrow) return 'Tomorrow';
+
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  });
+};
+
+// Helper to format time for display
+const formatLessonTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+};
+
+// Get status color and icon
+const getStatusConfig = (status: string): { color: string; icon: string; label: string } => {
+  switch (status) {
+    case 'completed':
+      return { color: colors.status.success, icon: 'checkmark-circle', label: 'Completed' };
+    case 'cancelled':
+      return { color: colors.status.error, icon: 'close-circle', label: 'Cancelled' };
+    default:
+      return { color: colors.piano.primary, icon: 'time', label: 'Scheduled' };
+  }
+};
 
 export default function StudentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: student, loading, error, refetch } = useStudent(id || null);
   const { data: parents } = useParents();
+  const { data: lessons, loading: lessonsLoading } = useLessons({ studentId: id || undefined });
   const { mutate: updateStudent, loading: updating } = useUpdateStudent();
   const { mutate: deleteStudent, loading: deleting } = useDeleteStudent();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Organize lessons into upcoming (this month + next month) and recent past
+  const { upcomingLessons, pastLessons, totalUpcoming, totalPast } = useMemo(() => {
+    const now = new Date();
+    const upcoming: ScheduledLessonWithStudent[] = [];
+    const past: ScheduledLessonWithStudent[] = [];
+
+    // Calculate end of next month for filtering
+    const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
+
+    lessons.forEach(lesson => {
+      const lessonDate = new Date(lesson.scheduled_at);
+      if (lessonDate >= now && lesson.status === 'scheduled') {
+        upcoming.push(lesson);
+      } else {
+        past.push(lesson);
+      }
+    });
+
+    // Sort upcoming by date ascending
+    upcoming.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
+    // Sort past by date descending (most recent first)
+    past.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+
+    // Filter upcoming to only show this month and next month
+    const filteredUpcoming = upcoming.filter(lesson => {
+      const lessonDate = new Date(lesson.scheduled_at);
+      return lessonDate <= endOfNextMonth;
+    });
+
+    return {
+      upcomingLessons: filteredUpcoming,
+      pastLessons: past.slice(0, 5), // Only show last 5 past lessons
+      totalUpcoming: upcoming.length,
+      totalPast: past.length
+    };
+  }, [lessons]);
 
   const handleEditStudent = () => {
     setEditModalVisible(true);
@@ -238,12 +319,139 @@ export default function StudentDetailScreen() {
 
         {/* Lesson Schedule Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Lesson Schedule</Text>
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={32} color="#CCC" />
-            <Text style={styles.emptyText}>No lessons scheduled</Text>
-            <Text style={styles.emptySubtext}>Lessons will appear here once scheduled</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Lesson Schedule</Text>
+            {lessons.length > 0 && (
+              <Text style={styles.lessonCount}>{lessons.length} total</Text>
+            )}
           </View>
+
+          {lessonsLoading ? (
+            <View style={styles.lessonsLoading}>
+              <ActivityIndicator size="small" color={colors.piano.primary} />
+              <Text style={styles.lessonsLoadingText}>Loading lessons...</Text>
+            </View>
+          ) : lessons.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="calendar-outline" size={32} color="#CCC" />
+              <Text style={styles.emptyText}>No lessons scheduled</Text>
+              <Text style={styles.emptySubtext}>Lessons will appear here once scheduled</Text>
+            </View>
+          ) : (
+            <View style={styles.lessonsContainer}>
+              {/* Upcoming Lessons */}
+              {upcomingLessons.length > 0 && (
+                <View style={styles.lessonGroup}>
+                  <View style={styles.lessonGroupHeader}>
+                    <Ionicons name="arrow-forward-circle" size={18} color={colors.piano.primary} />
+                    <Text style={styles.lessonGroupTitle}>
+                      Upcoming ({upcomingLessons.length}{totalUpcoming > upcomingLessons.length ? ` of ${totalUpcoming}` : ''})
+                    </Text>
+                  </View>
+                  <Text style={styles.lessonGroupSubtitle}>Showing this month and next month</Text>
+                  {upcomingLessons.map((lesson) => {
+                    const subjectConfig = SUBJECT_CONFIG[lesson.subject] || {
+                      icon: 'school',
+                      color: colors.neutral.textSecondary,
+                      label: lesson.subject.charAt(0).toUpperCase() + lesson.subject.slice(1),
+                    };
+                    const statusConfig = getStatusConfig(lesson.status);
+                    return (
+                      <View key={lesson.id} style={styles.lessonCard}>
+                        <View style={[styles.lessonSubjectIndicator, { backgroundColor: subjectConfig.color }]} />
+                        <View style={styles.lessonContent}>
+                          <View style={styles.lessonHeader}>
+                            <View style={styles.lessonSubjectBadge}>
+                              <Ionicons name={subjectConfig.icon as any} size={14} color={subjectConfig.color} />
+                              <Text style={[styles.lessonSubjectText, { color: subjectConfig.color }]}>
+                                {subjectConfig.label}
+                              </Text>
+                            </View>
+                            <View style={[styles.lessonStatusBadge, { backgroundColor: statusConfig.color + '20' }]}>
+                              <Ionicons name={statusConfig.icon as any} size={12} color={statusConfig.color} />
+                              <Text style={[styles.lessonStatusText, { color: statusConfig.color }]}>
+                                {statusConfig.label}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.lessonDetails}>
+                            <View style={styles.lessonDateRow}>
+                              <Ionicons name="calendar-outline" size={14} color={colors.neutral.textSecondary} />
+                              <Text style={styles.lessonDateText}>{formatLessonDate(lesson.scheduled_at)}</Text>
+                            </View>
+                            <View style={styles.lessonTimeRow}>
+                              <Ionicons name="time-outline" size={14} color={colors.neutral.textSecondary} />
+                              <Text style={styles.lessonTimeText}>
+                                {formatLessonTime(lesson.scheduled_at)} ({lesson.duration_min} min)
+                              </Text>
+                            </View>
+                          </View>
+                          {lesson.notes && (
+                            <Text style={styles.lessonNotes} numberOfLines={2}>{lesson.notes}</Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {/* Past/Completed Lessons */}
+              {pastLessons.length > 0 && (
+                <View style={styles.lessonGroup}>
+                  <View style={styles.lessonGroupHeader}>
+                    <Ionicons name="checkmark-done-circle" size={18} color={colors.neutral.textMuted} />
+                    <Text style={[styles.lessonGroupTitle, { color: colors.neutral.textMuted }]}>
+                      Recent ({pastLessons.length}{totalPast > 5 ? ` of ${totalPast}` : ''})
+                    </Text>
+                  </View>
+                  {pastLessons.map((lesson) => {
+                    const subjectConfig = SUBJECT_CONFIG[lesson.subject] || {
+                      icon: 'school',
+                      color: colors.neutral.textSecondary,
+                      label: lesson.subject.charAt(0).toUpperCase() + lesson.subject.slice(1),
+                    };
+                    const statusConfig = getStatusConfig(lesson.status);
+                    return (
+                      <View key={lesson.id} style={[styles.lessonCard, styles.pastLessonCard]}>
+                        <View style={[styles.lessonSubjectIndicator, { backgroundColor: subjectConfig.color, opacity: 0.5 }]} />
+                        <View style={styles.lessonContent}>
+                          <View style={styles.lessonHeader}>
+                            <View style={styles.lessonSubjectBadge}>
+                              <Ionicons name={subjectConfig.icon as any} size={14} color={subjectConfig.color} style={{ opacity: 0.7 }} />
+                              <Text style={[styles.lessonSubjectText, { color: subjectConfig.color, opacity: 0.7 }]}>
+                                {subjectConfig.label}
+                              </Text>
+                            </View>
+                            <View style={[styles.lessonStatusBadge, { backgroundColor: statusConfig.color + '20' }]}>
+                              <Ionicons name={statusConfig.icon as any} size={12} color={statusConfig.color} />
+                              <Text style={[styles.lessonStatusText, { color: statusConfig.color }]}>
+                                {statusConfig.label}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={styles.lessonDetails}>
+                            <View style={styles.lessonDateRow}>
+                              <Ionicons name="calendar-outline" size={14} color={colors.neutral.textMuted} />
+                              <Text style={[styles.lessonDateText, { color: colors.neutral.textMuted }]}>
+                                {formatLessonDate(lesson.scheduled_at)}
+                              </Text>
+                            </View>
+                            <View style={styles.lessonTimeRow}>
+                              <Ionicons name="time-outline" size={14} color={colors.neutral.textMuted} />
+                              <Text style={[styles.lessonTimeText, { color: colors.neutral.textMuted }]}>
+                                {formatLessonTime(lesson.scheduled_at)} ({lesson.duration_min} min)
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Recent Progress Section */}
@@ -539,6 +747,130 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     color: colors.neutral.border,
     marginTop: spacing.xs,
+  },
+  // Section header with count
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  lessonCount: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    fontWeight: typography.weights.medium,
+  },
+  // Lessons loading state
+  lessonsLoading: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  lessonsLoadingText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+  },
+  // Lessons container
+  lessonsContainer: {
+    gap: spacing.lg,
+  },
+  lessonGroup: {
+    gap: spacing.sm,
+  },
+  lessonGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  lessonGroupTitle: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.piano.primary,
+  },
+  lessonGroupSubtitle: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    marginBottom: spacing.xs,
+  },
+  // Lesson card
+  lessonCard: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    shadowColor: colors.shadow.color,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  pastLessonCard: {
+    opacity: 0.8,
+  },
+  lessonSubjectIndicator: {
+    width: 4,
+  },
+  lessonContent: {
+    flex: 1,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  lessonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  lessonSubjectBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lessonSubjectText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+  },
+  lessonStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.full,
+  },
+  lessonStatusText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+  },
+  lessonDetails: {
+    gap: spacing.xs,
+  },
+  lessonDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lessonDateText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  lessonTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lessonTimeText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  lessonNotes: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
   },
   actionButtons: {
     flexDirection: 'row',

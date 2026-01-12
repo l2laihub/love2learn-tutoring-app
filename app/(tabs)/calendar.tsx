@@ -907,13 +907,17 @@ export default function CalendarScreen() {
                             <Text style={styles.lessonTimeText}>{startTimeString}</Text>
                             <Text style={styles.lessonTimeEndText}>–{endTimeString}</Text>
                           </View>
-                          {/* Student Avatars */}
+                          {/* Student Avatars - deduplicate by student ID */}
                           <StackedAvatars
-                            students={group.lessons.map(l => ({
-                              id: l.student.id,
-                              name: l.student.name,
-                              avatar_url: l.student.avatar_url,
-                            }))}
+                            students={Array.from(
+                              new Map(
+                                group.lessons.map(l => [l.student.id, {
+                                  id: l.student.id,
+                                  name: l.student.name,
+                                  avatar_url: l.student.avatar_url,
+                                }])
+                              ).values()
+                            )}
                             size={28}
                             maxVisible={2}
                           />
