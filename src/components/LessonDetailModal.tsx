@@ -856,6 +856,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     padding: spacing.base,
     gap: spacing.sm,
     backgroundColor: colors.neutral.white,
@@ -901,6 +902,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.xs,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    minWidth: 120,
     backgroundColor: colors.status.success,
     borderRadius: borderRadius.md,
   },
