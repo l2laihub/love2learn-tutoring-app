@@ -446,6 +446,63 @@ export function useMarkPaymentPaid() {
 }
 
 /**
+ * Hook for marking a payment as unpaid
+ * @returns Mutation state with markUnpaid function
+ */
+export function useMarkPaymentUnpaid() {
+  const [data, setData] = useState<Payment | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (id: string, notes?: string): Promise<Payment | null> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const updateData: Partial<Payment> = {
+        amount_paid: 0,
+        status: 'unpaid',
+        paid_at: null,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (notes) {
+        updateData.notes = notes;
+      }
+
+      const { data: payment, error: updateError } = await supabase
+        .from('payments')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      setData(payment);
+      return payment;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to mark payment as unpaid');
+      setError(errorMessage);
+      console.error('useMarkPaymentUnpaid error:', errorMessage);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { data, loading, error, mutate, reset };
+}
+
+/**
  * Fetch overdue payments (unpaid or partial, past the 7th of the month)
  * @returns List of overdue payments
  */
@@ -1610,10 +1667,14 @@ export function useQuickInvoice() {
         // Update existing payment by adding new lessons to it
         const newAmountDue = Math.round((existingPayment.amount_due + roundedTotal) * 100) / 100;
 
+        // If payment was already paid, reset to unpaid since we're adding new uninvoiced lessons
+        const newStatus = existingPayment.status === 'paid' ? 'unpaid' : existingPayment.status;
+
         const { data: updatedPayment, error: updateError } = await supabase
           .from('payments')
           .update({
             amount_due: newAmountDue,
+            status: newStatus,
             notes: `Updated: added ${uninvoicedLessons.length} new lesson(s)`,
           })
           .eq('id', existingPayment.id)

@@ -25,6 +25,7 @@ import {
   useCreatePayment,
   useUpdatePayment,
   useMarkPaymentPaid,
+  useMarkPaymentUnpaid,
   useOverduePayments,
   useDeletePayment,
   useMonthlyLessonSummary,
@@ -104,6 +105,7 @@ export default function PaymentsScreen() {
   const createPayment = useCreatePayment();
   const updatePayment = useUpdatePayment();
   const markPaid = useMarkPaymentPaid();
+  const markUnpaid = useMarkPaymentUnpaid();
   const deletePayment = useDeletePayment();
   const quickInvoice = useQuickInvoice();
   // Prepaid mutations
@@ -219,6 +221,11 @@ export default function PaymentsScreen() {
 
   const handleMarkPaid = async (payment: PaymentWithParent) => {
     await markPaid.mutate(payment.id);
+    await handleRefresh();
+  };
+
+  const handleMarkUnpaid = async (payment: PaymentWithParent) => {
+    await markUnpaid.mutate(payment.id);
     await handleRefresh();
   };
 
@@ -801,6 +808,15 @@ export default function PaymentsScreen() {
                           <Text style={styles.markPaidText}>Mark Paid</Text>
                         </Pressable>
                       )}
+                      {isTutor && payment.status === 'paid' && (
+                        <Pressable
+                          style={styles.markUnpaidButton}
+                          onPress={() => handleMarkUnpaid(payment)}
+                        >
+                          <Ionicons name="close" size={16} color={colors.status.warning} />
+                          <Text style={styles.markUnpaidText}>Mark Unpaid</Text>
+                        </Pressable>
+                      )}
                       {isTutor && (
                         <Pressable
                           style={styles.switchModeButton}
@@ -1184,6 +1200,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.status.success,
+  },
+  markUnpaidButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.status.warning,
+  },
+  markUnpaidText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.status.warning,
   },
   deleteButton: {
     padding: spacing.sm,
