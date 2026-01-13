@@ -48,6 +48,7 @@ import { LessonDetailModal } from '../../src/components/LessonDetailModal';
 import { RescheduleRequestModal } from '../../src/components/RescheduleRequestModal';
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { TutorBreak } from '../../src/types/database';
+import { useQuickInvoice, useIncrementSessionUsage } from '../../src/hooks/usePayments';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
 import { StackedAvatars } from '../../src/components/AvatarUpload';
 
@@ -154,6 +155,8 @@ export default function CalendarScreen() {
   const deleteLessonSession = useDeleteLessonSession();
   const { findSeries, findSessionSeries } = useFindRecurringSeries();
   const deleteLessonSeries = useDeleteLessonSeries();
+  const quickInvoice = useQuickInvoice();
+  const incrementSessionUsage = useIncrementSessionUsage();
 
   // Series state for delete/edit series functionality
   const [seriesLessonIds, setSeriesLessonIds] = useState<string[]>([]);
@@ -556,11 +559,39 @@ export default function CalendarScreen() {
 
   const handleCompleteLesson = async (notes?: string) => {
     if (!selectedGroupedLesson) return;
+
     // Complete all lessons in the group
     for (const lesson of selectedGroupedLesson.lessons) {
       await completeLesson.mutate(lesson.id, notes);
     }
     await refetch();
+
+    // Auto-generate invoice or update prepaid sessions
+    // Get unique parents from the completed lessons
+    const parentMap = new Map<string, { id: string; billing_mode: 'invoice' | 'prepaid' }>();
+    for (const lesson of selectedGroupedLesson.lessons) {
+      const parent = lesson.student.parent;
+      if (!parentMap.has(parent.id)) {
+        parentMap.set(parent.id, { id: parent.id, billing_mode: parent.billing_mode });
+      }
+    }
+
+    // Process each parent
+    const lessonDate = new Date(selectedGroupedLesson.scheduled_at);
+    for (const [parentId, parentInfo] of parentMap) {
+      if (parentInfo.billing_mode === 'prepaid') {
+        // For prepaid families: increment sessions_used for each completed lesson
+        const lessonsForParent = selectedGroupedLesson.lessons.filter(
+          l => l.student.parent.id === parentId
+        );
+        for (const _ of lessonsForParent) {
+          await incrementSessionUsage.mutate(parentId, lessonDate);
+        }
+      } else {
+        // For invoice families: auto-generate/update invoice
+        await quickInvoice.generateQuickInvoice(parentId, lessonDate);
+      }
+    }
   };
 
   const handleCancelLesson = async (reason?: string) => {

@@ -1530,14 +1530,10 @@ export function useQuickInvoice() {
       // Check if payment already exists for this month
       const { data: existingPayment } = await supabase
         .from('payments')
-        .select('id')
+        .select('id, amount_due, status')
         .eq('parent_id', parentId)
         .eq('month', monthStart)
         .maybeSingle();
-
-      if (existingPayment) {
-        throw new Error('A payment record already exists for this family and month');
-      }
 
       // Get tutor settings
       const { data: tutorSettings } = await supabase
@@ -1608,21 +1604,42 @@ export function useQuickInvoice() {
       const totalAmount = lessonAmounts.reduce((sum: number, l: { amount: number }) => sum + l.amount, 0);
       const roundedTotal = Math.round(totalAmount * 100) / 100;
 
-      // Create payment
-      const { data: payment, error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          parent_id: parentId,
-          month: monthStart,
-          amount_due: roundedTotal,
-          amount_paid: 0,
-          status: 'unpaid' as PaymentStatus,
-          notes: `Quick invoice for ${uninvoicedLessons.length} lesson(s)`,
-        })
-        .select()
-        .single();
+      let payment;
 
-      if (paymentError) throw new Error(paymentError.message);
+      if (existingPayment) {
+        // Update existing payment by adding new lessons to it
+        const newAmountDue = Math.round((existingPayment.amount_due + roundedTotal) * 100) / 100;
+
+        const { data: updatedPayment, error: updateError } = await supabase
+          .from('payments')
+          .update({
+            amount_due: newAmountDue,
+            notes: `Updated: added ${uninvoicedLessons.length} new lesson(s)`,
+          })
+          .eq('id', existingPayment.id)
+          .select()
+          .single();
+
+        if (updateError) throw new Error(updateError.message);
+        payment = updatedPayment;
+      } else {
+        // Create new payment
+        const { data: newPayment, error: paymentError } = await supabase
+          .from('payments')
+          .insert({
+            parent_id: parentId,
+            month: monthStart,
+            amount_due: roundedTotal,
+            amount_paid: 0,
+            status: 'unpaid' as PaymentStatus,
+            notes: `Quick invoice for ${uninvoicedLessons.length} lesson(s)`,
+          })
+          .select()
+          .single();
+
+        if (paymentError) throw new Error(paymentError.message);
+        payment = newPayment;
+      }
 
       // Link lessons to payment
       const paymentLessons = lessonAmounts.map((la: { lesson_id: string; amount: number }) => ({
@@ -1636,8 +1653,10 @@ export function useQuickInvoice() {
         .insert(paymentLessons);
 
       if (linkError) {
-        // Rollback payment on link failure
-        await supabase.from('payments').delete().eq('id', payment.id);
+        if (!existingPayment) {
+          // Only rollback if we created a new payment
+          await supabase.from('payments').delete().eq('id', payment.id);
+        }
         throw new Error(`Failed to link lessons: ${linkError.message}`);
       }
 
