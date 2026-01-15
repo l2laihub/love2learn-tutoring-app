@@ -585,10 +585,9 @@ export default function StudentsScreen() {
           return true;
         }
       } else {
-        // For now, use a placeholder user_id since auth isn't implemented
+        // Create parent without user_id - it will be set when parent accepts invitation
         const createData: CreateParentInput = {
           ...(data as Omit<CreateParentInput, 'user_id'>),
-          user_id: '00000000-0000-0000-0000-000000000000', // Placeholder
         };
         const result = await createParent(createData);
         if (result) {
