@@ -3,10 +3,10 @@
  * Handles file uploads to Supabase Storage for worksheets and session media
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Platform } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // Storage bucket names
 export const STORAGE_BUCKETS = {
@@ -17,16 +17,16 @@ export const STORAGE_BUCKETS = {
 export type StorageBucket = (typeof STORAGE_BUCKETS)[keyof typeof STORAGE_BUCKETS];
 
 // File size limits in bytes
-export const FILE_SIZE_LIMITS = {
-  [STORAGE_BUCKETS.WORKSHEETS]: 25 * 1024 * 1024, // 25MB for PDFs
-  [STORAGE_BUCKETS.SESSION_MEDIA]: 10 * 1024 * 1024, // 10MB for images
-} as const;
+export const FILE_SIZE_LIMITS: Record<string, number> = {
+  'worksheets': 25 * 1024 * 1024, // 25MB for PDFs
+  'session-media': 10 * 1024 * 1024, // 10MB for images
+};
 
 // Allowed MIME types
-export const ALLOWED_MIME_TYPES = {
-  [STORAGE_BUCKETS.WORKSHEETS]: ['application/pdf'],
-  [STORAGE_BUCKETS.SESSION_MEDIA]: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'],
-} as const;
+export const ALLOWED_MIME_TYPES: Record<string, readonly string[]> = {
+  'worksheets': ['application/pdf'],
+  'session-media': ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'],
+};
 
 export interface UploadResult {
   path: string;
@@ -58,10 +58,24 @@ function validateFile(
   const allowedTypes = ALLOWED_MIME_TYPES[bucket];
   const maxSize = FILE_SIZE_LIMITS[bucket];
 
-  if (!allowedTypes.includes(mimeType as typeof allowedTypes[number])) {
+  // Handle unknown bucket
+  if (!allowedTypes || !maxSize) {
+    console.warn(`Unknown bucket: ${bucket}, skipping validation`);
+    return { valid: true };
+  }
+
+  // Handle undefined/null mimeType
+  if (!mimeType) {
     return {
       valid: false,
-      error: `Invalid file type. Allowed types: ${allowedTypes.join(', ')}`,
+      error: 'File type could not be determined',
+    };
+  }
+
+  if (!allowedTypes.includes(mimeType)) {
+    return {
+      valid: false,
+      error: `Invalid file type "${mimeType}". Allowed types: ${allowedTypes.join(', ')}`,
     };
   }
 
@@ -108,6 +122,38 @@ function getExtensionFromMimeType(mimeType: string): string | null {
     'image/webp': 'webp',
   };
   return mimeToExt[mimeType] || null;
+}
+
+/**
+ * Decode base64 string to Uint8Array
+ * Works on both web and React Native (Hermes doesn't have atob)
+ */
+function base64ToUint8Array(base64: string): Uint8Array {
+  // Base64 character set
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+  // Remove padding and calculate output length
+  let cleanBase64 = base64.replace(/=+$/, '');
+  const outputLength = Math.floor((cleanBase64.length * 3) / 4);
+  const bytes = new Uint8Array(outputLength);
+
+  let byteIndex = 0;
+  for (let i = 0; i < cleanBase64.length; i += 4) {
+    const a = chars.indexOf(cleanBase64[i]);
+    const b = chars.indexOf(cleanBase64[i + 1]);
+    const c = chars.indexOf(cleanBase64[i + 2]);
+    const d = chars.indexOf(cleanBase64[i + 3]);
+
+    bytes[byteIndex++] = (a << 2) | (b >> 4);
+    if (byteIndex < outputLength) {
+      bytes[byteIndex++] = ((b & 15) << 4) | (c >> 2);
+    }
+    if (byteIndex < outputLength) {
+      bytes[byteIndex++] = ((c & 3) << 6) | d;
+    }
+  }
+
+  return bytes;
 }
 
 /**
@@ -160,16 +206,12 @@ export function useFileUpload() {
 
           // Read file as base64 and convert to array buffer
           const base64 = await FileSystem.readAsStringAsync(fileUri, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: 'base64',
           });
 
-          // Convert base64 to Uint8Array
-          const binaryString = atob(base64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          fileData = bytes;
+          // Convert base64 to Uint8Array (using custom decoder for React Native compatibility)
+          const bytes = base64ToUint8Array(base64);
+          fileData = bytes.buffer as ArrayBuffer;
         }
 
         // Validate file
@@ -313,28 +355,68 @@ export function useFileUpload() {
 /**
  * Utility hook for getting download URLs
  */
-export function useStorageUrl(bucket: StorageBucket, path: string | null) {
+export function useStorageUrl(path: string | null, bucket: StorageBucket = 'session-media') {
   const [url, setUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!path);
   const [error, setError] = useState<Error | null>(null);
 
-  const fetchUrl = useCallback(async () => {
+  useEffect(() => {
     if (!path) {
       setUrl(null);
+      setLoading(false);
       return;
     }
 
+    let cancelled = false;
+
+    const fetchUrl = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Try to get signed URL for private buckets
+        const { data, error: signedError } = await supabase.storage
+          .from(bucket)
+          .createSignedUrl(path, 3600); // 1 hour expiry
+
+        if (cancelled) return;
+
+        if (signedError) {
+          // Fall back to public URL
+          const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(path);
+          setUrl(publicData.publicUrl);
+        } else {
+          setUrl(data.signedUrl);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const errorMessage = err instanceof Error ? err : new Error('Failed to get URL');
+        setError(errorMessage);
+        console.error('useStorageUrl error:', errorMessage);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchUrl();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bucket, path]);
+
+  const refetch = useCallback(async () => {
+    if (!path) return;
+
     try {
       setLoading(true);
-      setError(null);
-
-      // Try to get signed URL for private buckets
       const { data, error: signedError } = await supabase.storage
         .from(bucket)
-        .createSignedUrl(path, 3600); // 1 hour expiry
+        .createSignedUrl(path, 3600);
 
       if (signedError) {
-        // Fall back to public URL
         const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(path);
         setUrl(publicData.publicUrl);
       } else {
@@ -343,11 +425,10 @@ export function useStorageUrl(bucket: StorageBucket, path: string | null) {
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to get URL');
       setError(errorMessage);
-      console.error('useStorageUrl error:', errorMessage);
     } finally {
       setLoading(false);
     }
   }, [bucket, path]);
 
-  return { url, loading, error, refetch: fetchUrl };
+  return { url, loading, error, refetch };
 }

@@ -135,6 +135,27 @@ export default function PaymentsScreen() {
     return payments.filter(p => !prepaidParentIds.has(p.parent_id));
   }, [payments, isTutor, parent?.id, prepaidFamilies]);
 
+  // Helper to get lesson dates for a payment from the monthly lesson summary
+  const getLessonDatesForPayment = (parentId: string): { dates: string[], count: number } => {
+    if (!monthlyLessonSummary) return { dates: [], count: 0 };
+
+    const family = monthlyLessonSummary.families.find(f => f.parent_id === parentId);
+    if (!family) return { dates: [], count: 0 };
+
+    // Get lessons that are invoiced or paid (part of this payment)
+    const invoicedLessons = family.lessons.filter(
+      l => l.payment_status === 'invoiced' || l.payment_status === 'paid'
+    );
+
+    // Format dates
+    const dates = invoicedLessons.map(l => {
+      const date = new Date(l.scheduled_at);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    return { dates, count: invoicedLessons.length };
+  };
+
   // Convert paid prepaid payments to display format for the Collected modal
   const paidPrepaidForDisplay: PrepaidPaymentDisplay[] = useMemo(() => {
     return prepaidPayments
@@ -841,6 +862,26 @@ export default function PaymentsScreen() {
                     </View>
                   </View>
 
+                  {/* Lesson dates for this invoice */}
+                  {(() => {
+                    const { dates, count } = getLessonDatesForPayment(payment.parent_id);
+                    if (count > 0) {
+                      return (
+                        <View style={styles.lessonDatesContainer}>
+                          <Ionicons name="calendar-outline" size={14} color={colors.neutral.textSecondary} />
+                          <Text style={styles.lessonDatesText}>
+                            {count === 1
+                              ? `Lesson on ${dates[0]}`
+                              : dates.length <= 3
+                                ? `Lessons: ${dates.join(', ')}`
+                                : `${count} lessons: ${dates.slice(0, 2).join(', ')} +${count - 2} more`}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+
                   {payment.notes && (
                     <Text style={styles.paymentNotes} numberOfLines={1}>
                       {payment.notes}
@@ -1233,6 +1274,20 @@ const styles = StyleSheet.create({
     color: colors.neutral.textMuted,
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+  lessonDatesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+  },
+  lessonDatesText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    flex: 1,
   },
 
   // View mode toggle styles

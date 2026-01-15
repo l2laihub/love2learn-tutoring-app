@@ -12,6 +12,7 @@ import { usePathname, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useAuthContext } from '../../contexts/AuthContext';
+import { useUnreadMessageCount } from '../../hooks/useMessages';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -22,11 +23,13 @@ interface NavItem {
   iconActive: IoniconsName;
   tutorOnly?: boolean;
   parentOnly?: boolean;
+  hasBadge?: boolean; // For items that show badge (e.g., Messages)
 }
 
 const navItems: NavItem[] = [
   { name: 'Home', href: '/(tabs)', icon: 'home-outline', iconActive: 'home' },
   { name: 'Calendar', href: '/(tabs)/calendar', icon: 'calendar-outline', iconActive: 'calendar' },
+  { name: 'Messages', href: '/(tabs)/messages', icon: 'chatbubbles-outline', iconActive: 'chatbubbles', hasBadge: true },
   { name: 'Students', href: '/(tabs)/students', icon: 'people-outline', iconActive: 'people', tutorOnly: true },
   { name: 'Worksheets', href: '/(tabs)/worksheets', icon: 'document-text-outline', iconActive: 'document-text' },
   { name: 'Resources', href: '/(tabs)/resources', icon: 'folder-open-outline', iconActive: 'folder-open', parentOnly: true },
@@ -48,6 +51,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const { isTutor, isParent, parent, user, signOut } = useAuthContext();
+  const { count: unreadMessageCount } = useUnreadMessageCount();
 
   const filteredNavItems = navItems.filter(item => {
     if (item.tutorOnly && !isTutor) return false;
@@ -89,17 +93,27 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
         <View style={styles.navSection}>
           {filteredNavItems.map((item) => {
             const active = isActive(item.href);
+            const showBadge = item.hasBadge && unreadMessageCount > 0;
             return (
               <Pressable
                 key={item.href}
                 style={[styles.navItem, active && styles.navItemActive]}
                 onPress={() => router.push(item.href as any)}
               >
-                <Ionicons
-                  name={active ? item.iconActive : item.icon}
-                  size={22}
-                  color={active ? colors.primary.main : colors.neutral.textSecondary}
-                />
+                <View style={styles.navIconContainer}>
+                  <Ionicons
+                    name={active ? item.iconActive : item.icon}
+                    size={22}
+                    color={active ? colors.primary.main : colors.neutral.textSecondary}
+                  />
+                  {showBadge && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>
+                        {unreadMessageCount > 99 ? '99+' : unreadMessageCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={[styles.navItemText, active && styles.navItemTextActive]}>
                   {item.name}
                 </Text>
@@ -217,6 +231,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
     gap: spacing.md,
+  },
+  navIconContainer: {
+    position: 'relative',
+    width: 22,
+    height: 22,
+  },
+  badge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.accent.main,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.neutral.white,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.textInverse,
+    textAlign: 'center',
   },
   navItemActive: {
     backgroundColor: colors.primary.subtle,

@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router';
-import { View } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
+import { useUnreadMessageCount } from '../../src/hooks/useMessages';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
 import { NotificationBell } from '../../src/components/NotificationBell';
 
@@ -18,6 +19,24 @@ interface TabIconProps {
 
 function TabIcon({ name, color, size }: TabIconProps) {
   return <Ionicons name={name} size={size} color={color} />;
+}
+
+// Messages tab icon with unread badge
+function MessagesTabIcon({ color, size }: { color: string; size: number }) {
+  const { count } = useUnreadMessageCount();
+
+  return (
+    <View style={tabStyles.iconContainer}>
+      <Ionicons name="chatbubbles" size={size} color={color} />
+      {count > 0 && (
+        <View style={tabStyles.badge}>
+          <Text style={tabStyles.badgeText}>
+            {count > 99 ? '99+' : count}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
 }
 
 // Header right component with notification bell
@@ -66,6 +85,13 @@ export default function TabLayout() {
             }}
           />
           <Tabs.Screen
+            name="messages"
+            options={{
+              title: 'Messages',
+              headerShown: false, // Stack inside handles its own header
+            }}
+          />
+          <Tabs.Screen
             name="students"
             options={{
               title: 'Students',
@@ -104,6 +130,15 @@ export default function TabLayout() {
               headerTitle: 'My Profile',
               // Only show Profile tab for parents
               href: isParent ? undefined : null,
+            }}
+          />
+          <Tabs.Screen
+            name="more"
+            options={{
+              title: 'More',
+              headerTitle: 'More',
+              // Hide on desktop - sidebar has all items
+              href: null,
             }}
           />
           <Tabs.Screen
@@ -169,25 +204,12 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="students"
+        name="messages"
         options={{
-          title: 'Students',
-          headerTitle: 'Students & Parents',
+          title: 'Messages',
+          headerShown: false, // Stack inside handles its own header
           tabBarIcon: ({ color, size }) => (
-            <TabIcon name="people" color={color} size={size} />
-          ),
-          // Hide Students tab for parents
-          href: isParent ? null : undefined,
-        }}
-      />
-      <Tabs.Screen
-        name="worksheets"
-        options={{
-          title: 'Worksheets',
-          headerTitle: isParent ? 'My Worksheets' : 'AI Worksheets',
-          tabBarActiveTintColor: colors.secondary.main,
-          tabBarIcon: ({ color, size }) => (
-            <TabIcon name="document-text" color={color} size={size} />
+            <MessagesTabIcon color={color} size={size} />
           ),
         }}
       />
@@ -204,6 +226,41 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="more"
+        options={{
+          title: 'More',
+          headerTitle: 'More',
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="ellipsis-horizontal" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="worksheets"
+        options={{
+          title: 'Worksheets',
+          headerTitle: isParent ? 'My Worksheets' : 'AI Worksheets',
+          tabBarActiveTintColor: colors.secondary.main,
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="document-text" color={color} size={size} />
+          ),
+          // Hide from bottom nav - accessible via More menu
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="students"
+        options={{
+          title: 'Students',
+          headerTitle: 'Students & Parents',
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="people" color={color} size={size} />
+          ),
+          // Hide from bottom nav - accessible via More menu
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="resources"
         options={{
           title: 'Resources',
@@ -211,8 +268,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="folder-open" color={color} size={size} />
           ),
-          // Show Resources tab for parents only (tutors see Library in Worksheets)
-          href: isParent ? undefined : null,
+          // Hide from bottom nav - accessible via More menu
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -223,8 +280,8 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="person" color={color} size={size} />
           ),
-          // Only show Profile tab for parents
-          href: isParent ? undefined : null,
+          // Hide from bottom nav - accessible via More menu
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -242,3 +299,30 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+// Styles for tab badge
+const tabStyles = StyleSheet.create({
+  iconContainer: {
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.accent.main,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.neutral.white,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.neutral.textInverse,
+    textAlign: 'center',
+  },
+});

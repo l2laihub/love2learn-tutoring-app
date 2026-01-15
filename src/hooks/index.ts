@@ -146,3 +146,30 @@ export {
   useResourcesByLesson,
 } from './useSharedResources';
 export type { SharedResourcesFilterOptions } from './useSharedResources';
+
+// Parent Group hooks
+export {
+  useParentGroups,
+  useParentGroup,
+  useCreateParentGroup,
+  useUpdateParentGroup,
+  useDeleteParentGroup,
+  useParentsForGroupSelection,
+} from './useParentGroups';
+
+// Message hooks
+export {
+  useMessageThreads,
+  useMessageThread,
+  useUnreadMessageCount,
+  useCreateThread,
+  useSendMessage,
+  useToggleReaction,
+  useMarkThreadRead,
+  useArchiveThread,
+  useDeleteMessage,
+  useDeleteThread,
+  useBulkDeleteMessages,
+  useBulkDeleteThreads,
+  useBulkArchiveThreads,
+} from './useMessages';
