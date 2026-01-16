@@ -1,8 +1,8 @@
 /**
- * Edge Function: Send Reschedule Rejection Email
+ * Edge Function: Send Reschedule Approval Email
  *
- * Sends an email to a parent when their reschedule request is rejected.
- * Called via database webhook when a lesson_request status changes to 'rejected'.
+ * Sends an email to a parent when their reschedule request is approved.
+ * Called via application layer when a lesson_request status changes to 'approved' or 'scheduled'.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -13,13 +13,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-app-name',
 };
 
-interface RejectionRequest {
+interface ApprovalRequest {
   parent_id: string;
   student_name: string;
   subject: string;
   preferred_date: string;
   tutor_response: string | null;
   request_group_id: string | null;
+  is_scheduled: boolean;
   request_type?: 'reschedule' | 'dropin'; // Optional for backwards compatibility
 }
 
@@ -45,8 +46,8 @@ serve(async (req: Request) => {
     }
 
     // Parse request body
-    const requestData: RejectionRequest = await req.json();
-    const { parent_id, student_name, subject, preferred_date, tutor_response, request_group_id, request_type = 'reschedule' } = requestData;
+    const requestData: ApprovalRequest = await req.json();
+    const { parent_id, student_name, subject, preferred_date, tutor_response, request_group_id, is_scheduled, request_type = 'reschedule' } = requestData;
 
     // Determine request type text
     const isDropin = request_type === 'dropin';
@@ -112,19 +113,23 @@ serve(async (req: Request) => {
     const formattedDate = formatDate(preferred_date);
     const notificationsUrl = `${appUrl}/notifications`;
 
-    // Build rejection reason section
-    const rejectionReasonHtml = tutor_response
+    // Determine status text based on whether lesson was scheduled
+    const statusText = is_scheduled ? 'Approved & Scheduled' : 'Approved';
+    const statusDescription = is_scheduled
+      ? 'Your lesson has been scheduled'
+      : isDropin
+        ? 'Your drop-in session request has been approved'
+        : 'Your reschedule request has been approved';
+
+    // Build tutor message section
+    const tutorMessageHtml = tutor_response
       ? `
-        <div style="background: #FFF3E0; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #FF9800;">
-          <h3 style="margin: 0 0 10px 0; color: #E65100; font-size: 16px;">Reason for Decline:</h3>
+        <div style="background: #E3F2FD; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #2196F3;">
+          <h3 style="margin: 0 0 10px 0; color: #1565C0; font-size: 16px;">Message from Tutor:</h3>
           <p style="margin: 0; color: #1B3A4B; font-size: 15px; line-height: 1.6;">${tutor_response}</p>
         </div>
       `
-      : `
-        <div style="background: #F5F5F5; border-radius: 10px; padding: 20px; margin: 25px 0;">
-          <p style="margin: 0; color: #757575; font-size: 14px; font-style: italic;">No specific reason was provided. Please contact your tutor for more details.</p>
-        </div>
-      `;
+      : '';
 
     // Send email via Resend
     const emailResponse = await fetch('https://api.resend.com/emails', {
@@ -136,7 +141,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         from: 'Love to Learn Academy <noreply@app.lovetolearn.site>',
         to: [parentData.email],
-        subject: `${requestTypeText} Declined - ${student_name}'s ${formattedSubject} Lesson`,
+        subject: `${requestTypeText} ${statusText} - ${student_name}'s ${formattedSubject} Lesson`,
         html: `
           <!DOCTYPE html>
           <html>
@@ -155,22 +160,22 @@ serve(async (req: Request) => {
               </div>
 
               <!-- Status Banner -->
-              <div style="background: linear-gradient(135deg, #E53935 0%, #EF5350 100%); border-radius: 12px; padding: 25px; margin-bottom: 30px; color: white; text-align: center;">
-                <div style="font-size: 40px; margin-bottom: 10px;">📅</div>
-                <h2 style="margin: 0 0 5px 0; font-size: 22px;">Request Declined</h2>
-                <p style="margin: 0; opacity: 0.95; font-size: 14px;">Your ${isDropin ? 'drop-in session' : 'reschedule'} request could not be accommodated</p>
+              <div style="background: linear-gradient(135deg, #43A047 0%, #66BB6A 100%); border-radius: 12px; padding: 25px; margin-bottom: 30px; color: white; text-align: center;">
+                <div style="font-size: 40px; margin-bottom: 10px;">✓</div>
+                <h2 style="margin: 0 0 5px 0; font-size: 22px;">Request ${statusText}</h2>
+                <p style="margin: 0; opacity: 0.95; font-size: 14px;">${statusDescription}</p>
               </div>
 
               <!-- Greeting -->
               <p style="color: #1B3A4B; font-size: 16px;">Dear ${parentData.name},</p>
 
               <p style="color: #4A6572; font-size: 15px;">
-                We regret to inform you that your ${isDropin ? 'drop-in session' : 'reschedule'} request has been declined.
+                Great news! Your ${isDropin ? 'drop-in session' : 'reschedule'} request has been approved${is_scheduled ? ' and the lesson has been scheduled' : ''}.
               </p>
 
               <!-- Request Details -->
-              <div style="background: #FFEBEE; border-radius: 10px; padding: 20px; margin: 20px 0;">
-                <h3 style="margin: 0 0 15px 0; color: #C62828; font-size: 16px;">Request Details:</h3>
+              <div style="background: #E8F5E9; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin: 0 0 15px 0; color: #2E7D32; font-size: 16px;">Request Details:</h3>
                 <table style="width: 100%; border-collapse: collapse;">
                   <tr>
                     <td style="padding: 8px 0; color: #757575; font-size: 14px;">Student:</td>
@@ -181,22 +186,25 @@ serve(async (req: Request) => {
                     <td style="padding: 8px 0; color: #1B3A4B; font-size: 14px; font-weight: 600;">${formattedSubject}</td>
                   </tr>
                   <tr>
-                    <td style="padding: 8px 0; color: #757575; font-size: 14px;">Requested Date:</td>
+                    <td style="padding: 8px 0; color: #757575; font-size: 14px;">Approved Date:</td>
                     <td style="padding: 8px 0; color: #1B3A4B; font-size: 14px; font-weight: 600;">${formattedDate}</td>
                   </tr>
                 </table>
               </div>
 
-              <!-- Rejection Reason -->
-              ${rejectionReasonHtml}
+              <!-- Tutor Message -->
+              ${tutorMessageHtml}
 
               <!-- Next Steps -->
-              <div style="background: #E8F5E9; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #7CB342;">
-                <h3 style="margin: 0 0 10px 0; color: #5D8A2F; font-size: 16px;">What's Next?</h3>
+              <div style="background: #FFF3E0; border-radius: 10px; padding: 20px; margin: 25px 0; border-left: 4px solid #FF9800;">
+                <h3 style="margin: 0 0 10px 0; color: #E65100; font-size: 16px;">What's Next?</h3>
                 <ul style="margin: 0; padding-left: 20px; color: #1B3A4B;">
-                  <li style="margin-bottom: 8px;">You can submit a new ${isDropin ? 'drop-in' : 'reschedule'} request with different dates</li>
-                  <li style="margin-bottom: 8px;">Contact your tutor directly to discuss alternative times</li>
-                  <li style="margin-bottom: 0;">View more details in the app notifications</li>
+                  ${is_scheduled
+                    ? '<li style="margin-bottom: 8px;">Your lesson is now on the schedule</li>'
+                    : '<li style="margin-bottom: 8px;">The tutor will schedule your lesson shortly</li>'
+                  }
+                  <li style="margin-bottom: 8px;">Check your schedule in the app for exact timing</li>
+                  <li style="margin-bottom: 0;">You'll receive a reminder before the lesson</li>
                 </ul>
               </div>
 
@@ -229,25 +237,25 @@ serve(async (req: Request) => {
       const errorData = await emailResponse.json();
       console.error('Resend API error:', errorData);
       return new Response(
-        JSON.stringify({ error: 'Failed to send rejection email', details: errorData }),
+        JSON.stringify({ error: 'Failed to send approval email', details: errorData }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const emailResult = await emailResponse.json();
-    console.log('Rejection email sent successfully:', emailResult.id);
+    console.log('Approval email sent successfully:', emailResult.id);
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Rejection email sent to ${parentData.email}`,
+        message: `Approval email sent to ${parentData.email}`,
         emailId: emailResult.id,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Error in send-reschedule-rejection:', error);
+    console.error('Error in send-reschedule-approval:', error);
     return new Response(
       JSON.stringify({ error: 'Internal server error', message: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

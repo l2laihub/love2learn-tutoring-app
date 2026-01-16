@@ -909,6 +909,9 @@ export type LessonDuration = number;
 // Lesson request status
 export type LessonRequestStatus = 'pending' | 'approved' | 'rejected' | 'scheduled';
 
+// Lesson request type
+export type LessonRequestType = 'reschedule' | 'dropin';
+
 // Tutor availability slot
 export interface TutorAvailability {
   id: string;
@@ -948,6 +951,7 @@ export interface LessonRequest {
   preferred_duration: number;
   notes: string | null;
   status: LessonRequestStatus;
+  request_type: LessonRequestType; // 'reschedule' for changing existing lesson, 'dropin' for new session
   tutor_response: string | null;
   scheduled_lesson_id: string | null;
   request_group_id: string | null; // Groups multiple requests for combined session reschedules
@@ -1009,7 +1013,8 @@ export interface CreateLessonRequestInput {
   preferred_time?: string | null;
   preferred_duration?: number;
   notes?: string | null;
-  request_group_id?: string | null; // For linking combined session reschedule requests
+  request_group_id?: string | null; // For linking combined session requests
+  request_type?: LessonRequestType; // Defaults to 'reschedule' if not specified
 }
 
 export interface UpdateLessonRequestInput {

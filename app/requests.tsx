@@ -29,7 +29,7 @@ import {
 } from '../src/hooks/useLessonRequests';
 import { useCreateLesson, useCreateGroupedLesson } from '../src/hooks/useLessons';
 import { formatTimeDisplay } from '../src/hooks/useTutorAvailability';
-import { LessonRequestWithStudent, TutoringSubject, LessonRequest } from '../src/types/database';
+import { LessonRequestWithStudent, TutoringSubject, LessonRequest, LessonRequestType } from '../src/types/database';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../src/theme';
 
 // Subject display names
@@ -69,6 +69,7 @@ interface GroupedRequest {
   preferred_duration: number;
   notes: string | null;
   status: LessonRequest['status'];
+  request_type: LessonRequestType; // 'reschedule' or 'dropin'
   tutor_response: string | null;
   created_at: string;
 }
@@ -104,6 +105,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       preferred_duration: first.preferred_duration,
       notes: first.notes,
       status: first.status,
+      request_type: first.request_type || 'reschedule',
       tutor_response: first.tutor_response,
       created_at: first.created_at,
     });
@@ -122,6 +124,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       preferred_duration: request.preferred_duration,
       notes: request.notes,
       status: request.status,
+      request_type: request.request_type || 'reschedule',
       tutor_response: request.tutor_response,
       created_at: request.created_at,
     });
@@ -272,8 +275,8 @@ export default function RequestsScreen() {
             </Text>
             <Text style={styles.emptyStateText}>
               {activeTab === 'pending'
-                ? 'All reschedule requests have been processed.'
-                : 'Reschedule requests from parents will appear here.'}
+                ? 'All lesson requests have been processed.'
+                : 'Reschedule and drop-in requests from parents will appear here.'}
             </Text>
           </View>
         )}
@@ -463,11 +466,21 @@ function GroupedRequestCard({ groupedRequest, onApprove, onReject }: GroupedRequ
         </View>
       </View>
 
-      {/* Combined Session Badge */}
-      {groupedRequest.isCombinedSession && (
-        <View style={styles.combinedSessionBadge}>
-          <Ionicons name="people" size={14} color={colors.primary.main} />
-          <Text style={styles.combinedSessionBadgeText}>Combined Session</Text>
+      {/* Request Type Badges */}
+      {(groupedRequest.request_type === 'dropin' || groupedRequest.isCombinedSession) && (
+        <View style={styles.badgesRow}>
+          {groupedRequest.request_type === 'dropin' && (
+            <View style={styles.dropinBadge}>
+              <Ionicons name="add-circle" size={14} color={colors.status.success} />
+              <Text style={styles.dropinBadgeText}>Drop-in Session</Text>
+            </View>
+          )}
+          {groupedRequest.isCombinedSession && (
+            <View style={styles.combinedSessionBadge}>
+              <Ionicons name="people" size={14} color={colors.primary.main} />
+              <Text style={styles.combinedSessionBadgeText}>Combined Session</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -818,6 +831,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.sm,
   },
+  badgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
   combinedSessionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -825,13 +845,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.primary.subtle,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.neutral.border,
   },
   combinedSessionBadgeText: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
     color: colors.primary.main,
+  },
+  dropinBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.status.successBg,
+  },
+  dropinBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.status.success,
   },
   requestHeader: {
     flexDirection: 'row',

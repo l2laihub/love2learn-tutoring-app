@@ -33,7 +33,7 @@ import {
   useFindRecurringSeries,
   useDeleteLessonSeries,
 } from '../../src/hooks/useLessons';
-import { useStudents } from '../../src/hooks/useStudents';
+import { useStudents, useStudentsByParent } from '../../src/hooks/useStudents';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useTutorSettings, getSubjectRateConfig } from '../../src/hooks/useTutorSettings';
 import {
@@ -46,6 +46,7 @@ import {
 import { LessonFormModal, LessonFormData, SessionFormData } from '../../src/components/LessonFormModal';
 import { LessonDetailModal } from '../../src/components/LessonDetailModal';
 import { RescheduleRequestModal } from '../../src/components/RescheduleRequestModal';
+import { DropinRequestModal } from '../../src/components/DropinRequestModal';
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { TutorBreak } from '../../src/types/database';
 import { useQuickInvoice, useIncrementSessionUsage } from '../../src/hooks/usePayments';
@@ -123,6 +124,7 @@ export default function CalendarScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [showDropinModal, setShowDropinModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<ScheduledLessonWithStudent | null>(null);
   const [selectedGroupedLesson, setSelectedGroupedLesson] = useState<GroupedLesson | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -137,6 +139,9 @@ export default function CalendarScreen() {
   const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: tutorSettings } = useTutorSettings();
+
+  // Fetch parent's students (for drop-in requests)
+  const { data: parentStudents } = useStudentsByParent(!isTutor ? parent?.id || null : null);
 
   // Fetch tutor breaks (only for tutors)
   const {
@@ -734,6 +739,15 @@ export default function CalendarScreen() {
               )}
             </View>
           )}
+          {!isTutor && parent && (
+            <Pressable
+              style={styles.dropinButton}
+              onPress={() => setShowDropinModal(true)}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={colors.primary.main} />
+              <Text style={styles.dropinButtonText}>Request Drop-in</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Week Navigation */}
@@ -1192,6 +1206,20 @@ export default function CalendarScreen() {
           onSuccess={handleRescheduleSuccess}
         />
       )}
+
+      {/* Drop-in Request Modal (for parents) */}
+      {parent && parentStudents && (
+        <DropinRequestModal
+          visible={showDropinModal}
+          parentId={parent.id}
+          students={parentStudents}
+          onClose={() => setShowDropinModal(false)}
+          onSuccess={() => {
+            setShowDropinModal(false);
+            // Optionally show success message or refresh
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1228,6 +1256,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.md,
+  },
+  dropinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary.subtle,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+  },
+  dropinButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
   },
   weekNav: {
     flexDirection: 'row',
