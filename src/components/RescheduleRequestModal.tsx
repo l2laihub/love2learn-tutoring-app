@@ -259,6 +259,7 @@ export function RescheduleRequestModal({
           preferred_duration: groupedLesson.duration_min, // Total session duration
           notes: notes.trim() || null,
           request_group_id: requestGroupId,
+          original_lesson_id: lessonItem.id, // Track original lesson for deletion on approval
         });
 
         if (!result) {
@@ -283,6 +284,7 @@ export function RescheduleRequestModal({
         preferred_time: selectedTime,
         preferred_duration: lesson.duration_min,
         notes: notes.trim() || null,
+        original_lesson_id: lesson.id, // Track original lesson for deletion on approval
       });
 
       if (result) {

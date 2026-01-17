@@ -406,7 +406,11 @@ export function LessonFormModal({
       } else if (busySlots && busySlots.length > 0) {
         // Check for overlaps: new lesson overlaps with existing if:
         // new_start < existing_end AND new_end > existing_start
-        for (const slot of busySlots) {
+        // Only check actual scheduled lessons/sessions, not recurring patterns
+        const actualSlots = busySlots.filter((slot: { slot_type?: string }) =>
+          slot.slot_type === 'lesson' || slot.slot_type === 'session' || slot.slot_type === 'break'
+        );
+        for (const slot of actualSlots) {
           const slotStart = new Date(slot.start_time);
           const slotEnd = new Date(slot.end_time);
 

@@ -31,14 +31,6 @@ export interface LessonRequestsFilterOptions {
 }
 
 /**
- * Extended input for reschedule requests
- */
-export interface CreateRescheduleRequestInput extends CreateLessonRequestInput {
-  original_lesson_id?: string;
-  request_type: 'new' | 'reschedule';
-}
-
-/**
  * Fetch lesson requests with optional filters
  * @param options - Filter options
  * @returns List of lesson requests with student info, loading state, and error
@@ -64,6 +56,10 @@ export function useLessonRequests(
           student:students(
             *,
             parent:parents(*)
+          ),
+          original_lesson:scheduled_lessons!original_lesson_id(
+            id,
+            scheduled_at
           )
         `)
         .order('created_at', { ascending: false });
@@ -316,6 +312,7 @@ export function useApproveLessonRequest(): {
             preferred_date,
             request_group_id,
             request_type,
+            original_lesson_id,
             student:students (name)
           `)
           .eq('id', id)
@@ -340,6 +337,19 @@ export function useApproveLessonRequest(): {
 
         if (updateError) {
           throw new Error(updateError.message);
+        }
+
+        // For reschedule requests, delete the original lesson
+        if (requestData?.request_type === 'reschedule' && requestData?.original_lesson_id) {
+          const { error: deleteError } = await supabase
+            .from('scheduled_lessons')
+            .delete()
+            .eq('id', requestData.original_lesson_id);
+
+          if (deleteError) {
+            // Log but don't fail the approval if delete fails
+            console.error('Failed to delete original lesson:', deleteError);
+          }
         }
 
         // Send approval email via edge function (fire-and-forget to not block UI)

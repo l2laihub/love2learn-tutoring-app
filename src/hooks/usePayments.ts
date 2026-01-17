@@ -615,13 +615,19 @@ export function useDeletePayment() {
       setLoading(true);
       setError(null);
 
-      const { error: deleteError } = await supabase
+      const { data: deletedRows, error: deleteError } = await supabase
         .from('payments')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select();
 
       if (deleteError) {
         throw new Error(deleteError.message);
+      }
+
+      // Check if any rows were actually deleted
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error('Payment could not be deleted. You may not have permission to delete this payment.');
       }
 
       return true;

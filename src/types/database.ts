@@ -955,6 +955,7 @@ export interface LessonRequest {
   tutor_response: string | null;
   scheduled_lesson_id: string | null;
   request_group_id: string | null; // Groups multiple requests for combined session reschedules
+  original_lesson_id: string | null; // References the original lesson being rescheduled
   created_at: string;
   updated_at: string;
 }
@@ -962,6 +963,10 @@ export interface LessonRequest {
 // Lesson request with student info
 export interface LessonRequestWithStudent extends LessonRequest {
   student: Student;
+  original_lesson?: {
+    id: string;
+    scheduled_at: string;
+  } | null;
 }
 
 // Input types for tutor availability
@@ -1015,6 +1020,7 @@ export interface CreateLessonRequestInput {
   notes?: string | null;
   request_group_id?: string | null; // For linking combined session requests
   request_type?: LessonRequestType; // Defaults to 'reschedule' if not specified
+  original_lesson_id?: string | null; // Original lesson being rescheduled (will be deleted on approval)
 }
 
 export interface UpdateLessonRequestInput {

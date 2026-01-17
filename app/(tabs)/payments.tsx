@@ -250,26 +250,42 @@ export default function PaymentsScreen() {
     await handleRefresh();
   };
 
-  const handleDeletePayment = (payment: PaymentWithParent) => {
-    Alert.alert(
-      'Delete Payment',
-      `Are you sure you want to delete the payment record for ${payment.parent?.name || 'this family'}? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const success = await deletePayment.mutate(payment.id);
-            if (success) {
-              await handleRefresh();
-            } else {
-              Alert.alert('Error', 'Failed to delete payment. Please try again.');
-            }
+  const handleDeletePayment = async (payment: PaymentWithParent) => {
+    const parentName = payment.parent?.name || 'this family';
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Are you sure you want to delete the payment record for ${parentName}? This cannot be undone.`
+      );
+      if (confirmed) {
+        const success = await deletePayment.mutate(payment.id);
+        if (success) {
+          await handleRefresh();
+        } else {
+          window.alert('Failed to delete payment. Please try again.');
+        }
+      }
+    } else {
+      Alert.alert(
+        'Delete Payment',
+        `Are you sure you want to delete the payment record for ${parentName}? This cannot be undone.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              const success = await deletePayment.mutate(payment.id);
+              if (success) {
+                await handleRefresh();
+              } else {
+                Alert.alert('Error', 'Failed to delete payment. Please try again.');
+              }
+            },
           },
-        },
-      ]
-    );
+        ]
+      );
+    }
   };
 
   const handleInvoiceSuccess = async () => {
@@ -823,7 +839,10 @@ export default function PaymentsScreen() {
                       {isTutor && payment.status !== 'paid' && (
                         <Pressable
                           style={styles.markPaidButton}
-                          onPress={() => handleMarkPaid(payment)}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleMarkPaid(payment);
+                          }}
                         >
                           <Ionicons name="checkmark" size={16} color={colors.status.success} />
                           <Text style={styles.markPaidText}>Mark Paid</Text>
@@ -832,7 +851,10 @@ export default function PaymentsScreen() {
                       {isTutor && payment.status === 'paid' && (
                         <Pressable
                           style={styles.markUnpaidButton}
-                          onPress={() => handleMarkUnpaid(payment)}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleMarkUnpaid(payment);
+                          }}
                         >
                           <Ionicons name="close" size={16} color={colors.status.warning} />
                           <Text style={styles.markUnpaidText}>Mark Unpaid</Text>
@@ -841,7 +863,8 @@ export default function PaymentsScreen() {
                       {isTutor && (
                         <Pressable
                           style={styles.switchModeButton}
-                          onPress={() => {
+                          onPress={(e) => {
+                            e.stopPropagation();
                             const parentData = parents.find(p => p.id === payment.parent_id);
                             if (parentData) {
                               handleToggleBillingMode(parentData);
@@ -854,7 +877,10 @@ export default function PaymentsScreen() {
                       {isTutor && (
                         <Pressable
                           style={styles.deleteButton}
-                          onPress={() => handleDeletePayment(payment)}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDeletePayment(payment);
+                          }}
                         >
                           <Ionicons name="trash-outline" size={16} color={colors.status.error} />
                         </Pressable>

@@ -72,6 +72,7 @@ interface GroupedRequest {
   request_type: LessonRequestType; // 'reschedule' or 'dropin'
   tutor_response: string | null;
   created_at: string;
+  original_scheduled_at: string | null; // Original lesson date for reschedule requests
 }
 
 // Helper function to group requests by request_group_id
@@ -108,6 +109,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       request_type: first.request_type || 'reschedule',
       tutor_response: first.tutor_response,
       created_at: first.created_at,
+      original_scheduled_at: first.original_lesson?.scheduled_at || null,
     });
   }
 
@@ -127,6 +129,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       request_type: request.request_type || 'reschedule',
       tutor_response: request.tutor_response,
       created_at: request.created_at,
+      original_scheduled_at: request.original_lesson?.scheduled_at || null,
     });
   }
 
@@ -439,6 +442,10 @@ function GroupedRequestCard({ groupedRequest, onApprove, onReject }: GroupedRequ
   // Parse date as local time to avoid timezone issues
   const preferredDate = parseLocalDate(groupedRequest.preferred_date);
   const createdAt = new Date(groupedRequest.created_at);
+  // Parse original scheduled date if available (for reschedule requests)
+  const originalDate = groupedRequest.original_scheduled_at
+    ? new Date(groupedRequest.original_scheduled_at)
+    : null;
 
   // Display info for combined sessions
   const studentNamesDisplay = groupedRequest.student_names.join(' & ');
@@ -486,19 +493,55 @@ function GroupedRequestCard({ groupedRequest, onApprove, onReject }: GroupedRequ
 
       {/* Content */}
       <View style={styles.requestContent}>
-        <View style={styles.requestDetail}>
-          <Ionicons name="calendar-outline" size={18} color={colors.neutral.textSecondary} />
-          <Text style={styles.requestDetailText}>
-            {preferredDate.toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-              year: 'numeric',
-            })}
-          </Text>
-        </View>
+        {/* Show original date for reschedule requests */}
+        {groupedRequest.request_type === 'reschedule' && originalDate && (
+          <View style={styles.rescheduleFlow}>
+            <View style={styles.rescheduleFromTo}>
+              <View style={styles.rescheduleFrom}>
+                <Text style={styles.rescheduleLabel}>From</Text>
+                <Text style={styles.rescheduleFromDate}>
+                  {originalDate.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })} at {originalDate.toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward" size={20} color={colors.primary.main} style={styles.rescheduleArrow} />
+              <View style={styles.rescheduleTo}>
+                <Text style={styles.rescheduleLabel}>To</Text>
+                <Text style={styles.rescheduleToDate}>
+                  {preferredDate.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}{groupedRequest.preferred_time && ` at ${formatTimeDisplay(groupedRequest.preferred_time)}`}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
-        {groupedRequest.preferred_time && (
+        {/* Show regular date display for drop-in requests or if no original date */}
+        {(groupedRequest.request_type === 'dropin' || !originalDate) && (
+          <View style={styles.requestDetail}>
+            <Ionicons name="calendar-outline" size={18} color={colors.neutral.textSecondary} />
+            <Text style={styles.requestDetailText}>
+              {preferredDate.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </Text>
+          </View>
+        )}
+
+        {/* Show time for drop-in requests or if no original date */}
+        {(groupedRequest.request_type === 'dropin' || !originalDate) && groupedRequest.preferred_time && (
           <View style={styles.requestDetail}>
             <Ionicons name="time-outline" size={18} color={colors.neutral.textSecondary} />
             <Text style={styles.requestDetailText}>
@@ -909,6 +952,43 @@ const styles = StyleSheet.create({
   requestDetailText: {
     fontSize: typography.sizes.sm,
     color: colors.neutral.text,
+  },
+  rescheduleFlow: {
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  rescheduleFromTo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rescheduleFrom: {
+    flex: 1,
+  },
+  rescheduleTo: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  rescheduleLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontWeight: typography.weights.medium,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
+  },
+  rescheduleFromDate: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  rescheduleToDate: {
+    fontSize: typography.sizes.sm,
+    color: colors.primary.main,
+    fontWeight: typography.weights.semibold,
+  },
+  rescheduleArrow: {
+    marginHorizontal: spacing.sm,
   },
   requestNotes: {
     marginTop: spacing.sm,
