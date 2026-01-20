@@ -1242,10 +1242,22 @@ export interface PaymentWithDetails extends PaymentWithParent {
   payment_lessons?: PaymentLessonWithDetails[];
 }
 
+// Duration-based pricing tiers (explicit prices per duration)
+export interface DurationPrices {
+  15?: number;
+  30?: number;
+  45?: number;
+  60?: number;
+  90?: number;
+  120?: number;
+}
+
 // Subject rate with base duration (e.g., $35 for 30 minutes)
+// Now supports optional duration_prices for explicit tier pricing
 export interface SubjectRateConfig {
-  rate: number;           // Amount in dollars
-  base_duration: number;  // Base duration in minutes (e.g., 30 or 60)
+  rate: number;                    // Amount in dollars (used for linear calc fallback)
+  base_duration: number;           // Base duration in minutes (e.g., 30 or 60)
+  duration_prices?: DurationPrices; // Optional explicit prices per duration tier
 }
 
 // Subject rates type - each subject can have a rate with base duration
@@ -1255,6 +1267,26 @@ export interface SubjectRates {
   reading?: SubjectRateConfig;
   speech?: SubjectRateConfig;
   english?: SubjectRateConfig;
+}
+
+// Helper to get price for a specific duration from SubjectRateConfig
+export function getDurationPrice(
+  config: SubjectRateConfig,
+  durationMin: number
+): { price: number; isExplicit: boolean } {
+  // Check for explicit duration price first
+  // JSON from database has string keys, so we must use string key for lookup
+  const durationPricesRaw = config.duration_prices;
+  if (durationPricesRaw && typeof durationPricesRaw === 'object') {
+    const durationKey = String(durationMin);
+    const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
+    if (typeof explicitPrice === 'number' && explicitPrice > 0) {
+      return { price: explicitPrice, isExplicit: true };
+    }
+  }
+  // Fall back to linear calculation
+  const linearPrice = (durationMin / config.base_duration) * config.rate;
+  return { price: linearPrice, isExplicit: false };
 }
 
 // Input types for creating/updating entities

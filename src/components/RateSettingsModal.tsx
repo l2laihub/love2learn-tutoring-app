@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
-import { SubjectRates, SubjectRateConfig, TutoringSubject } from '../types/database';
+import { SubjectRates, SubjectRateConfig, TutoringSubject, DurationPrices } from '../types/database';
 import { useTutorSettings, useUpdateTutorSettings, formatRateDisplay } from '../hooks/useTutorSettings';
 
 interface RateSettingsModalProps {
@@ -41,10 +41,15 @@ const SUBJECTS: { key: TutoringSubject; label: string; emoji: string; defaultDur
 // Duration options for picker
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 
+// Common duration tiers for explicit pricing
+const DURATION_TIERS = [30, 45, 60, 90] as const;
+
 interface SubjectRateFormState {
   rate: string;
   duration: number;
   enabled: boolean;
+  useTiers: boolean;  // Whether to use explicit duration tier pricing
+  tierPrices: Record<number, string>;  // Explicit prices per duration (e.g., { 30: '35', 45: '50', 60: '65' })
 }
 
 export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModalProps) {
@@ -69,16 +74,32 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
       SUBJECTS.forEach(subject => {
         const rateConfig = settings.subject_rates?.[subject.key];
         if (rateConfig && rateConfig.rate > 0) {
+          // Check if duration_prices are set
+          const hasTiers = rateConfig.duration_prices && Object.keys(rateConfig.duration_prices).length > 0;
+          const tierPrices: Record<number, string> = {};
+
+          if (hasTiers && rateConfig.duration_prices) {
+            // Load existing tier prices
+            DURATION_TIERS.forEach(dur => {
+              const price = rateConfig.duration_prices?.[dur as keyof DurationPrices];
+              tierPrices[dur] = price !== undefined && price !== null ? price.toString() : '';
+            });
+          }
+
           rates[subject.key] = {
             rate: rateConfig.rate.toString(),
             duration: rateConfig.base_duration,
             enabled: true,
+            useTiers: hasTiers || false,
+            tierPrices,
           };
         } else {
           rates[subject.key] = {
             rate: '',
             duration: subject.defaultDuration,
             enabled: false,
+            useTiers: false,
+            tierPrices: {},
           };
         }
       });
@@ -119,6 +140,33 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
     setHasChanges(true);
   };
 
+  const handleToggleTiers = (subject: string) => {
+    setSubjectRates(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        useTiers: !prev[subject]?.useTiers,
+        tierPrices: prev[subject]?.tierPrices || {},
+      },
+    }));
+    setHasChanges(true);
+  };
+
+  const handleTierPriceChange = (subject: string, duration: number, value: string) => {
+    setSubjectRates(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        tierPrices: {
+          ...prev[subject]?.tierPrices,
+          [duration]: value,
+        },
+        enabled: true, // Enable subject when tier price is set
+      },
+    }));
+    setHasChanges(true);
+  };
+
   const handleSave = async () => {
     // Validate inputs
     const parsedDefault = parseFloat(defaultRate);
@@ -141,13 +189,43 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
       if (formState?.enabled && formState.rate.trim() !== '') {
         const parsed = parseFloat(formState.rate);
         if (!isNaN(parsed) && parsed > 0) {
-          parsedSubjectRates[subject.key] = {
+          const rateConfig: SubjectRateConfig = {
             rate: parsed,
             base_duration: formState.duration,
           };
+
+          // Add duration_prices if tier mode is enabled
+          if (formState.useTiers && formState.tierPrices) {
+            const durationPrices: Record<string, number> = {};
+            let hasTierPrices = false;
+
+            // Use string keys explicitly for JSON compatibility
+            DURATION_TIERS.forEach(dur => {
+              // Access with both number and string key for safety
+              const tierPricesObj = formState.tierPrices as Record<string | number, string>;
+              const priceStr = tierPricesObj[dur] || tierPricesObj[String(dur)];
+              if (priceStr && priceStr.trim() !== '') {
+                const priceVal = parseFloat(priceStr);
+                if (!isNaN(priceVal) && priceVal > 0) {
+                  // Store with string key for JSON/database compatibility
+                  durationPrices[String(dur)] = priceVal;
+                  hasTierPrices = true;
+                }
+              }
+            });
+
+            if (hasTierPrices) {
+              rateConfig.duration_prices = durationPrices as DurationPrices;
+            }
+          }
+
+          parsedSubjectRates[subject.key] = rateConfig;
         }
       }
     }
+
+    // DEBUG: Log what we're about to save
+    console.log('[RateSettingsModal] Saving subject_rates:', JSON.stringify(parsedSubjectRates, null, 2));
 
     const result = await updateSettings.mutate({
       default_rate: parsedDefault,
@@ -181,9 +259,24 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
     }
   };
 
-  // Calculate example amounts
-  const calculateExample = (lessonDuration: number, rateAmount: number, baseDuration: number): number => {
-    return (lessonDuration / baseDuration) * rateAmount;
+  // Calculate example amounts - now supports tier pricing
+  const calculateExample = (lessonDuration: number, subjectKey: string): { amount: number; isTier: boolean } => {
+    const formState = subjectRates[subjectKey];
+
+    // Check for tier pricing first
+    if (formState?.enabled && formState.useTiers && formState.tierPrices) {
+      const tierPrice = formState.tierPrices[lessonDuration];
+      if (tierPrice && tierPrice.trim() !== '') {
+        const parsed = parseFloat(tierPrice);
+        if (!isNaN(parsed) && parsed > 0) {
+          return { amount: parsed, isTier: true };
+        }
+      }
+    }
+
+    // Fall back to linear calculation
+    const { rate, duration } = getSubjectRate(subjectKey);
+    return { amount: (lessonDuration / duration) * rate, isTier: false };
   };
 
   const getSubjectRate = (subjectKey: string): { rate: number; duration: number } => {
@@ -308,7 +401,7 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
 
               <View style={styles.subjectRatesContainer}>
                 {SUBJECTS.map(subject => {
-                  const formState = subjectRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false };
+                  const formState = subjectRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false, useTiers: false, tierPrices: {} };
                   return (
                     <View key={subject.key} style={styles.subjectRateCard}>
                       <View style={styles.subjectHeader}>
@@ -316,10 +409,12 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                         <Text style={styles.subjectName}>{subject.label}</Text>
                         {formState.enabled && (
                           <View style={styles.customBadge}>
-                            <Text style={styles.customBadgeText}>Custom</Text>
+                            <Text style={styles.customBadgeText}>{formState.useTiers ? 'Tiers' : 'Custom'}</Text>
                           </View>
                         )}
                       </View>
+
+                      {/* Base rate row */}
                       <View style={styles.subjectRateRow}>
                         <View style={styles.subjectInputGroup}>
                           <View style={styles.subjectRateInputContainer}>
@@ -368,6 +463,49 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                           </Pressable>
                         </View>
                       </View>
+
+                      {/* Duration Tiers toggle and inputs */}
+                      {formState.enabled && (
+                        <View style={styles.tiersSection}>
+                          <Pressable
+                            style={styles.tiersToggle}
+                            onPress={() => handleToggleTiers(subject.key)}
+                          >
+                            <Ionicons
+                              name={formState.useTiers ? 'checkbox' : 'square-outline'}
+                              size={20}
+                              color={formState.useTiers ? colors.piano.primary : colors.neutral.textMuted}
+                            />
+                            <Text style={styles.tiersToggleText}>Custom prices per duration</Text>
+                          </Pressable>
+
+                          {formState.useTiers && (
+                            <View style={styles.tiersInputsContainer}>
+                              <View style={styles.tiersGrid}>
+                                {DURATION_TIERS.map(dur => (
+                                  <View key={dur} style={styles.tierInputRow}>
+                                    <View style={styles.tierInputContainer}>
+                                      <Text style={styles.currencySymbolTiny}>$</Text>
+                                      <TextInput
+                                        style={styles.tierInput}
+                                        value={formState.tierPrices?.[dur] || ''}
+                                        onChangeText={(value) => handleTierPriceChange(subject.key, dur, value)}
+                                        keyboardType="decimal-pad"
+                                        placeholder="—"
+                                        placeholderTextColor={colors.neutral.textMuted}
+                                      />
+                                    </View>
+                                    <Text style={styles.tierLabel}>/{dur}m</Text>
+                                  </View>
+                                ))}
+                              </View>
+                              <Text style={styles.tiersHint}>
+                                Leave empty to use base rate calculation
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -381,30 +519,42 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                 {(() => {
                   const pianoRate = getSubjectRate('piano');
                   const mathRate = getSubjectRate('math');
+                  const piano30 = calculateExample(30, 'piano');
+                  const piano45 = calculateExample(45, 'piano');
+                  const piano60 = calculateExample(60, 'piano');
+                  const math60 = calculateExample(60, 'math');
                   return (
                     <>
                       <View style={styles.exampleRow}>
                         <Text style={styles.exampleLabel}>
-                          30-min Piano lesson ({formatRateDisplay(pianoRate.rate, pianoRate.duration)}):
+                          30-min Piano{piano30.isTier ? ' (tier)' : ` (${formatRateDisplay(pianoRate.rate, pianoRate.duration)})`}:
                         </Text>
-                        <Text style={styles.exampleValue}>
-                          ${calculateExample(30, pianoRate.rate, pianoRate.duration).toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={styles.exampleRow}>
-                        <Text style={styles.exampleLabel}>
-                          60-min Piano lesson ({formatRateDisplay(pianoRate.rate, pianoRate.duration)}):
-                        </Text>
-                        <Text style={styles.exampleValue}>
-                          ${calculateExample(60, pianoRate.rate, pianoRate.duration).toFixed(2)}
+                        <Text style={[styles.exampleValue, piano30.isTier && styles.exampleValueTier]}>
+                          ${piano30.amount.toFixed(2)}
                         </Text>
                       </View>
                       <View style={styles.exampleRow}>
                         <Text style={styles.exampleLabel}>
-                          60-min Math lesson ({formatRateDisplay(mathRate.rate, mathRate.duration)}):
+                          45-min Piano{piano45.isTier ? ' (tier)' : ` (${formatRateDisplay(pianoRate.rate, pianoRate.duration)})`}:
                         </Text>
-                        <Text style={styles.exampleValue}>
-                          ${calculateExample(60, mathRate.rate, mathRate.duration).toFixed(2)}
+                        <Text style={[styles.exampleValue, piano45.isTier && styles.exampleValueTier]}>
+                          ${piano45.amount.toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.exampleRow}>
+                        <Text style={styles.exampleLabel}>
+                          60-min Piano{piano60.isTier ? ' (tier)' : ` (${formatRateDisplay(pianoRate.rate, pianoRate.duration)})`}:
+                        </Text>
+                        <Text style={[styles.exampleValue, piano60.isTier && styles.exampleValueTier]}>
+                          ${piano60.amount.toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.exampleRow}>
+                        <Text style={styles.exampleLabel}>
+                          60-min Math{math60.isTier ? ' (tier)' : ` (${formatRateDisplay(mathRate.rate, mathRate.duration)})`}:
+                        </Text>
+                        <Text style={[styles.exampleValue, math60.isTier && styles.exampleValueTier]}>
+                          ${math60.amount.toFixed(2)}
                         </Text>
                       </View>
                       <View style={styles.exampleRow}>
@@ -693,7 +843,79 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.semibold,
     color: colors.piano.primary,
   },
+  exampleValueTier: {
+    color: colors.status.success,
+  },
   bottomPadding: {
     height: spacing.xl,
+  },
+  // Duration tiers styles
+  tiersSection: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+  },
+  tiersToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  tiersToggleText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  tiersInputsContainer: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.sm,
+    padding: spacing.sm,
+  },
+  tiersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  tierInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tierLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    marginLeft: 2,
+  },
+  tierInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xs,
+    paddingVertical: spacing.xs,
+    gap: 2,
+  },
+  currencySymbolTiny: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  tierInput: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    width: 45,
+    paddingVertical: 4,
+    textAlign: 'right',
+  },
+  tiersHint: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
+    width: '100%',
+    marginTop: spacing.xs,
   },
 });

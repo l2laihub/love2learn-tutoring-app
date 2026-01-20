@@ -16,6 +16,7 @@ import {
   PaymentStatus,
   TutoringSubject,
   SubjectRates,
+  SubjectRateConfig,
   TutorSettings,
   CreatePrepaidPaymentInput,
   PaymentType,
@@ -711,6 +712,12 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       setLoading(true);
       setError(null);
 
+      // Get current user for tutor_id filter
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       // First, get all students for this parent with their rates
       const { data: students, error: studentsError } = await supabase
         .from('students')
@@ -730,11 +737,11 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       const studentIds = students.map(s => s.id);
       const studentMap = new Map(students.map(s => [s.id, s]));
 
-      // Get tutor settings for rate calculation
+      // Get tutor settings for rate calculation (filtered by current user's tutor_id)
       const { data: tutorSettings } = await supabase
         .from('tutor_settings')
         .select('*')
-        .limit(1)
+        .eq('tutor_id', user.id)
         .maybeSingle();
 
       // Default rates if no tutor settings exist
@@ -812,19 +819,44 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
           // Use duration-based subject rates for ALL lessons (including combined sessions)
           let rate: number;
           let baseDuration: number;
+          let calculatedAmount: number;
+          let rateDisplay: string;
 
           const subjectRateConfig = tutorSubjectRates[lesson.subject as keyof SubjectRates];
           if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
-            rate = subjectRateConfig.rate;
-            baseDuration = subjectRateConfig.base_duration;
+            // Check for explicit duration price tier first
+            // JSON from database has string keys, so we must use string key for lookup
+            const durationPricesRaw = subjectRateConfig.duration_prices;
+            if (durationPricesRaw && typeof durationPricesRaw === 'object') {
+              const durationKey = String(lesson.duration_min);
+              const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
+
+              if (typeof explicitPrice === 'number' && explicitPrice > 0) {
+                // Use explicit tier pricing
+                rate = explicitPrice;
+                baseDuration = lesson.duration_min;
+                calculatedAmount = explicitPrice;
+                rateDisplay = `$${explicitPrice}/${lesson.duration_min}min`;
+              } else {
+                // Fall back to linear calculation
+                rate = subjectRateConfig.rate;
+                baseDuration = subjectRateConfig.base_duration;
+                calculatedAmount = (lesson.duration_min / baseDuration) * rate;
+                rateDisplay = formatRateDisplay(rate, baseDuration);
+              }
+            } else {
+              // No tier pricing, use linear calculation
+              rate = subjectRateConfig.rate;
+              baseDuration = subjectRateConfig.base_duration;
+              calculatedAmount = (lesson.duration_min / baseDuration) * rate;
+              rateDisplay = formatRateDisplay(rate, baseDuration);
+            }
           } else {
             rate = defaultRate;
             baseDuration = defaultBaseDuration;
+            calculatedAmount = (lesson.duration_min / baseDuration) * rate;
+            rateDisplay = formatRateDisplay(rate, baseDuration);
           }
-
-          // Calculate: (lesson duration / base duration) * rate
-          const calculatedAmount = (lesson.duration_min / baseDuration) * rate;
-          const rateDisplay = formatRateDisplay(rate, baseDuration);
 
           return {
             id: lesson.id,
@@ -1162,6 +1194,7 @@ interface RateCalculationResult {
 /**
  * Calculate lesson amount based on tutor settings
  * Supports duration-based rates for all lessons (including combined sessions)
+ * Now supports explicit duration price tiers (e.g., 30min=$35, 45min=$50, 60min=$65)
  * Combined sessions now use the same subject rate calculation as regular lessons
  * Override amount can be provided to manually set the price for edge cases
  * Returns detailed breakdown for transparency
@@ -1192,10 +1225,40 @@ function calculateLessonAmountWithDetails(
   let baseDuration: number;
   let rateSource: string;
 
-  const subjectRates = tutorSettings?.subject_rates;
+  // Cast subject_rates from JSON - it may come as a plain object from database
+  const subjectRates = tutorSettings?.subject_rates as SubjectRates | null | undefined;
+
   if (subjectRates && subject in subjectRates) {
-    const rateConfig = subjectRates[subject as keyof SubjectRates];
+    // Access the rate config - may be a plain object from JSON
+    const rawConfig = subjectRates[subject as keyof SubjectRates];
+    // Ensure we have a valid config object
+    const rateConfig = rawConfig as SubjectRateConfig | undefined;
+
     if (rateConfig && rateConfig.rate > 0 && rateConfig.base_duration > 0) {
+      // Check for explicit duration price tier first
+      // JSON from database has string keys, so we must use string key for lookup
+      const durationPricesRaw = rateConfig.duration_prices;
+
+      if (durationPricesRaw && typeof durationPricesRaw === 'object') {
+        // Convert to a plain object and use string key lookup
+        const durationKey = String(durationMin);
+        const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
+
+        if (typeof explicitPrice === 'number' && explicitPrice > 0) {
+          // Use explicit tier pricing
+          const rateDisplay = `$${explicitPrice}/${durationMin}min`;
+          const sessionType = isCombinedSession ? ' (combined session)' : '';
+          const formula = `${durationMin}min = $${explicitPrice.toFixed(2)} (${subject} tier${sessionType})`;
+          return {
+            amount: explicitPrice,
+            rate: explicitPrice,
+            baseDuration: durationMin,
+            rateDisplay,
+            formula,
+          };
+        }
+      }
+
       rate = rateConfig.rate;
       baseDuration = rateConfig.base_duration;
       rateSource = `${subject} rate`;
@@ -1258,11 +1321,17 @@ export function useMonthlyLessonSummary(month?: Date) {
       setLoading(true);
       setError(null);
 
-      // 1. Fetch tutor settings for rate calculation
+      // Get current user for tutor_id filter
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // 1. Fetch tutor settings for rate calculation (filtered by current user's tutor_id)
       const { data: tutorSettings } = await supabase
         .from('tutor_settings')
         .select('*')
-        .limit(1)
+        .eq('tutor_id', user.id)
         .maybeSingle();
 
       // 2. Fetch all parents with students (only invoice billing mode, not prepaid)
@@ -1587,6 +1656,12 @@ export function useQuickInvoice() {
       setLoading(true);
       setError(null);
 
+      // Get current user for tutor_id filter
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
       const monthStart = getMonthStart(month);
       const monthEnd = getMonthEnd(month);
 
@@ -1598,11 +1673,11 @@ export function useQuickInvoice() {
         .eq('month', monthStart)
         .maybeSingle();
 
-      // Get tutor settings
+      // Get tutor settings (filtered by current user's tutor_id)
       const { data: tutorSettings } = await supabase
         .from('tutor_settings')
         .select('*')
-        .limit(1)
+        .eq('tutor_id', user.id)
         .maybeSingle();
 
       // Get student IDs for this parent

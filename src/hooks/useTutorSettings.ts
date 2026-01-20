@@ -11,6 +11,7 @@ import {
   SubjectRates,
   SubjectRateConfig,
   QueryState,
+  Json,
 } from '../types/database';
 
 // Default settings when no record exists
@@ -129,7 +130,7 @@ export function useUpdateTutorSettings() {
           .update({
             default_rate: input.default_rate,
             default_base_duration: input.default_base_duration,
-            subject_rates: input.subject_rates || {},
+            subject_rates: (input.subject_rates || {}) as unknown as Json,
             combined_session_rate: input.combined_session_rate,
           })
           .eq('tutor_id', user.id)
@@ -146,7 +147,7 @@ export function useUpdateTutorSettings() {
             tutor_id: user.id,
             default_rate: input.default_rate ?? DEFAULT_SETTINGS.default_rate,
             default_base_duration: input.default_base_duration ?? DEFAULT_SETTINGS.default_base_duration,
-            subject_rates: input.subject_rates || {},
+            subject_rates: (input.subject_rates || {}) as unknown as Json,
             combined_session_rate: input.combined_session_rate ?? DEFAULT_SETTINGS.combined_session_rate,
           })
           .select()
@@ -211,7 +212,7 @@ export function getSubjectRateConfig(
 
 /**
  * Calculate lesson amount based on tutor settings
- * Supports duration-based rates (e.g., $35 for 30 min, $45 for 60 min)
+ * Supports duration-based rates with explicit pricing tiers
  * @param settings Tutor settings
  * @param subject Lesson subject
  * @param durationMin Lesson duration in minutes
@@ -231,7 +232,18 @@ export function calculateLessonRate(
   // Get the rate config for this subject
   const rateConfig = getSubjectRateConfig(settings, subject);
 
-  // Calculate: (lesson duration / base duration) * rate
+  // Check for explicit duration price first
+  // JSON from database has string keys, so we must use string key for lookup
+  const durationPricesRaw = rateConfig.duration_prices;
+  if (durationPricesRaw && typeof durationPricesRaw === 'object') {
+    const durationKey = String(durationMin);
+    const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
+    if (typeof explicitPrice === 'number' && explicitPrice > 0) {
+      return explicitPrice;
+    }
+  }
+
+  // Fall back to linear calculation: (lesson duration / base duration) * rate
   // e.g., 30min lesson with $35/30min rate = (30/30) * 35 = $35
   // e.g., 60min lesson with $35/30min rate = (60/30) * 35 = $70
   return (durationMin / rateConfig.base_duration) * rateConfig.rate;
