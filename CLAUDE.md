@@ -217,7 +217,7 @@ Before merging ANY code:
 - **Hosting**: [e.g., Vercel, Netlify, AWS, Azure]
 
 #### Common Commands
-[CUSTOMIZE: Add your project's common commands]
+- **local dev**: npx expo start --tunnel --clear 
 
 ```bash
 # Development
