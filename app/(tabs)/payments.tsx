@@ -46,6 +46,7 @@ import { CreatePrepaidModal } from '../../src/components/CreatePrepaidModal';
 import { ParentViewPreviewModal } from '../../src/components/ParentViewPreviewModal';
 import { LessonDetailsModal, LessonFilterType, PrepaidPaymentDisplay } from '../../src/components/LessonDetailsModal';
 import { StatusFilterType } from '../../src/components/MonthlyPaymentSummary';
+import { PaymentFilterBar, PaymentFilterStatus, PaymentSortOption } from '../../src/components/PaymentFilterBar';
 
 type PaymentViewMode = 'invoice' | 'prepaid';
 
@@ -83,6 +84,11 @@ export default function PaymentsScreen() {
   // Lesson details modal state
   const [showLessonDetailsModal, setShowLessonDetailsModal] = useState(false);
   const [lessonFilterType, setLessonFilterType] = useState<LessonFilterType>('all');
+  // Filter bar state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<PaymentFilterStatus>('all');
+  const [sortOption, setSortOption] = useState<PaymentSortOption>('name-asc');
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
 
   // Fetch data
   const { data: payments, loading, error, refetch } = usePayments(selectedMonth);
@@ -135,6 +141,52 @@ export default function PaymentsScreen() {
     return payments.filter(p => !prepaidParentIds.has(p.parent_id));
   }, [payments, isTutor, parent?.id, prepaidFamilies]);
 
+  // Filtered and sorted payments for Invoice tab
+  const filteredPayments = useMemo(() => {
+    let result = displayPayments;
+
+    // Search by family name
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(p =>
+        p.parent?.name?.toLowerCase().includes(query)
+      );
+    }
+
+    // Filter by status
+    if (filterStatus !== 'all') {
+      result = result.filter(p => p.status === filterStatus);
+    }
+
+    // Sort
+    switch (sortOption) {
+      case 'name-asc':
+        result = [...result].sort((a, b) =>
+          (a.parent?.name || '').localeCompare(b.parent?.name || '')
+        );
+        break;
+      case 'name-desc':
+        result = [...result].sort((a, b) =>
+          (b.parent?.name || '').localeCompare(a.parent?.name || '')
+        );
+        break;
+      case 'amount-high':
+        result = [...result].sort((a, b) => b.amount_due - a.amount_due);
+        break;
+      case 'amount-low':
+        result = [...result].sort((a, b) => a.amount_due - b.amount_due);
+        break;
+      case 'status':
+        const statusOrder: Record<string, number> = { unpaid: 0, partial: 1, paid: 2 };
+        result = [...result].sort((a, b) =>
+          statusOrder[a.status] - statusOrder[b.status]
+        );
+        break;
+    }
+
+    return result;
+  }, [displayPayments, searchQuery, filterStatus, sortOption]);
+
   // Helper to get lesson dates for a payment from the monthly lesson summary
   const getLessonDatesForPayment = (parentId: string): { dates: string[], count: number } => {
     if (!monthlyLessonSummary) return { dates: [], count: 0 };
@@ -175,21 +227,37 @@ export default function PaymentsScreen() {
       }));
   }, [prepaidPayments]);
 
+  // Reset filters helper
+  const resetFilters = () => {
+    setSearchQuery('');
+    setFilterStatus('all');
+    setSortOption('name-asc');
+  };
+
   // Month navigation
   const goToPreviousMonth = () => {
     const newMonth = new Date(selectedMonth);
     newMonth.setMonth(newMonth.getMonth() - 1);
     setSelectedMonth(newMonth);
+    resetFilters();
   };
 
   const goToNextMonth = () => {
     const newMonth = new Date(selectedMonth);
     newMonth.setMonth(newMonth.getMonth() + 1);
     setSelectedMonth(newMonth);
+    resetFilters();
   };
 
   const goToCurrentMonth = () => {
     setSelectedMonth(new Date());
+    resetFilters();
+  };
+
+  // View mode handler with filter reset
+  const handleViewModeChange = (mode: PaymentViewMode) => {
+    setViewMode(mode);
+    resetFilters();
   };
 
   const handleRefresh = async () => {
@@ -501,7 +569,7 @@ export default function PaymentsScreen() {
                 styles.viewModeButton,
                 viewMode === 'invoice' && styles.viewModeButtonActive,
               ]}
-              onPress={() => setViewMode('invoice')}
+              onPress={() => handleViewModeChange('invoice')}
             >
               <Ionicons
                 name="receipt-outline"
@@ -520,7 +588,7 @@ export default function PaymentsScreen() {
                 styles.viewModeButton,
                 viewMode === 'prepaid' && styles.viewModeButtonActive,
               ]}
-              onPress={() => setViewMode('prepaid')}
+              onPress={() => handleViewModeChange('prepaid')}
             >
               <Ionicons
                 name="calendar-outline"
@@ -557,28 +625,232 @@ export default function PaymentsScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        {/* Monthly Lesson Summary (Hybrid Approach) - Tutor only */}
+        {/* Overdue Alert - Show at very top for tutors */}
+        {isTutor && viewMode === 'invoice' && overduePayments.length > 0 && (
+          <Pressable style={styles.overdueAlert}>
+            <Ionicons name="warning" size={20} color={colors.status.error} />
+            <Text style={styles.overdueText}>
+              {overduePayments.length} overdue payment{overduePayments.length > 1 ? 's' : ''}
+            </Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.status.error} />
+          </Pressable>
+        )}
+
+        {/* Filter Bar - Tutor invoice view only */}
         {isTutor && viewMode === 'invoice' && (
-          <MonthlyPaymentSummary
-            summary={monthlyLessonSummary}
-            loading={lessonSummaryLoading}
-            onGenerateInvoice={handleQuickInvoice}
-            onStatusClick={handleStatusClick}
-            onSwitchToPrepaid={(parentId) => {
-              const parentData = parents.find(p => p.id === parentId);
-              if (parentData) {
-                handleToggleBillingMode(parentData);
-              } else {
-                console.error('Parent not found:', parentId, 'Available parents:', parents.map(p => ({ id: p.id, name: p.name })));
-                if (Platform.OS === 'web') {
-                  window.alert('Parent not found. Please refresh the page and try again.');
-                } else {
-                  Alert.alert('Error', 'Parent not found. Please refresh and try again.');
-                }
-              }
-            }}
-            compact={false}
-          />
+          <View style={styles.filterBarContainer}>
+            <PaymentFilterBar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              filterStatus={filterStatus}
+              onFilterStatusChange={setFilterStatus}
+              sortOption={sortOption}
+              onSortChange={setSortOption}
+              totalCount={displayPayments.length}
+              filteredCount={filteredPayments.length}
+            />
+          </View>
+        )}
+
+        {/* Invoice Families Section - MOVED UP for quick access */}
+        {isTutor && viewMode === 'invoice' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Invoice Families</Text>
+
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.piano.primary} />
+              </View>
+            ) : filteredPayments.length === 0 ? (
+              <View style={styles.emptyCard}>
+                {displayPayments.length > 0 ? (
+                  <>
+                    <Ionicons name="search-outline" size={48} color={colors.neutral.textMuted} />
+                    <Text style={styles.emptyTitle}>No matching families</Text>
+                    <Text style={styles.emptySubtitle}>
+                      Try adjusting your search or filters
+                    </Text>
+                    <Pressable
+                      style={styles.clearFiltersButton}
+                      onPress={resetFilters}
+                    >
+                      <Text style={styles.clearFiltersText}>Clear filters</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="receipt-outline" size={48} color={colors.neutral.textMuted} />
+                    <Text style={styles.emptyTitle}>No invoices this month</Text>
+                    <Text style={styles.emptySubtitle}>
+                      Generate invoices from completed lessons below
+                    </Text>
+                  </>
+                )}
+              </View>
+            ) : (
+              <View style={styles.paymentsList}>
+                {filteredPayments.map((payment) => (
+                  <Pressable
+                    key={payment.id}
+                    style={styles.paymentCard}
+                    onPress={() => {
+                      setSelectedPayment(payment);
+                      setShowEditModal(true);
+                    }}
+                  >
+                    <View style={styles.paymentMain}>
+                      <View style={styles.paymentInfo}>
+                        <Text style={styles.paymentFamily}>
+                          {payment.parent?.name || 'Unknown'}
+                        </Text>
+                        <Text style={styles.paymentStudents}>
+                          {payment.parent?.students?.length || 0} student{(payment.parent?.students?.length || 0) !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      <View style={styles.paymentAmounts}>
+                        <Text style={styles.paymentDue}>
+                          ${payment.amount_due.toFixed(2)}
+                        </Text>
+                        <Text style={[styles.paymentPaid, { color: getStatusColor(payment.status) }]}>
+                          ${payment.amount_paid.toFixed(2)} paid
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.paymentFooter}>
+                      <View style={styles.paymentFooterLeft}>
+                        <View style={[styles.statusBadge, { backgroundColor: getStatusBg(payment.status) }]}>
+                          <Text style={[styles.statusBadgeText, { color: getStatusColor(payment.status) }]}>
+                            {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.paymentActions}>
+                        {payment.status !== 'paid' && (
+                          <Pressable
+                            style={styles.markPaidButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleMarkPaid(payment);
+                            }}
+                          >
+                            <Ionicons name="checkmark" size={16} color={colors.status.success} />
+                            <Text style={styles.markPaidText}>Mark Paid</Text>
+                          </Pressable>
+                        )}
+                        {payment.status === 'paid' && (
+                          <Pressable
+                            style={styles.markUnpaidButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleMarkUnpaid(payment);
+                            }}
+                          >
+                            <Ionicons name="close" size={16} color={colors.status.warning} />
+                            <Text style={styles.markUnpaidText}>Mark Unpaid</Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          style={styles.switchModeButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            const parentData = parents.find(p => p.id === payment.parent_id);
+                            if (parentData) {
+                              handleToggleBillingMode(parentData);
+                            }
+                          }}
+                        >
+                          <Ionicons name="swap-horizontal" size={16} color={colors.piano.primary} />
+                        </Pressable>
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleDeletePayment(payment);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={colors.status.error} />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    {/* Lesson dates for this invoice */}
+                    {(() => {
+                      const { dates, count } = getLessonDatesForPayment(payment.parent_id);
+                      if (count > 0) {
+                        return (
+                          <View style={styles.lessonDatesContainer}>
+                            <Ionicons name="calendar-outline" size={14} color={colors.neutral.textSecondary} />
+                            <Text style={styles.lessonDatesText}>
+                              {count === 1
+                                ? `Lesson on ${dates[0]}`
+                                : dates.length <= 3
+                                  ? `Lessons: ${dates.join(', ')}`
+                                  : `${count} lessons: ${dates.slice(0, 2).join(', ')} +${count - 2} more`}
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {payment.notes && (
+                      <Text style={styles.paymentNotes} numberOfLines={1}>
+                        {payment.notes}
+                      </Text>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Monthly Lesson Summary (Collapsible) - Tutor invoice view only */}
+        {isTutor && viewMode === 'invoice' && (
+          <View style={styles.collapsibleSection}>
+            <Pressable
+              style={styles.collapsibleHeader}
+              onPress={() => setSummaryExpanded(!summaryExpanded)}
+            >
+              <View style={styles.collapsibleHeaderLeft}>
+                <Ionicons
+                  name={summaryExpanded ? 'chevron-down' : 'chevron-forward'}
+                  size={20}
+                  color={colors.neutral.textSecondary}
+                />
+                <Text style={styles.collapsibleTitle}>Monthly Summary</Text>
+              </View>
+              {monthlyLessonSummary && (
+                <Text style={styles.collapsibleSubtitle}>
+                  ${monthlyLessonSummary.totals.expected_amount.toFixed(2)} expected
+                </Text>
+              )}
+            </Pressable>
+            {summaryExpanded && (
+              <MonthlyPaymentSummary
+                summary={monthlyLessonSummary}
+                loading={lessonSummaryLoading}
+                onGenerateInvoice={handleQuickInvoice}
+                onStatusClick={handleStatusClick}
+                onSwitchToPrepaid={(parentId) => {
+                  const parentData = parents.find(p => p.id === parentId);
+                  if (parentData) {
+                    handleToggleBillingMode(parentData);
+                  } else {
+                    console.error('Parent not found:', parentId, 'Available parents:', parents.map(p => ({ id: p.id, name: p.name })));
+                    if (Platform.OS === 'web') {
+                      window.alert('Parent not found. Please refresh the page and try again.');
+                    } else {
+                      Alert.alert('Error', 'Parent not found. Please refresh and try again.');
+                    }
+                  }
+                }}
+                compact={false}
+              />
+            )}
+          </View>
         )}
 
         {/* Parent Prepaid Status - Show if parent is on prepaid billing */}
@@ -674,8 +946,8 @@ export default function PaymentsScreen() {
           </View>
         )}
 
-        {/* Overdue Alert */}
-        {isTutor && overduePayments.length > 0 && (
+        {/* Overdue Alert - Prepaid mode only (invoice mode has it at top) */}
+        {isTutor && viewMode === 'prepaid' && overduePayments.length > 0 && (
           <Pressable style={styles.overdueAlert}>
             <Ionicons name="warning" size={20} color={colors.status.error} />
             <Text style={styles.overdueText}>
@@ -773,151 +1045,86 @@ export default function PaymentsScreen() {
           </View>
         )}
 
-        {/* Payment List (Invoice mode or parent view) */}
-        {(!isTutor || viewMode === 'invoice') && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            {isTutor ? 'Invoice Families' : 'Payment History'}
-          </Text>
+        {/* Payment History - Parent view only (tutors have invoice list above) */}
+        {!isTutor && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Payment History</Text>
 
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.piano.primary} />
-            </View>
-          ) : displayPayments.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Ionicons name="receipt-outline" size={48} color={colors.neutral.textMuted} />
-              <Text style={styles.emptyTitle}>No payments this month</Text>
-              <Text style={styles.emptySubtitle}>
-                {isTutor
-                  ? 'Create payment records for your families'
-                  : 'No payments recorded for this month'}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.paymentsList}>
-              {displayPayments.map((payment) => (
-                <Pressable
-                  key={payment.id}
-                  style={styles.paymentCard}
-                  onPress={() => {
-                    if (isTutor) {
-                      setSelectedPayment(payment);
-                      setShowEditModal(true);
-                    }
-                  }}
-                >
-                  <View style={styles.paymentMain}>
-                    <View style={styles.paymentInfo}>
-                      <Text style={styles.paymentFamily}>
-                        {payment.parent?.name || 'Unknown'}
-                      </Text>
-                      <Text style={styles.paymentStudents}>
-                        {payment.parent?.students?.length || 0} student{(payment.parent?.students?.length || 0) !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                    <View style={styles.paymentAmounts}>
-                      <Text style={styles.paymentDue}>
-                        ${payment.amount_due.toFixed(2)}
-                      </Text>
-                      <Text style={[styles.paymentPaid, { color: getStatusColor(payment.status) }]}>
-                        ${payment.amount_paid.toFixed(2)} paid
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.paymentFooter}>
-                    <View style={styles.paymentFooterLeft}>
-                      <View style={[styles.statusBadge, { backgroundColor: getStatusBg(payment.status) }]}>
-                        <Text style={[styles.statusBadgeText, { color: getStatusColor(payment.status) }]}>
-                          {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.piano.primary} />
+              </View>
+            ) : displayPayments.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="receipt-outline" size={48} color={colors.neutral.textMuted} />
+                <Text style={styles.emptyTitle}>No payments this month</Text>
+                <Text style={styles.emptySubtitle}>
+                  No payments recorded for this month
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.paymentsList}>
+                {displayPayments.map((payment) => (
+                  <View key={payment.id} style={styles.paymentCard}>
+                    <View style={styles.paymentMain}>
+                      <View style={styles.paymentInfo}>
+                        <Text style={styles.paymentFamily}>
+                          {payment.parent?.name || 'Unknown'}
+                        </Text>
+                        <Text style={styles.paymentStudents}>
+                          {payment.parent?.students?.length || 0} student{(payment.parent?.students?.length || 0) !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      <View style={styles.paymentAmounts}>
+                        <Text style={styles.paymentDue}>
+                          ${payment.amount_due.toFixed(2)}
+                        </Text>
+                        <Text style={[styles.paymentPaid, { color: getStatusColor(payment.status) }]}>
+                          ${payment.amount_paid.toFixed(2)} paid
                         </Text>
                       </View>
                     </View>
 
-                    <View style={styles.paymentActions}>
-                      {isTutor && payment.status !== 'paid' && (
-                        <Pressable
-                          style={styles.markPaidButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleMarkPaid(payment);
-                          }}
-                        >
-                          <Ionicons name="checkmark" size={16} color={colors.status.success} />
-                          <Text style={styles.markPaidText}>Mark Paid</Text>
-                        </Pressable>
-                      )}
-                      {isTutor && payment.status === 'paid' && (
-                        <Pressable
-                          style={styles.markUnpaidButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleMarkUnpaid(payment);
-                          }}
-                        >
-                          <Ionicons name="close" size={16} color={colors.status.warning} />
-                          <Text style={styles.markUnpaidText}>Mark Unpaid</Text>
-                        </Pressable>
-                      )}
-                      {isTutor && (
-                        <Pressable
-                          style={styles.switchModeButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            const parentData = parents.find(p => p.id === payment.parent_id);
-                            if (parentData) {
-                              handleToggleBillingMode(parentData);
-                            }
-                          }}
-                        >
-                          <Ionicons name="swap-horizontal" size={16} color={colors.piano.primary} />
-                        </Pressable>
-                      )}
-                      {isTutor && (
-                        <Pressable
-                          style={styles.deleteButton}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            handleDeletePayment(payment);
-                          }}
-                        >
-                          <Ionicons name="trash-outline" size={16} color={colors.status.error} />
-                        </Pressable>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Lesson dates for this invoice */}
-                  {(() => {
-                    const { dates, count } = getLessonDatesForPayment(payment.parent_id);
-                    if (count > 0) {
-                      return (
-                        <View style={styles.lessonDatesContainer}>
-                          <Ionicons name="calendar-outline" size={14} color={colors.neutral.textSecondary} />
-                          <Text style={styles.lessonDatesText}>
-                            {count === 1
-                              ? `Lesson on ${dates[0]}`
-                              : dates.length <= 3
-                                ? `Lessons: ${dates.join(', ')}`
-                                : `${count} lessons: ${dates.slice(0, 2).join(', ')} +${count - 2} more`}
+                    <View style={styles.paymentFooter}>
+                      <View style={styles.paymentFooterLeft}>
+                        <View style={[styles.statusBadge, { backgroundColor: getStatusBg(payment.status) }]}>
+                          <Text style={[styles.statusBadgeText, { color: getStatusColor(payment.status) }]}>
+                            {payment.status.charAt(0).toUpperCase() + payment.status.slice(1)}
                           </Text>
                         </View>
-                      );
-                    }
-                    return null;
-                  })()}
+                      </View>
+                    </View>
 
-                  {payment.notes && (
-                    <Text style={styles.paymentNotes} numberOfLines={1}>
-                      {payment.notes}
-                    </Text>
-                  )}
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
+                    {/* Lesson dates for this invoice */}
+                    {(() => {
+                      const { dates, count } = getLessonDatesForPayment(payment.parent_id);
+                      if (count > 0) {
+                        return (
+                          <View style={styles.lessonDatesContainer}>
+                            <Ionicons name="calendar-outline" size={14} color={colors.neutral.textSecondary} />
+                            <Text style={styles.lessonDatesText}>
+                              {count === 1
+                                ? `Lesson on ${dates[0]}`
+                                : dates.length <= 3
+                                  ? `Lessons: ${dates.join(', ')}`
+                                  : `${count} lessons: ${dates.slice(0, 2).join(', ')} +${count - 2} more`}
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {payment.notes && (
+                      <Text style={styles.paymentNotes} numberOfLines={1}>
+                        {payment.notes}
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
         )}
       </ScrollView>
 
@@ -1422,5 +1629,56 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
     textAlign: 'center',
+  },
+
+  // Filter bar styles
+  filterBarContainer: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+
+  // Collapsible section styles
+  collapsibleSection: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+    overflow: 'hidden',
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderBottomWidth: 0,
+  },
+  collapsibleHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  collapsibleTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  collapsibleSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+
+  // Clear filters button
+  clearFiltersButton: {
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  clearFiltersText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
   },
 });
