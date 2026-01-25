@@ -12,11 +12,19 @@ import {
   Pressable,
   ActivityIndicator,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../theme';
 import { ScheduledLessonWithStudent, GroupedLesson, TutoringSubject } from '../types/database';
 import { Avatar } from './ui/Avatar';
+import { GroupSessionSettingsModal } from './GroupSessionSettingsModal';
+import { SessionEnrollmentsPanel } from './SessionEnrollmentsPanel';
+import {
+  useGroupSessionSettings,
+  useConvertLessonToSession,
+  useUpsertGroupSessionSettings,
+} from '../hooks/useGroupSessions';
 
 // Subject display name mapping
 const SUBJECT_NAMES: Record<TutoringSubject, string> = {
@@ -77,6 +85,46 @@ export function LessonDetailModal({
   const [cancelReason, setCancelReason] = useState('');
   const [completeNotes, setCompleteNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showEnrollmentSettings, setShowEnrollmentSettings] = useState(false);
+  const [showEnrollmentsExpanded, setShowEnrollmentsExpanded] = useState(false);
+  const [convertingToSession, setConvertingToSession] = useState(false);
+  const [effectiveSessionId, setEffectiveSessionId] = useState<string | null>(null);
+
+  // Get session ID if this is a grouped session (or use effective session if converted)
+  const originalSessionId = groupedLesson?.session_id || lesson?.session_id || null;
+  const sessionId = effectiveSessionId || originalSessionId;
+
+  // Hooks for converting lesson to session and managing settings
+  const { convert: convertToSession, loading: convertLoading } = useConvertLessonToSession();
+  const { upsert: upsertSettings } = useUpsertGroupSessionSettings();
+
+  // Fetch enrollment settings and pending count for sessions (tutor only)
+  const { data: enrollmentSettings, refetch: refetchSettings } = useGroupSessionSettings(
+    isTutor && sessionId ? sessionId : null
+  );
+
+  // Handle opening enrollment settings - convert to session first if needed
+  const handleOpenEnrollmentSettings = async () => {
+    if (!lesson) return;
+
+    // If there's no session yet, convert the lesson to a session first
+    if (!sessionId) {
+      setConvertingToSession(true);
+      const newSessionId = await convertToSession(
+        lesson.id,
+        lesson.scheduled_at,
+        lesson.duration_min
+      );
+      setConvertingToSession(false);
+
+      if (newSessionId) {
+        setEffectiveSessionId(newSessionId);
+        setShowEnrollmentSettings(true);
+      }
+    } else {
+      setShowEnrollmentSettings(true);
+    }
+  };
 
   if (!lesson) return null;
 
@@ -90,7 +138,7 @@ export function LessonDetailModal({
     scheduled_at: lesson.scheduled_at,
     end_time: new Date(new Date(lesson.scheduled_at).getTime() + lesson.duration_min * 60000).toISOString(),
     duration_min: lesson.duration_min,
-    student_names: [lesson.student.name],
+    student_names: [lesson.student?.name || 'Student'],
     subjects: [lesson.subject] as TutoringSubject[],
     status: lesson.status,
   };
@@ -216,7 +264,7 @@ export function LessonDetailModal({
             <Ionicons name="close-circle" size={48} color={colors.status.error} />
             <Text style={styles.confirmTitle}>Cancel Lesson?</Text>
             <Text style={styles.confirmSubtitle}>
-              This will notify {lesson.student.parent.name} about the cancellation.
+              This will notify {lesson.student?.parent?.name || 'the parent'} about the cancellation.
             </Text>
             <TextInput
               style={styles.confirmInput}
@@ -260,7 +308,7 @@ export function LessonDetailModal({
             <Ionicons name="checkmark-circle" size={48} color={colors.status.success} />
             <Text style={styles.confirmTitle}>Complete Lesson?</Text>
             <Text style={styles.confirmSubtitle}>
-              Mark this lesson with {lesson.student.name} as completed.
+              Mark this lesson with {lesson.student?.name || 'this student'} as completed.
             </Text>
             <TextInput
               style={styles.confirmInput}
@@ -439,7 +487,7 @@ export function LessonDetailModal({
                 {displayData.lessons.slice(0, 3).map((l, idx) => (
                   <View key={l.id} style={[styles.multiStudentAvatar, { marginLeft: idx > 0 ? -12 : 0 }]}>
                     <Avatar
-                      name={l.student.name}
+                      name={l.student?.name || 'Student'}
                       size="md"
                       backgroundColor={getSubjectColor(l.subject).primary}
                     />
@@ -454,15 +502,17 @@ export function LessonDetailModal({
           ) : (
             <View style={styles.studentSection}>
               <Avatar
-                name={lesson.student.name}
+                name={lesson.student?.name || 'Student'}
                 size="lg"
                 backgroundColor={subjectColor.primary}
               />
               <View style={styles.studentInfo}>
-                <Text style={styles.studentName}>{lesson.student.name}</Text>
-                <Text style={styles.parentName}>
-                  Parent: {lesson.student.parent.name}
-                </Text>
+                <Text style={styles.studentName}>{lesson.student?.name || 'Student'}</Text>
+                {lesson.student?.parent?.name && (
+                  <Text style={styles.parentName}>
+                    Parent: {lesson.student.parent.name}
+                  </Text>
+                )}
               </View>
             </View>
           )}
@@ -491,7 +541,7 @@ export function LessonDetailModal({
                 <View key={l.id} style={styles.groupedLessonItem}>
                   <Text style={styles.groupedLessonIcon}>{SUBJECT_EMOJI[l.subject]}</Text>
                   <View style={styles.groupedLessonInfo}>
-                    <Text style={styles.groupedLessonName}>{l.student.name}</Text>
+                    <Text style={styles.groupedLessonName}>{l.student?.name || 'Student'}</Text>
                     <Text style={styles.groupedLessonSubject}>{SUBJECT_NAMES[l.subject]}</Text>
                   </View>
                   <View
@@ -568,6 +618,108 @@ export function LessonDetailModal({
             <View style={styles.notesSection}>
               <Text style={styles.notesLabel}>Notes</Text>
               <Text style={styles.notesText}>{lesson.notes}</Text>
+            </View>
+          )}
+
+          {/* Enrollment Section - Tutor only, for all lessons */}
+          {isTutor && (
+            <View style={styles.enrollmentSection}>
+              <View style={styles.enrollmentHeader}>
+                <Text style={styles.enrollmentTitle}>Group Enrollment</Text>
+                {sessionId && enrollmentSettings && (
+                  <Pressable
+                    style={styles.settingsButton}
+                    onPress={() => setShowEnrollmentSettings(true)}
+                  >
+                    <Ionicons name="settings-outline" size={18} color={colors.primary.main} />
+                    <Text style={styles.settingsButtonText}>Settings</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Enrollment Status - show when settings exist */}
+              {sessionId && enrollmentSettings ? (
+                <View style={styles.enrollmentStatus}>
+                  <View
+                    style={[
+                      styles.enrollmentStatusBadge,
+                      enrollmentSettings.is_open_for_enrollment
+                        ? styles.enrollmentStatusOpen
+                        : styles.enrollmentStatusClosed,
+                    ]}
+                  >
+                    <Ionicons
+                      name={enrollmentSettings.is_open_for_enrollment ? 'people' : 'lock-closed'}
+                      size={14}
+                      color={
+                        enrollmentSettings.is_open_for_enrollment
+                          ? colors.status.success
+                          : colors.neutral.textMuted
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.enrollmentStatusText,
+                        enrollmentSettings.is_open_for_enrollment
+                          ? styles.enrollmentStatusTextOpen
+                          : styles.enrollmentStatusTextClosed,
+                      ]}
+                    >
+                      {enrollmentSettings.is_open_for_enrollment
+                        ? 'Open for Enrollment'
+                        : 'Enrollment Closed'}
+                    </Text>
+                  </View>
+                  {enrollmentSettings.is_open_for_enrollment && (
+                    <Text style={styles.enrollmentLimit}>
+                      Max {enrollmentSettings.max_students} students
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <Pressable
+                  style={[
+                    styles.enableEnrollmentButton,
+                    (convertingToSession || convertLoading) && styles.enableEnrollmentButtonDisabled,
+                  ]}
+                  onPress={handleOpenEnrollmentSettings}
+                  disabled={convertingToSession || convertLoading}
+                >
+                  {convertingToSession || convertLoading ? (
+                    <ActivityIndicator size="small" color={colors.primary.main} />
+                  ) : (
+                    <Ionicons name="add-circle-outline" size={20} color={colors.primary.main} />
+                  )}
+                  <Text style={styles.enableEnrollmentText}>
+                    {convertingToSession || convertLoading
+                      ? 'Setting up...'
+                      : 'Open for Parent Enrollment'}
+                  </Text>
+                </Pressable>
+              )}
+
+              {/* Enrollment Requests Panel */}
+              {sessionId && enrollmentSettings?.is_open_for_enrollment && (
+                <View style={styles.enrollmentRequestsContainer}>
+                  <Pressable
+                    style={styles.enrollmentRequestsHeader}
+                    onPress={() => setShowEnrollmentsExpanded(!showEnrollmentsExpanded)}
+                  >
+                    <Text style={styles.enrollmentRequestsTitle}>Enrollment Requests</Text>
+                    <Ionicons
+                      name={showEnrollmentsExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={18}
+                      color={colors.neutral.textSecondary}
+                    />
+                  </Pressable>
+                  {showEnrollmentsExpanded && (
+                    <SessionEnrollmentsPanel
+                      sessionId={sessionId}
+                      onEnrollmentChanged={() => refetchSettings()}
+                    />
+                  )}
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -654,6 +806,17 @@ export function LessonDetailModal({
               </Pressable>
             )}
           </View>
+        )}
+
+        {/* Group Session Settings Modal */}
+        {sessionId && (
+          <GroupSessionSettingsModal
+            visible={showEnrollmentSettings}
+            onClose={() => setShowEnrollmentSettings(false)}
+            sessionId={sessionId}
+            sessionDate={new Date(displayData.scheduled_at)}
+            onSaved={() => refetchSettings()}
+          />
         )}
       </View>
     </Modal>
@@ -1068,6 +1231,110 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.primary.main,
+  },
+  // Enrollment section styles
+  enrollmentSection: {
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginTop: spacing.lg,
+    ...shadows.sm,
+  },
+  enrollmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  enrollmentTitle: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary.subtle,
+  },
+  settingsButtonText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
+  },
+  enrollmentStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  enrollmentStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+  },
+  enrollmentStatusOpen: {
+    backgroundColor: colors.status.successBg,
+  },
+  enrollmentStatusClosed: {
+    backgroundColor: colors.neutral.background,
+  },
+  enrollmentStatusText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+  },
+  enrollmentStatusTextOpen: {
+    color: colors.status.success,
+  },
+  enrollmentStatusTextClosed: {
+    color: colors.neutral.textMuted,
+  },
+  enrollmentLimit: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+  },
+  enableEnrollmentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.primary.main,
+    borderStyle: 'dashed',
+    backgroundColor: colors.primary.subtle,
+  },
+  enableEnrollmentButtonDisabled: {
+    opacity: 0.6,
+  },
+  enableEnrollmentText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
+  },
+  enrollmentRequestsContainer: {
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+    paddingTop: spacing.md,
+  },
+  enrollmentRequestsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  enrollmentRequestsTitle: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
   },
 });
 

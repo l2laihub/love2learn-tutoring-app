@@ -208,6 +208,37 @@ export function useCreateLessonRequest(): {
           throw new Error(createError.message);
         }
 
+        // Create notification for tutor (recipient_id = null means tutors see it via RLS)
+        try {
+          const { data: student } = await supabase
+            .from('students')
+            .select('name')
+            .eq('id', input.student_id)
+            .single();
+
+          const requestType = (input as any).request_type || 'reschedule';
+          const notificationType = requestType === 'dropin' ? 'dropin_request' : 'reschedule_request';
+          const title = requestType === 'dropin' ? 'New Drop-in Request' : 'New Reschedule Request';
+
+          await supabase.from('notifications').insert({
+            recipient_id: null, // Tutors see all notifications via RLS
+            sender_id: input.parent_id,
+            type: notificationType,
+            title,
+            message: `${student?.name || 'A student'} has requested a ${requestType === 'dropin' ? 'drop-in lesson' : 'lesson reschedule'} for ${input.subject}`,
+            data: {
+              request_id: data.id,
+              student_id: input.student_id,
+              subject: input.subject,
+              preferred_date: input.preferred_date,
+              request_type: requestType,
+            },
+            action_url: '/requests',
+          });
+        } catch (notifyErr) {
+          console.error('Failed to create notification:', notifyErr);
+        }
+
         return data as LessonRequest;
       } catch (err) {
         const errorMessage =
@@ -308,6 +339,7 @@ export function useApproveLessonRequest(): {
           .from('lesson_requests')
           .select(`
             parent_id,
+            student_id,
             subject,
             preferred_date,
             request_group_id,
@@ -368,6 +400,28 @@ export function useApproveLessonRequest(): {
             // Log but don't fail the approval if email fails
             console.error('Failed to send approval email:', emailError);
           });
+
+          // Create notification for parent
+          try {
+            const notificationType = requestData.request_type === 'dropin' ? 'dropin_response' : 'reschedule_response';
+            const title = requestData.request_type === 'dropin' ? 'Drop-in Request Approved' : 'Reschedule Request Approved';
+
+            await supabase.from('notifications').insert({
+              recipient_id: requestData.parent_id,
+              sender_id: null,
+              type: notificationType,
+              title,
+              message: `Your ${requestData.request_type === 'dropin' ? 'drop-in' : 'reschedule'} request for ${studentData?.name || 'your student'} has been approved`,
+              data: {
+                request_id: id,
+                student_id: requestData.student_id,
+                subject: requestData.subject,
+                scheduled_lesson_id: scheduledLessonId || null,
+              },
+            });
+          } catch (notifyErr) {
+            console.error('Failed to create notification:', notifyErr);
+          }
         }
 
         return data as LessonRequest;
@@ -410,6 +464,7 @@ export function useRejectLessonRequest(): {
           .from('lesson_requests')
           .select(`
             parent_id,
+            student_id,
             subject,
             preferred_date,
             request_group_id,
@@ -453,6 +508,28 @@ export function useRejectLessonRequest(): {
             // Log but don't fail the rejection if email fails
             console.error('Failed to send rejection email:', emailError);
           });
+
+          // Create notification for parent
+          try {
+            const notificationType = requestData.request_type === 'dropin' ? 'dropin_response' : 'reschedule_response';
+            const title = requestData.request_type === 'dropin' ? 'Drop-in Request Declined' : 'Reschedule Request Declined';
+
+            await supabase.from('notifications').insert({
+              recipient_id: requestData.parent_id,
+              sender_id: null,
+              type: notificationType,
+              title,
+              message: `Your ${requestData.request_type === 'dropin' ? 'drop-in' : 'reschedule'} request for ${studentData?.name || 'your student'} has been declined${reason ? `: ${reason}` : ''}`,
+              data: {
+                request_id: id,
+                student_id: requestData.student_id,
+                subject: requestData.subject,
+                reason: reason || null,
+              },
+            });
+          } catch (notifyErr) {
+            console.error('Failed to create notification:', notifyErr);
+          }
         }
 
         return data as LessonRequest;

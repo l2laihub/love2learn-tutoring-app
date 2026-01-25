@@ -47,7 +47,9 @@ import { LessonFormModal, LessonFormData, SessionFormData } from '../../src/comp
 import { LessonDetailModal } from '../../src/components/LessonDetailModal';
 import { RescheduleRequestModal } from '../../src/components/RescheduleRequestModal';
 import { DropinRequestModal } from '../../src/components/DropinRequestModal';
+import { AvailableSessionsModal } from '../../src/components/AvailableSessionsModal';
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
+import { useAvailableGroupSessions } from '../../src/hooks/useGroupSessions';
 import { TutorBreak } from '../../src/types/database';
 import { useQuickInvoice, useIncrementSessionUsage } from '../../src/hooks/usePayments';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
@@ -125,6 +127,7 @@ export default function CalendarScreen() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [showDropinModal, setShowDropinModal] = useState(false);
+  const [showGroupSessionsModal, setShowGroupSessionsModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<ScheduledLessonWithStudent | null>(null);
   const [selectedGroupedLesson, setSelectedGroupedLesson] = useState<GroupedLesson | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -142,6 +145,9 @@ export default function CalendarScreen() {
 
   // Fetch parent's students (for drop-in requests)
   const { data: parentStudents } = useStudentsByParent(!isTutor ? parent?.id || null : null);
+
+  // Fetch available group sessions count for badge (only for parents)
+  const { data: availableGroupSessions } = useAvailableGroupSessions(!isTutor ? parent?.id || null : null);
 
   // Fetch tutor breaks (only for tutors)
   const {
@@ -740,13 +746,31 @@ export default function CalendarScreen() {
             </View>
           )}
           {!isTutor && parent && (
-            <Pressable
-              style={styles.dropinButton}
-              onPress={() => setShowDropinModal(true)}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={colors.primary.main} />
-              <Text style={styles.dropinButtonText}>Request Drop-in</Text>
-            </Pressable>
+            <View style={styles.parentButtons}>
+              <Pressable
+                style={styles.groupSessionsButton}
+                onPress={() => setShowGroupSessionsModal(true)}
+              >
+                <View style={styles.buttonWithBadge}>
+                  <Ionicons name="people-outline" size={20} color={colors.secondary.main} />
+                  {availableGroupSessions.length > 0 && (
+                    <View style={styles.sessionBadge}>
+                      <Text style={styles.sessionBadgeText}>
+                        {availableGroupSessions.length}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.groupSessionsButtonText}>Group Sessions</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dropinButton}
+                onPress={() => setShowDropinModal(true)}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={colors.primary.main} />
+                <Text style={styles.dropinButtonText}>Request Drop-in</Text>
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -1220,6 +1244,20 @@ export default function CalendarScreen() {
           }}
         />
       )}
+
+      {/* Available Group Sessions Modal (for parents) */}
+      {parent && parentStudents && (
+        <AvailableSessionsModal
+          visible={showGroupSessionsModal}
+          onClose={() => setShowGroupSessionsModal(false)}
+          parentId={parent.id}
+          students={parentStudents}
+          onEnrollmentCreated={() => {
+            setShowGroupSessionsModal(false);
+            // Optionally refetch data
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -1256,6 +1294,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.md,
+  },
+  parentButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  groupSessionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.secondary.subtle,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.secondary.main,
+  },
+  groupSessionsButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.secondary.main,
+  },
+  buttonWithBadge: {
+    position: 'relative',
+  },
+  sessionBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -8,
+    backgroundColor: colors.status.error,
+    borderRadius: 10,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  sessionBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.weights.bold,
+    color: colors.neutral.white,
   },
   dropinButton: {
     flexDirection: 'row',

@@ -319,6 +319,7 @@ export function useUnreadNotificationCount(): {
 
   const fetchCount = useCallback(async () => {
     if (!parentId) {
+      console.log('[NotificationCount] No parentId, setting count to 0');
       setCount(0);
       setLoading(false);
       return;
@@ -326,18 +327,20 @@ export function useUnreadNotificationCount(): {
 
     try {
       setLoading(true);
+      console.log('[NotificationCount] Fetching count for parentId:', parentId);
 
       const { data: unreadCount, error } = await supabase
         .rpc('get_unread_notification_count', { p_parent_id: parentId });
 
       if (error) {
-        console.error('Error fetching unread count:', error);
+        console.error('[NotificationCount] Error fetching unread count:', error);
         return;
       }
 
+      console.log('[NotificationCount] Unread count:', unreadCount);
       setCount(unreadCount || 0);
     } catch (err) {
-      console.error('Error fetching unread count:', err);
+      console.error('[NotificationCount] Error fetching unread count:', err);
     } finally {
       setLoading(false);
     }
@@ -581,6 +584,14 @@ export function getNotificationTypeInfo(type: NotificationType): {
       return { label: 'Reschedule Request', icon: 'calendar-outline', color: '#FFC107' };
     case 'reschedule_response':
       return { label: 'Reschedule Update', icon: 'calendar-outline', color: '#3D9CA8' };
+    case 'enrollment_request':
+      return { label: 'Enrollment Request', icon: 'people-outline', color: '#9C27B0' };
+    case 'enrollment_response':
+      return { label: 'Enrollment Update', icon: 'people-outline', color: '#3D9CA8' };
+    case 'dropin_request':
+      return { label: 'Drop-in Request', icon: 'add-circle-outline', color: '#FFC107' };
+    case 'dropin_response':
+      return { label: 'Drop-in Update', icon: 'add-circle-outline', color: '#3D9CA8' };
     case 'lesson_reminder':
       return { label: 'Lesson Reminder', icon: 'alarm-outline', color: '#FF9800' };
     case 'worksheet_assigned':

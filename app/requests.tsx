@@ -27,9 +27,22 @@ import {
   useRejectLessonRequest,
   getRequestStatusInfo,
 } from '../src/hooks/useLessonRequests';
+import {
+  usePendingEnrollments,
+  usePendingEnrollmentsCount,
+  useApproveEnrollment,
+  useRejectEnrollment,
+} from '../src/hooks/useGroupSessions';
 import { useCreateLesson, useCreateGroupedLesson } from '../src/hooks/useLessons';
 import { formatTimeDisplay } from '../src/hooks/useTutorAvailability';
-import { LessonRequestWithStudent, TutoringSubject, LessonRequest, LessonRequestType } from '../src/types/database';
+import {
+  LessonRequestWithStudent,
+  TutoringSubject,
+  LessonRequest,
+  LessonRequestType,
+  SessionEnrollmentWithDetails,
+  getEnrollmentStatusInfo,
+} from '../src/types/database';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../src/theme';
 
 // Subject display names
@@ -49,7 +62,7 @@ const SUBJECT_EMOJI: Record<TutoringSubject, string> = {
   english: '📝',
 };
 
-type TabType = 'pending' | 'all';
+type TabType = 'pending' | 'all' | 'enrollments';
 
 // Helper to parse YYYY-MM-DD date string as local time (avoids UTC timezone issues)
 function parseLocalDate(dateStr: string): Date {
@@ -146,6 +159,9 @@ export default function RequestsScreen() {
   const [selectedGroupedRequest, setSelectedGroupedRequest] = useState<GroupedRequest | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedEnrollment, setSelectedEnrollment] = useState<SessionEnrollmentWithDetails | null>(null);
+  const [showEnrollmentApproveModal, setShowEnrollmentApproveModal] = useState(false);
+  const [showEnrollmentRejectModal, setShowEnrollmentRejectModal] = useState(false);
 
   // Fetch requests based on tab
   const {
@@ -162,11 +178,21 @@ export default function RequestsScreen() {
   const { mutate: createLesson } = useCreateLesson();
   const { mutate: createGroupedLesson } = useCreateGroupedLesson();
 
+  // Enrollment-related hooks
+  const { data: pendingEnrollments, loading: enrollmentsLoading, refetch: refetchEnrollments } = usePendingEnrollments();
+  const { count: enrollmentsCount } = usePendingEnrollmentsCount();
+  const { approveEnrollment, loading: approvingEnrollment } = useApproveEnrollment();
+  const { rejectEnrollment, loading: rejectingEnrollment } = useRejectEnrollment();
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetch();
+    if (activeTab === 'enrollments') {
+      await refetchEnrollments();
+    } else {
+      await refetch();
+    }
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetch, refetchEnrollments, activeTab]);
 
   // Group the requests
   const groupedRequests = React.useMemo(() => groupRequests(requests), [requests]);
@@ -179,6 +205,17 @@ export default function RequestsScreen() {
   const handleReject = (groupedRequest: GroupedRequest) => {
     setSelectedGroupedRequest(groupedRequest);
     setShowRejectModal(true);
+  };
+
+  // Enrollment handlers
+  const handleEnrollmentApprove = (enrollment: SessionEnrollmentWithDetails) => {
+    setSelectedEnrollment(enrollment);
+    setShowEnrollmentApproveModal(true);
+  };
+
+  const handleEnrollmentReject = (enrollment: SessionEnrollmentWithDetails) => {
+    setSelectedEnrollment(enrollment);
+    setShowEnrollmentRejectModal(true);
   };
 
   // Redirect if not a tutor
@@ -238,11 +275,24 @@ export default function RequestsScreen() {
           )}
         </Pressable>
         <Pressable
+          style={[styles.tab, activeTab === 'enrollments' && styles.tabActive]}
+          onPress={() => setActiveTab('enrollments')}
+        >
+          <Text style={[styles.tabText, activeTab === 'enrollments' && styles.tabTextActive]}>
+            Enrollments
+          </Text>
+          {enrollmentsCount > 0 && (
+            <View style={styles.tabBadge}>
+              <Text style={styles.tabBadgeText}>{enrollmentsCount}</Text>
+            </View>
+          )}
+        </Pressable>
+        <Pressable
           style={[styles.tab, activeTab === 'all' && styles.tabActive]}
           onPress={() => setActiveTab('all')}
         >
           <Text style={[styles.tabText, activeTab === 'all' && styles.tabTextActive]}>
-            All Requests
+            All
           </Text>
         </Pressable>
       </View>
@@ -255,47 +305,82 @@ export default function RequestsScreen() {
         }
       >
         {/* Loading State */}
-        {loading && !refreshing && (
+        {((activeTab !== 'enrollments' && loading) || (activeTab === 'enrollments' && enrollmentsLoading)) && !refreshing && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary.main} />
           </View>
         )}
 
         {/* Error State */}
-        {error && (
+        {error && activeTab !== 'enrollments' && (
           <View style={styles.errorCard}>
             <Ionicons name="alert-circle" size={24} color={colors.status.error} />
             <Text style={styles.errorText}>{error.message}</Text>
           </View>
         )}
 
-        {/* Empty State */}
-        {!loading && groupedRequests.length === 0 && (
-          <View style={styles.emptyState}>
-            <Ionicons name="mail-open-outline" size={64} color={colors.neutral.textMuted} />
-            <Text style={styles.emptyStateTitle}>
-              {activeTab === 'pending' ? 'No Pending Requests' : 'No Requests Yet'}
-            </Text>
-            <Text style={styles.emptyStateText}>
-              {activeTab === 'pending'
-                ? 'All lesson requests have been processed.'
-                : 'Reschedule and drop-in requests from parents will appear here.'}
-            </Text>
-          </View>
+        {/* Enrollments Tab Content */}
+        {activeTab === 'enrollments' && (
+          <>
+            {/* Empty State */}
+            {!enrollmentsLoading && pendingEnrollments.length === 0 && (
+              <View style={styles.emptyState}>
+                <Ionicons name="people-outline" size={64} color={colors.neutral.textMuted} />
+                <Text style={styles.emptyStateTitle}>No Pending Enrollments</Text>
+                <Text style={styles.emptyStateText}>
+                  Session enrollment requests from parents will appear here.
+                </Text>
+              </View>
+            )}
+
+            {/* Enrollment Cards */}
+            {!enrollmentsLoading && pendingEnrollments.length > 0 && (
+              <View style={styles.requestsList}>
+                {pendingEnrollments.map((enrollment) => (
+                  <EnrollmentRequestCard
+                    key={enrollment.id}
+                    enrollment={enrollment}
+                    onApprove={() => handleEnrollmentApprove(enrollment)}
+                    onReject={() => handleEnrollmentReject(enrollment)}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
 
-        {/* Request Cards */}
-        {!loading && groupedRequests.length > 0 && (
-          <View style={styles.requestsList}>
-            {groupedRequests.map((groupedRequest) => (
-              <GroupedRequestCard
-                key={groupedRequest.id}
-                groupedRequest={groupedRequest}
-                onApprove={() => handleApprove(groupedRequest)}
-                onReject={() => handleReject(groupedRequest)}
-              />
-            ))}
-          </View>
+        {/* Requests Tab Content (Pending and All) */}
+        {activeTab !== 'enrollments' && (
+          <>
+            {/* Empty State */}
+            {!loading && groupedRequests.length === 0 && (
+              <View style={styles.emptyState}>
+                <Ionicons name="mail-open-outline" size={64} color={colors.neutral.textMuted} />
+                <Text style={styles.emptyStateTitle}>
+                  {activeTab === 'pending' ? 'No Pending Requests' : 'No Requests Yet'}
+                </Text>
+                <Text style={styles.emptyStateText}>
+                  {activeTab === 'pending'
+                    ? 'All lesson requests have been processed.'
+                    : 'Reschedule and drop-in requests from parents will appear here.'}
+                </Text>
+              </View>
+            )}
+
+            {/* Request Cards */}
+            {!loading && groupedRequests.length > 0 && (
+              <View style={styles.requestsList}>
+                {groupedRequests.map((groupedRequest) => (
+                  <GroupedRequestCard
+                    key={groupedRequest.id}
+                    groupedRequest={groupedRequest}
+                    onApprove={() => handleApprove(groupedRequest)}
+                    onReject={() => handleReject(groupedRequest)}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -423,6 +508,46 @@ export default function RequestsScreen() {
           }
         }}
         loading={rejecting}
+      />
+
+      {/* Enrollment Approve Modal */}
+      <EnrollmentApproveModal
+        visible={showEnrollmentApproveModal}
+        enrollment={selectedEnrollment}
+        onClose={() => {
+          setShowEnrollmentApproveModal(false);
+          setSelectedEnrollment(null);
+        }}
+        onApprove={async () => {
+          if (!selectedEnrollment) return;
+          const result = await approveEnrollment(selectedEnrollment.id);
+          if (result) {
+            setShowEnrollmentApproveModal(false);
+            setSelectedEnrollment(null);
+            refetchEnrollments();
+          }
+        }}
+        loading={approvingEnrollment}
+      />
+
+      {/* Enrollment Reject Modal */}
+      <EnrollmentRejectModal
+        visible={showEnrollmentRejectModal}
+        enrollment={selectedEnrollment}
+        onClose={() => {
+          setShowEnrollmentRejectModal(false);
+          setSelectedEnrollment(null);
+        }}
+        onReject={async (reason) => {
+          if (!selectedEnrollment) return;
+          const result = await rejectEnrollment(selectedEnrollment.id, reason);
+          if (result) {
+            setShowEnrollmentRejectModal(false);
+            setSelectedEnrollment(null);
+            refetchEnrollments();
+          }
+        }}
+        loading={rejectingEnrollment}
       />
     </SafeAreaView>
   );
@@ -766,6 +891,264 @@ function RejectGroupedModal({ visible, groupedRequest, onClose, onReject, loadin
   );
 }
 
+// Enrollment Request Card Component
+interface EnrollmentRequestCardProps {
+  enrollment: SessionEnrollmentWithDetails;
+  onApprove: () => void;
+  onReject: () => void;
+}
+
+function EnrollmentRequestCard({ enrollment, onApprove, onReject }: EnrollmentRequestCardProps) {
+  const statusInfo = getEnrollmentStatusInfo(enrollment.status);
+  const subject = enrollment.subject as TutoringSubject;
+  const subjectColor = getSubjectColor(subject);
+  const sessionDate = enrollment.session
+    ? new Date(enrollment.session.scheduled_at)
+    : null;
+  const createdAt = new Date(enrollment.created_at);
+
+  return (
+    <View style={styles.requestCard}>
+      {/* Header */}
+      <View style={[styles.requestHeader, { backgroundColor: subjectColor.subtle }]}>
+        <Text style={styles.requestSubjectIcon}>{SUBJECT_EMOJI[subject]}</Text>
+        <View style={styles.requestHeaderInfo}>
+          <Text style={styles.requestStudentName}>{enrollment.student.name}</Text>
+          <Text style={styles.requestSubject}>{SUBJECT_NAMES[subject]}</Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
+          <Ionicons
+            name={statusInfo.icon as any}
+            size={14}
+            color={statusInfo.color}
+          />
+          <Text style={[styles.statusBadgeText, { color: statusInfo.color }]}>
+            {statusInfo.label}
+          </Text>
+        </View>
+      </View>
+
+      {/* Enrollment Badge */}
+      <View style={styles.badgesRow}>
+        <View style={styles.enrollmentBadge}>
+          <Ionicons name="people" size={14} color={colors.secondary.main} />
+          <Text style={styles.enrollmentBadgeText}>Group Session Enrollment</Text>
+        </View>
+      </View>
+
+      {/* Content */}
+      <View style={styles.requestContent}>
+        {/* Parent info */}
+        <View style={styles.requestDetail}>
+          <Ionicons name="person-outline" size={18} color={colors.neutral.textSecondary} />
+          <Text style={styles.requestDetailText}>
+            Parent: {enrollment.parent.name}
+          </Text>
+        </View>
+
+        {/* Session date */}
+        {sessionDate && (
+          <View style={styles.requestDetail}>
+            <Ionicons name="calendar-outline" size={18} color={colors.neutral.textSecondary} />
+            <Text style={styles.requestDetailText}>
+              {sessionDate.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })} at {sessionDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </Text>
+          </View>
+        )}
+
+        {/* Duration */}
+        <View style={styles.requestDetail}>
+          <Ionicons name="hourglass-outline" size={18} color={colors.neutral.textSecondary} />
+          <Text style={styles.requestDetailText}>
+            {enrollment.duration_min} minutes
+          </Text>
+        </View>
+
+        {/* Notes */}
+        {enrollment.notes && (
+          <View style={styles.requestNotes}>
+            <Text style={styles.requestNotesLabel}>Parent's note:</Text>
+            <Text style={styles.requestNotesText}>{enrollment.notes}</Text>
+          </View>
+        )}
+
+        {/* Tutor Response */}
+        {enrollment.tutor_response && (
+          <View style={styles.responseBox}>
+            <Text style={styles.responseLabel}>Your response:</Text>
+            <Text style={styles.responseText}>{enrollment.tutor_response}</Text>
+          </View>
+        )}
+
+        <Text style={styles.requestTimestamp}>
+          Requested {createdAt.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          })} at {createdAt.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+        </Text>
+      </View>
+
+      {/* Actions - only for pending */}
+      {enrollment.status === 'pending' && (
+        <View style={styles.requestActions}>
+          <Pressable style={styles.rejectButton} onPress={onReject}>
+            <Ionicons name="close-circle-outline" size={20} color={colors.status.error} />
+            <Text style={styles.rejectButtonText}>Decline</Text>
+          </Pressable>
+          <Pressable style={styles.approveButton} onPress={onApprove}>
+            <Ionicons name="checkmark-circle" size={20} color={colors.neutral.white} />
+            <Text style={styles.approveButtonText}>Approve</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Enrollment Approve Modal
+interface EnrollmentApproveModalProps {
+  visible: boolean;
+  enrollment: SessionEnrollmentWithDetails | null;
+  onClose: () => void;
+  onApprove: () => Promise<void>;
+  loading: boolean;
+}
+
+function EnrollmentApproveModal({ visible, enrollment, onClose, onApprove, loading }: EnrollmentApproveModalProps) {
+  if (!enrollment) return null;
+
+  const subject = enrollment.subject as TutoringSubject;
+  const sessionDate = enrollment.session
+    ? new Date(enrollment.session.scheduled_at)
+    : null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.dialog}>
+          <Ionicons name="checkmark-circle" size={48} color={colors.status.success} />
+          <Text style={modalStyles.title}>Approve Enrollment</Text>
+          <Text style={modalStyles.subtitle}>
+            Approve {enrollment.student.name}'s request to join the {SUBJECT_NAMES[subject]} session
+            {sessionDate && ` on ${sessionDate.toLocaleDateString('en-US', {
+              weekday: 'short',
+              month: 'short',
+              day: 'numeric',
+            })}`}?
+          </Text>
+
+          <View style={modalStyles.infoBox}>
+            <View style={modalStyles.infoRow}>
+              <Text style={modalStyles.infoLabel}>Duration:</Text>
+              <Text style={modalStyles.infoValue}>{enrollment.duration_min} minutes</Text>
+            </View>
+            <View style={modalStyles.infoRow}>
+              <Text style={modalStyles.infoLabel}>Parent:</Text>
+              <Text style={modalStyles.infoValue}>{enrollment.parent.name}</Text>
+            </View>
+          </View>
+
+          <View style={modalStyles.actions}>
+            <Pressable
+              style={modalStyles.cancelButton}
+              onPress={onClose}
+              disabled={loading}
+            >
+              <Text style={modalStyles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[modalStyles.submitButton, modalStyles.approveSubmit]}
+              onPress={onApprove}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={colors.neutral.white} />
+              ) : (
+                <Text style={modalStyles.submitButtonText}>Approve</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Enrollment Reject Modal
+interface EnrollmentRejectModalProps {
+  visible: boolean;
+  enrollment: SessionEnrollmentWithDetails | null;
+  onClose: () => void;
+  onReject: (reason: string) => Promise<void>;
+  loading: boolean;
+}
+
+function EnrollmentRejectModal({ visible, enrollment, onClose, onReject, loading }: EnrollmentRejectModalProps) {
+  const [reason, setReason] = useState('');
+
+  React.useEffect(() => {
+    if (visible) {
+      setReason('');
+    }
+  }, [visible]);
+
+  if (!enrollment) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
+      <View style={modalStyles.overlay}>
+        <View style={modalStyles.dialog}>
+          <Ionicons name="close-circle" size={48} color={colors.status.error} />
+          <Text style={modalStyles.title}>Decline Enrollment</Text>
+          <Text style={modalStyles.subtitle}>
+            Let {enrollment.parent.name} know why {enrollment.student.name} cannot join this session.
+          </Text>
+
+          <TextInput
+            style={modalStyles.input}
+            value={reason}
+            onChangeText={setReason}
+            placeholder="Reason for declining (optional but recommended)"
+            placeholderTextColor={colors.neutral.textMuted}
+            multiline
+          />
+
+          <View style={modalStyles.actions}>
+            <Pressable
+              style={modalStyles.cancelButton}
+              onPress={onClose}
+              disabled={loading}
+            >
+              <Text style={modalStyles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[modalStyles.submitButton, modalStyles.rejectSubmit]}
+              onPress={() => onReject(reason.trim())}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color={colors.neutral.white} />
+              ) : (
+                <Text style={modalStyles.submitButtonText}>Decline</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -814,10 +1197,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.base,
-    paddingBottom: spacing.xxl,
+    paddingBottom: spacing['2xl'],
   },
   loadingContainer: {
-    padding: spacing.xxl,
+    padding: spacing['2xl'],
     alignItems: 'center',
   },
   errorCard: {
@@ -838,8 +1221,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.xxl,
-    marginTop: spacing.xxl,
+    padding: spacing['2xl'],
+    marginTop: spacing['2xl'],
   },
   emptyStateTitle: {
     fontSize: typography.sizes.xl,
@@ -906,6 +1289,19 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
     color: colors.status.success,
+  },
+  enrollmentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.secondary.subtle,
+  },
+  enrollmentBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.secondary.main,
   },
   requestHeader: {
     flexDirection: 'row',
@@ -1113,6 +1509,28 @@ const modalStyles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.primary.main,
+  },
+  infoBox: {
+    width: '100%',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  infoValue: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
   },
   toggleOption: {
     flexDirection: 'row',

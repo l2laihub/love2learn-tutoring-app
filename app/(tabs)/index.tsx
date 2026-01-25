@@ -43,6 +43,7 @@ const subjectNames: Record<Subject, string> = {
 
 export default function HomeScreen() {
   const { parent, signOut, isTutor } = useAuthContext();
+  // Only tutors need students data for Quick Stats
   const { data: students, loading: studentsLoading, refetch: refetchStudents } = useStudents();
   const { data: todaysLessons, loading: lessonsLoading, refetch: refetchLessons } = useTodaysLessons();
   const { data: upcomingLessons, refetch: refetchUpcoming } = useUpcomingGroupedLessons(5);
@@ -589,37 +590,6 @@ export default function HomeScreen() {
                 </View>
                 <Text style={styles.parentActionLabel}>Agreement</Text>
               </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* Parent: My Children section */}
-        {!isTutor && students.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>My Children</Text>
-              <Pressable onPress={() => router.push('/profile' as any)}>
-                <Text style={styles.seeAllText}>View all</Text>
-              </Pressable>
-            </View>
-            <View style={[styles.childrenGrid, responsiveStyles.statsGrid]}>
-              {students.map((student) => (
-                <View key={student.id} style={[styles.childCard, { minWidth: responsive.isDesktop ? '20%' : responsive.isTablet ? '30%' : '45%' }]}>
-                  <AvatarDisplay
-                    avatarUrl={student.avatar_url}
-                    name={student.name}
-                    size={40}
-                  />
-                  <Text style={styles.childName} numberOfLines={1}>{student.name}</Text>
-                  <View style={styles.childSubjects}>
-                    {student.subjects?.slice(0, 3).map((subject) => (
-                      <Text key={subject} style={styles.childSubjectEmoji}>
-                        {subjectEmojis[subject as Subject] || '📖'}
-                      </Text>
-                    ))}
-                  </View>
-                </View>
-              ))}
             </View>
           </View>
         )}
@@ -1463,45 +1433,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.medium,
     color: colors.neutral.text,
     textAlign: 'center',
-  },
-  // Parent: My Children section styles
-  childrenGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  childCard: {
-    backgroundColor: colors.neutral.white,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    minWidth: 100,
-    flex: 1,
-    maxWidth: '48%',
-    ...shadows.sm,
-  },
-  childAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.piano.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  childName: {
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.semibold,
-    color: colors.neutral.text,
-    marginBottom: spacing.xs,
-    textAlign: 'center',
-  },
-  childSubjects: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  childSubjectEmoji: {
-    fontSize: 14,
   },
   // Parent Payment Card styles
   parentPaymentCard: {

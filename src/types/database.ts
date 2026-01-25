@@ -1457,3 +1457,145 @@ export interface MutationState<T, TInput = unknown> {
   mutate: (input: TInput) => Promise<T | null>;
   reset: () => void;
 }
+
+// ============================================================================
+// Group Session Enrollment Types
+// For parents to sign up for existing scheduled group sessions
+// ============================================================================
+
+// Enrollment status enum
+export type EnrollmentStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+// Group session settings - configuration for sessions open for enrollment
+export interface GroupSessionSettings {
+  id: string;
+  session_id: string;
+  is_open_for_enrollment: boolean;
+  max_students: number;
+  enrollment_deadline_hours: number;
+  allowed_subjects: string[] | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Session enrollment - request from parent to join a group session
+export interface SessionEnrollment {
+  id: string;
+  session_id: string;
+  student_id: string;
+  parent_id: string;
+  subject: string;
+  duration_min: number;
+  status: EnrollmentStatus;
+  notes: string | null;
+  tutor_response: string | null;
+  scheduled_lesson_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Enrollment with student info (for display)
+export interface SessionEnrollmentWithStudent extends SessionEnrollment {
+  student: Student;
+}
+
+// Enrollment with full details (for tutor view)
+export interface SessionEnrollmentWithDetails extends SessionEnrollment {
+  student: Student;
+  parent: Parent;
+  session?: LessonSession;
+}
+
+// Available group session for parents to browse
+export interface AvailableGroupSession {
+  session_id: string;
+  session: LessonSession;
+  settings: GroupSessionSettings;
+  current_students: number; // Students already in the session
+  pending_enrollments: number; // Pending enrollment requests
+  available_slots: number; // max_students - current_students - pending_enrollments
+  lessons: ScheduledLessonWithStudent[]; // Existing lessons in the session
+  enrollment_deadline: string; // Computed datetime when enrollment closes
+  is_enrollment_open: boolean; // Whether enrollment is still open
+}
+
+// Input types for creating/updating
+
+export interface CreateGroupSessionSettingsInput {
+  session_id: string;
+  is_open_for_enrollment?: boolean;
+  max_students?: number;
+  enrollment_deadline_hours?: number;
+  allowed_subjects?: string[] | null;
+  notes?: string | null;
+}
+
+export interface UpdateGroupSessionSettingsInput {
+  is_open_for_enrollment?: boolean;
+  max_students?: number;
+  enrollment_deadline_hours?: number;
+  allowed_subjects?: string[] | null;
+  notes?: string | null;
+}
+
+export interface CreateSessionEnrollmentInput {
+  session_id: string;
+  student_id: string;
+  parent_id: string;
+  subject: string;
+  duration_min: number;
+  notes?: string | null;
+}
+
+export interface UpdateSessionEnrollmentInput {
+  status?: EnrollmentStatus;
+  tutor_response?: string | null;
+  scheduled_lesson_id?: string | null;
+}
+
+// Helper function to get enrollment status display info
+export function getEnrollmentStatusInfo(status: EnrollmentStatus): {
+  label: string;
+  color: string;
+  bgColor: string;
+  icon: string;
+} {
+  switch (status) {
+    case 'pending':
+      return {
+        label: 'Pending',
+        color: '#FFC107',
+        bgColor: '#FFF8E1',
+        icon: 'time-outline',
+      };
+    case 'approved':
+      return {
+        label: 'Approved',
+        color: '#7CB342',
+        bgColor: '#F1F8E9',
+        icon: 'checkmark-circle-outline',
+      };
+    case 'rejected':
+      return {
+        label: 'Declined',
+        color: '#E53935',
+        bgColor: '#FFEBEE',
+        icon: 'close-circle-outline',
+      };
+    case 'cancelled':
+      return {
+        label: 'Cancelled',
+        color: '#9E9E9E',
+        bgColor: '#F5F5F5',
+        icon: 'ban-outline',
+      };
+    default:
+      return {
+        label: 'Unknown',
+        color: '#9E9E9E',
+        bgColor: '#F5F5F5',
+        icon: 'help-circle-outline',
+      };
+  }
+}
