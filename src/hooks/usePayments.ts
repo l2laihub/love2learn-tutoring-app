@@ -1108,6 +1108,88 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
 }
 
 // ============================================================================
+// TOGGLE LESSON PAID STATUS (for partial payments)
+// ============================================================================
+
+/**
+ * Hook to toggle the paid status of individual lessons in a payment
+ * Used when a parent makes partial payments to mark which lessons are covered
+ */
+export function useToggleLessonPaid() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const toggleLessonPaid = useCallback(async (
+    paymentLessonId: string,
+    paid: boolean
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: updateError } = await supabase
+        .from('payment_lessons')
+        .update({ paid })
+        .eq('id', paymentLessonId);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update lesson paid status';
+      setError(new Error(errorMessage));
+      console.error('useToggleLessonPaid error:', errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { toggleLessonPaid, loading, error };
+}
+
+/**
+ * Hook to mark multiple lessons as paid at once
+ * Used when marking all remaining lessons as paid
+ */
+export function useMarkLessonsPaid() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const markLessonsPaid = useCallback(async (
+    paymentLessonIds: string[],
+    paid: boolean = true
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { error: updateError } = await supabase
+        .from('payment_lessons')
+        .update({ paid })
+        .in('id', paymentLessonIds);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update lessons paid status';
+      setError(new Error(errorMessage));
+      console.error('useMarkLessonsPaid error:', errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { markLessonsPaid, loading, error };
+}
+
+// ============================================================================
 // MONTHLY LESSON SUMMARY (Hybrid Payment Approach)
 // ============================================================================
 
@@ -1133,6 +1215,9 @@ export interface LessonDetail {
   calculation_formula: string; // e.g., "30min / 30min * $35 = $35"
   // Override for edge cases (Option B)
   override_amount: number | null; // When set, overrides calculated amount
+  // Payment lesson tracking (for partial payments)
+  payment_lesson_id: string | null; // ID of the payment_lessons record
+  lesson_paid: boolean; // Whether this individual lesson is marked as paid
 }
 
 /**
@@ -1410,7 +1495,7 @@ export function useMonthlyLessonSummary(month?: Date) {
         .from('payments')
         .select(`
           id, parent_id, amount_due, amount_paid, status,
-          payment_lessons:payment_lessons(lesson_id, amount)
+          payment_lessons:payment_lessons(id, lesson_id, amount, paid)
         `)
         .eq('month', monthStart);
 
@@ -1420,15 +1505,20 @@ export function useMonthlyLessonSummary(month?: Date) {
       const invoicedLessonIds = new Set<string>();
       const paidLessonIds = new Set<string>();
       const lessonPaymentAmounts = new Map<string, number>();
+      // Track payment_lesson info for individual lesson payment tracking
+      const lessonPaymentLessonId = new Map<string, string>(); // lesson_id -> payment_lessons.id
+      const lessonPaidStatus = new Map<string, boolean>(); // lesson_id -> paid
 
       (payments || []).forEach((payment: {
         id: string;
         parent_id: string;
         status: PaymentStatus;
-        payment_lessons: { lesson_id: string; amount: number }[]
+        payment_lessons: { id: string; lesson_id: string; amount: number; paid: boolean }[]
       }) => {
-        (payment.payment_lessons || []).forEach((pl: { lesson_id: string; amount: number }) => {
+        (payment.payment_lessons || []).forEach((pl: { id: string; lesson_id: string; amount: number; paid: boolean }) => {
           lessonPaymentAmounts.set(pl.lesson_id, pl.amount);
+          lessonPaymentLessonId.set(pl.lesson_id, pl.id);
+          lessonPaidStatus.set(pl.lesson_id, pl.paid);
           if (payment.status === 'paid') {
             paidLessonIds.add(pl.lesson_id);
           } else {
@@ -1524,6 +1614,9 @@ export function useMonthlyLessonSummary(month?: Date) {
           calculated_amount: Math.round(amount * 100) / 100,
           calculation_formula: rateCalc.formula,
           override_amount: lesson.override_amount,
+          // Individual lesson payment tracking
+          payment_lesson_id: lessonPaymentLessonId.get(lesson.id) || null,
+          lesson_paid: lessonPaidStatus.get(lesson.id) || false,
         };
         summary.lessons.push(lessonDetail);
 

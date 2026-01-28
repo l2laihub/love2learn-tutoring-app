@@ -51,6 +51,8 @@ export {
   useMarkPaymentPaid,
   useOverduePayments,
   usePaymentSummary,
+  useToggleLessonPaid,
+  useMarkLessonsPaid,
 } from './usePayments';
 
 // Assignment hooks

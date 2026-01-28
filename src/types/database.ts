@@ -698,6 +698,7 @@ export type Database = {
           payment_id: string;
           lesson_id: string;
           amount: number;
+          paid: boolean;
           created_at: string;
         };
         Insert: {
@@ -705,6 +706,7 @@ export type Database = {
           payment_id: string;
           lesson_id: string;
           amount: number;
+          paid?: boolean;
           created_at?: string;
         };
         Update: {
@@ -712,6 +714,7 @@ export type Database = {
           payment_id?: string;
           lesson_id?: string;
           amount?: number;
+          paid?: boolean;
           created_at?: string;
         };
         Relationships: [
@@ -1218,6 +1221,7 @@ export interface SendPaymentReminderInput {
   payment_id: string;
   reminder_type: PaymentReminderType;
   custom_message?: string;
+  lesson_ids?: string[]; // Optional: specific payment_lesson IDs to include in the reminder
 }
 
 // Response from sending a payment reminder
@@ -1424,6 +1428,7 @@ export interface PaymentLesson {
   payment_id: string;
   lesson_id: string;
   amount: number;
+  paid: boolean;
   created_at: string;
 }
 

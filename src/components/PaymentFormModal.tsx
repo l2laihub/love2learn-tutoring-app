@@ -3,7 +3,7 @@
  * Modal for creating and editing payment records
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,10 +13,37 @@ import {
   Pressable,
   TextInput,
   ActivityIndicator,
+  Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
-import { ParentWithStudents, PaymentWithParent } from '../types/database';
+import { ParentWithStudents, PaymentWithParent, TutoringSubject } from '../types/database';
+import { supabase } from '../lib/supabase';
+import { useToggleLessonPaid } from '../hooks/usePayments';
+
+// Subject display names for lessons
+const SUBJECT_NAMES: Record<TutoringSubject, string> = {
+  math: 'Math',
+  piano: 'Piano',
+  reading: 'Reading',
+  speech: 'Speech',
+  english: 'English',
+};
+
+// Payment lesson with details for display
+interface PaymentLessonDisplay {
+  id: string;
+  amount: number;
+  paid: boolean;
+  lesson: {
+    id: string;
+    subject: TutoringSubject;
+    scheduled_at: string;
+    duration_min: number;
+    student: { id: string; name: string };
+  };
+}
 
 interface PaymentFormModalProps {
   visible: boolean;
@@ -26,6 +53,7 @@ interface PaymentFormModalProps {
   parentsLoading?: boolean;
   initialData?: PaymentWithParent | null;
   mode: 'create' | 'edit';
+  onRefresh?: () => void;
 }
 
 export interface PaymentFormData {
@@ -44,6 +72,7 @@ export function PaymentFormModal({
   parentsLoading = false,
   initialData,
   mode,
+  onRefresh,
 }: PaymentFormModalProps) {
   const [selectedParent, setSelectedParent] = useState<string>('');
   const [month, setMonth] = useState<string>('');
@@ -52,6 +81,14 @@ export function PaymentFormModal({
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // State for linked lessons
+  const [paymentLessons, setPaymentLessons] = useState<PaymentLessonDisplay[]>([]);
+  const [loadingLessons, setLoadingLessons] = useState(false);
+  const [togglingLessons, setTogglingLessons] = useState<Set<string>>(new Set());
+
+  // Hook for toggling lesson paid status
+  const { toggleLessonPaid } = useToggleLessonPaid();
 
   // Initialize form
   useEffect(() => {
@@ -75,6 +112,96 @@ export function PaymentFormModal({
       setError(null);
     }
   }, [visible, initialData, mode]);
+
+  // Fetch payment lessons when in edit mode
+  useEffect(() => {
+    if (visible && mode === 'edit' && initialData?.id) {
+      fetchPaymentLessons(initialData.id);
+    } else {
+      setPaymentLessons([]);
+    }
+  }, [visible, mode, initialData?.id]);
+
+  // Fetch linked lessons for this payment
+  const fetchPaymentLessons = async (paymentId: string) => {
+    setLoadingLessons(true);
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('payment_lessons')
+        .select(`
+          id,
+          amount,
+          paid,
+          lesson:scheduled_lessons!inner(
+            id,
+            subject,
+            scheduled_at,
+            duration_min,
+            student:students!inner(id, name)
+          )
+        `)
+        .eq('payment_id', paymentId);
+
+      if (fetchError) throw fetchError;
+
+      // Sort by scheduled date
+      const sorted = (data as unknown as PaymentLessonDisplay[] || []).sort(
+        (a, b) => new Date(a.lesson.scheduled_at).getTime() - new Date(b.lesson.scheduled_at).getTime()
+      );
+      setPaymentLessons(sorted);
+    } catch (err) {
+      console.error('Error fetching payment lessons:', err);
+    } finally {
+      setLoadingLessons(false);
+    }
+  };
+
+  // Handle toggling a lesson's paid status
+  const handleToggleLessonPaid = useCallback(async (paymentLesson: PaymentLessonDisplay) => {
+    const newPaid = !paymentLesson.paid;
+
+    // Optimistic update
+    setTogglingLessons(prev => new Set(prev).add(paymentLesson.id));
+    setPaymentLessons(prev =>
+      prev.map(pl =>
+        pl.id === paymentLesson.id ? { ...pl, paid: newPaid } : pl
+      )
+    );
+
+    const result = await toggleLessonPaid(paymentLesson.id, newPaid);
+
+    setTogglingLessons(prev => {
+      const next = new Set(prev);
+      next.delete(paymentLesson.id);
+      return next;
+    });
+
+    if (!result.success) {
+      // Revert on failure
+      setPaymentLessons(prev =>
+        prev.map(pl =>
+          pl.id === paymentLesson.id ? { ...pl, paid: !newPaid } : pl
+        )
+      );
+      if (Platform.OS === 'web') {
+        window.alert(result.error || 'Failed to update lesson');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update lesson');
+      }
+    } else {
+      // Refresh parent data
+      onRefresh?.();
+    }
+  }, [toggleLessonPaid, onRefresh]);
+
+  // Format lesson date for display
+  const formatLessonDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   const handleSubmit = async () => {
     if (!selectedParent) {
@@ -147,46 +274,55 @@ export function PaymentFormModal({
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Family Selection */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Family</Text>
-            {parentsLoading ? (
-              <ActivityIndicator size="small" color={colors.piano.primary} />
-            ) : parents.length === 0 ? (
-              <Text style={styles.emptyText}>No families found</Text>
-            ) : (
-              <View style={styles.parentsList}>
-                {parents.map((parent) => (
-                  <Pressable
-                    key={parent.id}
-                    style={[
-                      styles.parentButton,
-                      selectedParent === parent.id && styles.parentButtonSelected,
-                    ]}
-                    onPress={() => setSelectedParent(parent.id)}
-                  >
-                    <View style={styles.parentInfo}>
-                      <Text
-                        style={[
-                          styles.parentName,
-                          selectedParent === parent.id && styles.parentNameSelected,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {parent.name}
-                      </Text>
-                      <Text style={styles.parentStudents}>
-                        {parent.students?.length || 0} student{(parent.students?.length || 0) !== 1 ? 's' : ''}
-                      </Text>
-                    </View>
-                    {selectedParent === parent.id && (
-                      <Ionicons name="checkmark-circle" size={24} color={colors.piano.primary} />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </View>
+          {/* Family - Show name only in edit mode, selection list in create mode */}
+          {mode === 'edit' && initialData?.parent ? (
+            <View style={styles.editParentHeader}>
+              <Text style={styles.editParentName}>{initialData.parent.name}</Text>
+              <Text style={styles.editParentStudents}>
+                {initialData.parent.students?.length || 0} student{(initialData.parent.students?.length || 0) !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Family</Text>
+              {parentsLoading ? (
+                <ActivityIndicator size="small" color={colors.piano.primary} />
+              ) : parents.length === 0 ? (
+                <Text style={styles.emptyText}>No families found</Text>
+              ) : (
+                <View style={styles.parentsList}>
+                  {parents.map((parent) => (
+                    <Pressable
+                      key={parent.id}
+                      style={[
+                        styles.parentButton,
+                        selectedParent === parent.id && styles.parentButtonSelected,
+                      ]}
+                      onPress={() => setSelectedParent(parent.id)}
+                    >
+                      <View style={styles.parentInfo}>
+                        <Text
+                          style={[
+                            styles.parentName,
+                            selectedParent === parent.id && styles.parentNameSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {parent.name}
+                        </Text>
+                        <Text style={styles.parentStudents}>
+                          {parent.students?.length || 0} student{(parent.students?.length || 0) !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      {selectedParent === parent.id && (
+                        <Ionicons name="checkmark-circle" size={24} color={colors.piano.primary} />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
 
           {/* Month */}
           <View style={styles.section}>
@@ -276,6 +412,78 @@ export function PaymentFormModal({
               textAlignVertical="top"
             />
           </View>
+
+          {/* Linked Lessons (Edit mode only) */}
+          {mode === 'edit' && paymentLessons.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>
+                Linked Lessons ({paymentLessons.length})
+              </Text>
+              <Text style={styles.sectionHint}>
+                Check the box to mark a lesson as paid
+              </Text>
+              {loadingLessons ? (
+                <ActivityIndicator size="small" color={colors.piano.primary} />
+              ) : (
+                <View style={styles.lessonsList}>
+                  {paymentLessons.map((pl) => {
+                    const isToggling = togglingLessons.has(pl.id);
+                    return (
+                      <Pressable
+                        key={pl.id}
+                        style={[
+                          styles.lessonRow,
+                          pl.paid && styles.lessonRowPaid,
+                        ]}
+                        onPress={() => handleToggleLessonPaid(pl)}
+                        disabled={isToggling}
+                      >
+                        <View style={styles.lessonCheckbox}>
+                          {isToggling ? (
+                            <ActivityIndicator size="small" color={colors.math.primary} />
+                          ) : (
+                            <Ionicons
+                              name={pl.paid ? 'checkbox' : 'square-outline'}
+                              size={22}
+                              color={pl.paid ? colors.math.primary : colors.neutral.textMuted}
+                            />
+                          )}
+                        </View>
+                        <View style={styles.lessonInfo}>
+                          <View style={styles.lessonTopRow}>
+                            <Text style={[styles.lessonDate, pl.paid && styles.lessonTextPaid]}>
+                              {formatLessonDate(pl.lesson.scheduled_at)}
+                            </Text>
+                            {pl.paid && (
+                              <View style={styles.paidBadge}>
+                                <Ionicons name="checkmark" size={10} color={colors.math.primary} />
+                                <Text style={styles.paidBadgeText}>Paid</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.lessonStudent, pl.paid && styles.lessonTextPaid]}>
+                            {pl.lesson.student.name}
+                          </Text>
+                          <Text style={[styles.lessonMeta, pl.paid && styles.lessonTextPaid]}>
+                            {SUBJECT_NAMES[pl.lesson.subject]} • {pl.lesson.duration_min}min
+                          </Text>
+                        </View>
+                        <Text style={[styles.lessonAmount, pl.paid && styles.lessonTextPaid]}>
+                          ${pl.amount.toFixed(2)}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+              {/* Summary of paid/unpaid */}
+              <View style={styles.lessonsSummary}>
+                <Text style={styles.lessonsSummaryText}>
+                  {paymentLessons.filter(pl => pl.paid).length} of {paymentLessons.length} lessons marked as paid
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Preview */}
           {amountDue && (
@@ -376,6 +584,25 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.xl,
+  },
+  // Edit mode parent header (replaces family selection in edit mode)
+  editParentHeader: {
+    backgroundColor: colors.piano.subtle,
+    borderRadius: borderRadius.lg,
+    padding: spacing.base,
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  editParentName: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.piano.primary,
+  },
+  editParentStudents: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    marginTop: 2,
   },
   sectionLabel: {
     fontSize: typography.sizes.sm,
@@ -560,6 +787,95 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.white,
+  },
+  // Linked lessons styles
+  sectionHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    marginBottom: spacing.md,
+    fontStyle: 'italic',
+  },
+  lessonsList: {
+    gap: spacing.xs,
+  },
+  lessonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.white,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+  },
+  lessonRowPaid: {
+    backgroundColor: colors.math.subtle,
+    borderColor: colors.math.subtle,
+    opacity: 0.85,
+  },
+  lessonCheckbox: {
+    marginRight: spacing.md,
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lessonInfo: {
+    flex: 1,
+  },
+  lessonTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  lessonDate: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  lessonStudent: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+    marginTop: 2,
+  },
+  lessonMeta: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    marginTop: 2,
+  },
+  lessonAmount: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  lessonTextPaid: {
+    textDecorationLine: 'line-through',
+    color: colors.neutral.textMuted,
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.math.subtle,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    borderRadius: borderRadius.full,
+  },
+  paidBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.weights.medium,
+    color: colors.math.primary,
+  },
+  lessonsSummary: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+  },
+  lessonsSummaryText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    textAlign: 'center',
   },
 });
 

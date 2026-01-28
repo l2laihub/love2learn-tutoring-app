@@ -1198,6 +1198,7 @@ export default function PaymentsScreen() {
         parentsLoading={parentsLoading}
         initialData={selectedPayment}
         mode="edit"
+        onRefresh={refetch}
       />
 
       {/* Generate Invoice Modal */}

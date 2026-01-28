@@ -21,6 +21,7 @@ import {
   PaymentWithParent,
   PaymentReminder,
   PaymentReminderType,
+  TutoringSubject,
   getReminderTypeInfo,
 } from '../types/database';
 import {
@@ -29,6 +30,29 @@ import {
   useCanSendReminder,
   formatRelativeTime,
 } from '../hooks/usePaymentReminders';
+import { supabase } from '../lib/supabase';
+
+// Subject display names
+const SUBJECT_NAMES: Record<TutoringSubject, string> = {
+  math: 'Math',
+  piano: 'Piano',
+  reading: 'Reading',
+  speech: 'Speech',
+  english: 'English',
+};
+
+// Unpaid lesson display type
+interface UnpaidLesson {
+  id: string;
+  amount: number;
+  lesson: {
+    id: string;
+    subject: TutoringSubject;
+    scheduled_at: string;
+    duration_min: number;
+    student: { id: string; name: string };
+  };
+}
 
 interface SendReminderModalProps {
   visible: boolean;
@@ -56,10 +80,90 @@ export function SendReminderModal({
   const [customMessage, setCustomMessage] = useState('');
   const [showHistory, setShowHistory] = useState(false);
 
+  // Lesson selection state
+  const [unpaidLessons, setUnpaidLessons] = useState<UnpaidLesson[]>([]);
+  const [selectedLessonIds, setSelectedLessonIds] = useState<Set<string>>(new Set());
+  const [loadingLessons, setLoadingLessons] = useState(false);
+  const [showLessonSelection, setShowLessonSelection] = useState(true);
+
   // Hooks
   const { data: reminders, loading: loadingReminders, refetch: refetchReminders } = usePaymentReminders(payment?.id);
   const { sendReminder, loading: sending } = useSendPaymentReminder();
   const { canSend, reason: cannotSendReason, loading: checkingCanSend } = useCanSendReminder(payment?.id, selectedType);
+
+  // Fetch unpaid lessons when modal opens
+  useEffect(() => {
+    if (visible && payment?.id) {
+      fetchUnpaidLessons(payment.id);
+    }
+  }, [visible, payment?.id]);
+
+  // Fetch unpaid lessons for this payment
+  const fetchUnpaidLessons = async (paymentId: string) => {
+    setLoadingLessons(true);
+    try {
+      const { data, error } = await supabase
+        .from('payment_lessons')
+        .select(`
+          id,
+          amount,
+          lesson:scheduled_lessons!inner(
+            id,
+            subject,
+            scheduled_at,
+            duration_min,
+            student:students!inner(id, name)
+          )
+        `)
+        .eq('payment_id', paymentId)
+        .eq('paid', false);
+
+      if (error) throw error;
+
+      // Sort by scheduled date
+      const sorted = (data as unknown as UnpaidLesson[] || []).sort(
+        (a, b) => new Date(a.lesson.scheduled_at).getTime() - new Date(b.lesson.scheduled_at).getTime()
+      );
+      setUnpaidLessons(sorted);
+      // Select all by default
+      setSelectedLessonIds(new Set(sorted.map(l => l.id)));
+    } catch (err) {
+      console.error('Error fetching unpaid lessons:', err);
+    } finally {
+      setLoadingLessons(false);
+    }
+  };
+
+  // Toggle lesson selection
+  const toggleLessonSelection = (lessonId: string) => {
+    setSelectedLessonIds(prev => {
+      const next = new Set(prev);
+      if (next.has(lessonId)) {
+        next.delete(lessonId);
+      } else {
+        next.add(lessonId);
+      }
+      return next;
+    });
+  };
+
+  // Select/deselect all lessons
+  const toggleSelectAll = () => {
+    if (selectedLessonIds.size === unpaidLessons.length) {
+      setSelectedLessonIds(new Set());
+    } else {
+      setSelectedLessonIds(new Set(unpaidLessons.map(l => l.id)));
+    }
+  };
+
+  // Format lesson date
+  const formatLessonDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   // Reset state when modal opens
   useEffect(() => {
@@ -67,16 +171,23 @@ export function SendReminderModal({
       setSelectedType('manual');
       setCustomMessage('');
       setShowHistory(false);
+      setShowLessonSelection(true);
     }
   }, [visible]);
 
   const handleSend = async () => {
     if (!payment) return;
 
+    // Get selected lesson IDs (only if not all are selected)
+    const lessonIds = selectedLessonIds.size > 0 && selectedLessonIds.size < unpaidLessons.length
+      ? Array.from(selectedLessonIds)
+      : undefined; // undefined means include all unpaid lessons
+
     const result = await sendReminder({
       payment_id: payment.id,
       reminder_type: selectedType,
       custom_message: selectedType === 'manual' && customMessage.trim() ? customMessage.trim() : undefined,
+      lesson_ids: lessonIds,
     });
 
     if (result.success) {
@@ -143,6 +254,82 @@ export function SendReminderModal({
                 </Text>
               )}
             </View>
+
+            {/* Lesson Selection (for partial payments) */}
+            {unpaidLessons.length > 0 && (
+              <View style={styles.lessonSelectionSection}>
+                <Pressable
+                  style={styles.lessonSelectionHeader}
+                  onPress={() => setShowLessonSelection(!showLessonSelection)}
+                >
+                  <View style={styles.lessonSelectionHeaderLeft}>
+                    <Ionicons
+                      name={showLessonSelection ? 'chevron-down' : 'chevron-forward'}
+                      size={18}
+                      color={colors.neutral.textSecondary}
+                    />
+                    <Text style={styles.sectionTitle}>
+                      Select Lessons to Include ({selectedLessonIds.size}/{unpaidLessons.length})
+                    </Text>
+                  </View>
+                  {unpaidLessons.length > 1 && (
+                    <Pressable onPress={toggleSelectAll} style={styles.selectAllButton}>
+                      <Text style={styles.selectAllText}>
+                        {selectedLessonIds.size === unpaidLessons.length ? 'Deselect All' : 'Select All'}
+                      </Text>
+                    </Pressable>
+                  )}
+                </Pressable>
+
+                {showLessonSelection && (
+                  <View style={styles.lessonsList}>
+                    {loadingLessons ? (
+                      <ActivityIndicator size="small" color={colors.piano.primary} />
+                    ) : (
+                      unpaidLessons.map((lesson) => {
+                        const isSelected = selectedLessonIds.has(lesson.id);
+                        return (
+                          <Pressable
+                            key={lesson.id}
+                            style={[
+                              styles.lessonRow,
+                              isSelected && styles.lessonRowSelected,
+                            ]}
+                            onPress={() => toggleLessonSelection(lesson.id)}
+                          >
+                            <Ionicons
+                              name={isSelected ? 'checkbox' : 'square-outline'}
+                              size={20}
+                              color={isSelected ? colors.piano.primary : colors.neutral.textMuted}
+                              style={styles.lessonCheckbox}
+                            />
+                            <View style={styles.lessonInfo}>
+                              <Text style={styles.lessonDate}>
+                                {formatLessonDate(lesson.lesson.scheduled_at)}
+                              </Text>
+                              <Text style={styles.lessonStudent}>
+                                {lesson.lesson.student.name}
+                              </Text>
+                              <Text style={styles.lessonMeta}>
+                                {SUBJECT_NAMES[lesson.lesson.subject]} • {lesson.lesson.duration_min}min
+                              </Text>
+                            </View>
+                            <Text style={styles.lessonAmount}>
+                              ${lesson.amount.toFixed(2)}
+                            </Text>
+                          </Pressable>
+                        );
+                      })
+                    )}
+                    {selectedLessonIds.size === 0 && (
+                      <Text style={styles.noLessonsWarning}>
+                        Please select at least one lesson to include in the reminder
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Reminder Type Selection */}
             <Text style={styles.sectionTitle}>Select Reminder Type</Text>
@@ -246,10 +433,10 @@ export function SendReminderModal({
             <Pressable
               style={[
                 styles.sendButton,
-                (sending || checkingCanSend || !canSend) && styles.sendButtonDisabled,
+                (sending || checkingCanSend || !canSend || (unpaidLessons.length > 0 && selectedLessonIds.size === 0)) && styles.sendButtonDisabled,
               ]}
               onPress={handleSend}
-              disabled={sending || checkingCanSend || !canSend}
+              disabled={sending || checkingCanSend || !canSend || (unpaidLessons.length > 0 && selectedLessonIds.size === 0)}
             >
               {sending ? (
                 <ActivityIndicator size="small" color={colors.neutral.white} />
@@ -533,5 +720,78 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.white,
+  },
+  // Lesson selection styles
+  lessonSelectionSection: {
+    marginBottom: spacing.lg,
+  },
+  lessonSelectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  lessonSelectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  selectAllButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  selectAllText: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.medium,
+  },
+  lessonsList: {
+    gap: spacing.xs,
+  },
+  lessonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+  },
+  lessonRowSelected: {
+    backgroundColor: colors.piano.subtle,
+    borderColor: colors.piano.primary,
+  },
+  lessonCheckbox: {
+    marginRight: spacing.sm,
+  },
+  lessonInfo: {
+    flex: 1,
+  },
+  lessonDate: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  lessonStudent: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.text,
+    marginTop: 1,
+  },
+  lessonMeta: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    marginTop: 1,
+  },
+  lessonAmount: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
+  },
+  noLessonsWarning: {
+    fontSize: typography.sizes.sm,
+    color: colors.status.warning,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: spacing.sm,
   },
 });

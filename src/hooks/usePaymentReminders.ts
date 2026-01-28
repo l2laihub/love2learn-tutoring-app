@@ -237,6 +237,7 @@ export function useSendPaymentReminder(): {
           payment_id: input.payment_id,
           reminder_type: input.reminder_type,
           custom_message: input.custom_message,
+          lesson_ids: input.lesson_ids, // Optional: specific lessons to include
         },
       });
 

@@ -4,7 +4,7 @@
  * Allows tutors to see detailed breakdown and perform batch actions
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,10 +14,11 @@ import {
   ScrollView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
-import { LessonDetail, FamilyLessonSummary } from '../hooks/usePayments';
+import { LessonDetail, FamilyLessonSummary, useToggleLessonPaid } from '../hooks/usePayments';
 import { TutoringSubject, PaymentWithParent } from '../types/database';
 
 // Subject display names
@@ -52,6 +53,8 @@ interface LessonDetailsModalProps {
   onGenerateInvoice?: (parentId: string, lessonIds: string[]) => void;
   // Prepaid payments for the Collected view
   prepaidPayments?: PrepaidPaymentDisplay[];
+  // Callback to refresh data after marking lessons as paid
+  onRefresh?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -114,9 +117,60 @@ export function LessonDetailsModal({
   monthDisplay,
   onGenerateInvoice,
   prepaidPayments = [],
+  onRefresh,
 }: LessonDetailsModalProps) {
   const [selectedLessons, setSelectedLessons] = useState<Set<string>>(new Set());
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+  const [togglingLessons, setTogglingLessons] = useState<Set<string>>(new Set());
+  // Local state to track paid status (for immediate UI feedback)
+  const [localPaidStatus, setLocalPaidStatus] = useState<Map<string, boolean>>(new Map());
+
+  // Hook for toggling lesson paid status
+  const { toggleLessonPaid } = useToggleLessonPaid();
+
+  // Handler for toggling a lesson's paid status
+  const handleTogglePaid = useCallback(async (lesson: LessonDetail) => {
+    if (!lesson.payment_lesson_id) return;
+
+    const lessonId = lesson.id;
+    const paymentLessonId = lesson.payment_lesson_id;
+    const currentPaid = localPaidStatus.has(lessonId)
+      ? localPaidStatus.get(lessonId)!
+      : lesson.lesson_paid;
+    const newPaid = !currentPaid;
+
+    // Optimistic update
+    setTogglingLessons(prev => new Set(prev).add(lessonId));
+    setLocalPaidStatus(prev => new Map(prev).set(lessonId, newPaid));
+
+    const result = await toggleLessonPaid(paymentLessonId, newPaid);
+
+    setTogglingLessons(prev => {
+      const next = new Set(prev);
+      next.delete(lessonId);
+      return next;
+    });
+
+    if (!result.success) {
+      // Revert on failure
+      setLocalPaidStatus(prev => new Map(prev).set(lessonId, currentPaid));
+      if (Platform.OS === 'web') {
+        window.alert(result.error || 'Failed to update lesson');
+      } else {
+        Alert.alert('Error', result.error || 'Failed to update lesson');
+      }
+    } else {
+      // Refresh data
+      onRefresh?.();
+    }
+  }, [toggleLessonPaid, localPaidStatus, onRefresh]);
+
+  // Get the effective paid status (local state or original)
+  const getLessonPaidStatus = useCallback((lesson: LessonDetail): boolean => {
+    return localPaidStatus.has(lesson.id)
+      ? localPaidStatus.get(lesson.id)!
+      : lesson.lesson_paid;
+  }, [localPaidStatus]);
 
   // Filter lessons based on filterType
   const filteredData = useMemo(() => {
@@ -456,6 +510,13 @@ export function LessonDetailsModal({
                                       ? () => toggleLesson(lesson.id)
                                       : undefined
                                   }
+                                  isPaid={getLessonPaidStatus(lesson)}
+                                  isToggling={togglingLessons.has(lesson.id)}
+                                  onTogglePaid={
+                                    filterType === 'invoiced' && lesson.payment_lesson_id
+                                      ? () => handleTogglePaid(lesson)
+                                      : undefined
+                                  }
                                 />
                               ))}
 
@@ -497,16 +558,32 @@ interface LessonRowProps {
   filterType: LessonFilterType;
   isSelected: boolean;
   onToggle?: () => void;
+  // For marking individual lessons as paid (invoiced view)
+  isPaid?: boolean;
+  isToggling?: boolean;
+  onTogglePaid?: () => void;
 }
 
-function LessonRow({ lesson, filterType, isSelected, onToggle }: LessonRowProps) {
+function LessonRow({
+  lesson,
+  filterType,
+  isSelected,
+  onToggle,
+  isPaid = false,
+  isToggling = false,
+  onTogglePaid,
+}: LessonRowProps) {
   return (
     <Pressable
-      style={[styles.lessonRow, isSelected && styles.lessonRowSelected]}
-      onPress={onToggle}
-      disabled={!onToggle}
+      style={[
+        styles.lessonRow,
+        isSelected && styles.lessonRowSelected,
+        isPaid && styles.lessonRowPaid,
+      ]}
+      onPress={onToggle || onTogglePaid}
+      disabled={!onToggle && !onTogglePaid}
     >
-      {/* Checkbox (for ready_to_bill) */}
+      {/* Checkbox (for ready_to_bill selection) */}
       {onToggle && (
         <Ionicons
           name={isSelected ? 'checkbox' : 'square-outline'}
@@ -516,26 +593,55 @@ function LessonRow({ lesson, filterType, isSelected, onToggle }: LessonRowProps)
         />
       )}
 
+      {/* Paid Checkbox (for invoiced - marking individual lessons as paid) */}
+      {onTogglePaid && (
+        <View style={styles.lessonCheckbox}>
+          {isToggling ? (
+            <ActivityIndicator size="small" color={colors.math.primary} />
+          ) : (
+            <Ionicons
+              name={isPaid ? 'checkbox' : 'square-outline'}
+              size={20}
+              color={isPaid ? colors.math.primary : colors.neutral.textMuted}
+            />
+          )}
+        </View>
+      )}
+
       {/* Lesson Info */}
       <View style={styles.lessonInfo}>
         <View style={styles.lessonTopRow}>
-          <Text style={styles.lessonDate}>{formatLessonDate(lesson.scheduled_at)}</Text>
+          <Text style={[styles.lessonDate, isPaid && styles.lessonTextPaid]}>
+            {formatLessonDate(lesson.scheduled_at)}
+          </Text>
           {lesson.is_combined_session && (
             <View style={styles.combinedBadge}>
               <Ionicons name="people" size={10} color={colors.piano.primary} />
             </View>
           )}
+          {isPaid && (
+            <View style={styles.paidBadge}>
+              <Ionicons name="checkmark" size={10} color={colors.math.primary} />
+              <Text style={styles.paidBadgeText}>Paid</Text>
+            </View>
+          )}
         </View>
-        <Text style={styles.lessonStudent}>{lesson.student_name}</Text>
-        <Text style={styles.lessonMeta}>
+        <Text style={[styles.lessonStudent, isPaid && styles.lessonTextPaid]}>
+          {lesson.student_name}
+        </Text>
+        <Text style={[styles.lessonMeta, isPaid && styles.lessonTextPaid]}>
           {SUBJECT_NAMES[lesson.subject]} • {lesson.duration_min}min
         </Text>
       </View>
 
       {/* Amount & Status */}
       <View style={styles.lessonRight}>
-        <Text style={styles.lessonAmount}>{formatCurrency(lesson.calculated_amount)}</Text>
-        <Text style={styles.lessonRate}>{lesson.rate_display}</Text>
+        <Text style={[styles.lessonAmount, isPaid && styles.lessonTextPaid]}>
+          {formatCurrency(lesson.calculated_amount)}
+        </Text>
+        <Text style={[styles.lessonRate, isPaid && styles.lessonTextPaid]}>
+          {lesson.rate_display}
+        </Text>
         {filterType === 'all' && (
           <View
             style={[
@@ -761,8 +867,34 @@ const styles = StyleSheet.create({
     borderColor: colors.piano.primary,
     borderWidth: 1,
   },
+  lessonRowPaid: {
+    backgroundColor: colors.math.subtle,
+    opacity: 0.8,
+  },
+  lessonTextPaid: {
+    textDecorationLine: 'line-through',
+    color: colors.neutral.textMuted,
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: colors.math.subtle,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 1,
+    borderRadius: borderRadius.full,
+  },
+  paidBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.weights.medium,
+    color: colors.math.primary,
+  },
   lessonCheckbox: {
     marginRight: spacing.sm,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lessonInfo: {
     flex: 1,

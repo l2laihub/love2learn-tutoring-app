@@ -19,6 +19,7 @@ interface PaymentReminderRequest {
   payment_id: string;
   reminder_type: ReminderType;
   custom_message?: string;
+  lesson_ids?: string[]; // Optional: specific payment_lesson IDs to include
 }
 
 interface ReminderConfig {
@@ -36,6 +37,7 @@ type LessonSubject = 'piano' | 'math' | 'reading' | 'speech' | 'english';
 interface PaymentLessonWithDetails {
   id: string;
   amount: number;
+  paid: boolean;
   lesson: {
     id: string;
     subject: LessonSubject;
@@ -154,7 +156,7 @@ serve(async (req: Request) => {
 
     // Parse request body
     const requestData: PaymentReminderRequest = await req.json();
-    const { payment_id, reminder_type, custom_message } = requestData;
+    const { payment_id, reminder_type, custom_message, lesson_ids } = requestData;
 
     if (!payment_id) {
       return new Response(
@@ -247,12 +249,13 @@ serve(async (req: Request) => {
       );
     }
 
-    // Fetch lessons linked to this payment
-    const { data: paymentLessons } = await supabase
+    // Fetch UNPAID lessons linked to this payment (for partial payments)
+    let lessonsQuery = supabase
       .from('payment_lessons')
       .select(`
         id,
         amount,
+        paid,
         lesson:scheduled_lessons!inner(
           id,
           subject,
@@ -261,7 +264,15 @@ serve(async (req: Request) => {
           student:students!inner(id, name)
         )
       `)
-      .eq('payment_id', payment_id);
+      .eq('payment_id', payment_id)
+      .eq('paid', false);
+
+    // If specific lesson IDs provided, filter to only those
+    if (lesson_ids && lesson_ids.length > 0) {
+      lessonsQuery = lessonsQuery.in('id', lesson_ids);
+    }
+
+    const { data: paymentLessons } = await lessonsQuery;
 
     // Sort lessons by date
     const sortedLessons = (paymentLessons as PaymentLessonWithDetails[] || [])
@@ -297,7 +308,7 @@ serve(async (req: Request) => {
     const lessonsHtml = sortedLessons.length > 0
       ? `
         <div style="background: #F5F7FA; border-radius: 10px; padding: 20px; margin: 20px 0;">
-          <h3 style="margin: 0 0 15px 0; color: #3D9CA8; font-size: 16px;">Lessons Included (${sortedLessons.length}):</h3>
+          <h3 style="margin: 0 0 15px 0; color: #3D9CA8; font-size: 16px;">Unpaid Lessons (${sortedLessons.length}):</h3>
           <table style="width: 100%; border-collapse: collapse;">
             ${sortedLessons.map((pl) => {
               const subjectInfo = getSubjectInfo(pl.lesson.subject);
