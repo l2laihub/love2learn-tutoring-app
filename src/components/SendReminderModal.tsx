@@ -102,7 +102,10 @@ export function SendReminderModal({
 
   const parentName = payment.parent?.name || 'Unknown';
   const balanceDue = payment.amount_due - payment.amount_paid;
-  const monthDisplay = new Date(payment.month).toLocaleDateString('en-US', {
+  // Parse month string (e.g., "2026-01" or "2026-01-01") avoiding timezone issues
+  // by adding T12:00:00 to ensure we stay in the correct month
+  const monthDate = new Date(payment.month + (payment.month.length <= 7 ? '-01T12:00:00' : 'T12:00:00'));
+  const monthDisplay = monthDate.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   });
