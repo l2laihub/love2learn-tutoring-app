@@ -739,6 +739,7 @@ export type Database = {
           default_base_duration: number;
           subject_rates: Json;
           combined_session_rate: number;
+          reminder_settings: Json;
           created_at: string;
           updated_at: string;
         };
@@ -749,6 +750,7 @@ export type Database = {
           default_base_duration?: number;
           subject_rates?: Json;
           combined_session_rate?: number;
+          reminder_settings?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -759,6 +761,7 @@ export type Database = {
           default_base_duration?: number;
           subject_rates?: Json;
           combined_session_rate?: number;
+          reminder_settings?: Json;
           created_at?: string;
           updated_at?: string;
         };
@@ -768,6 +771,60 @@ export type Database = {
             columns: ['tutor_id'];
             isOneToOne: true;
             referencedRelation: 'users';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      payment_reminders: {
+        Row: {
+          id: string;
+          payment_id: string;
+          parent_id: string;
+          reminder_type: 'friendly' | 'due_date' | 'past_due_3' | 'past_due_7' | 'past_due_14' | 'manual';
+          email_sent: boolean;
+          email_id: string | null;
+          notification_id: string | null;
+          message: string | null;
+          sent_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          payment_id: string;
+          parent_id: string;
+          reminder_type: 'friendly' | 'due_date' | 'past_due_3' | 'past_due_7' | 'past_due_14' | 'manual';
+          email_sent?: boolean;
+          email_id?: string | null;
+          notification_id?: string | null;
+          message?: string | null;
+          sent_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          payment_id?: string;
+          parent_id?: string;
+          reminder_type?: 'friendly' | 'due_date' | 'past_due_3' | 'past_due_7' | 'past_due_14' | 'manual';
+          email_sent?: boolean;
+          email_id?: string | null;
+          notification_id?: string | null;
+          message?: string | null;
+          sent_at?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'payment_reminders_payment_id_fkey';
+            columns: ['payment_id'];
+            isOneToOne: false;
+            referencedRelation: 'payments';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'payment_reminders_parent_id_fkey';
+            columns: ['parent_id'];
+            isOneToOne: false;
+            referencedRelation: 'parents';
             referencedColumns: ['id'];
           }
         ];
@@ -1113,6 +1170,143 @@ export interface PrepaidStatus {
   isPaid: boolean; // status === 'paid'
 }
 
+// ============================================================================
+// Payment Reminder Types
+// For tracking and sending payment reminder emails to parents
+// ============================================================================
+
+// Payment reminder type enum
+export type PaymentReminderType =
+  | 'friendly'      // Friendly reminder (e.g., 3 days before due)
+  | 'due_date'      // On due date reminder
+  | 'past_due_3'    // 3 days past due
+  | 'past_due_7'    // 7 days past due
+  | 'past_due_14'   // 14 days past due
+  | 'manual';       // Manual reminder sent by tutor
+
+// Payment reminder record
+export interface PaymentReminder {
+  id: string;
+  payment_id: string;
+  parent_id: string;
+  reminder_type: PaymentReminderType;
+  email_sent: boolean;
+  email_id: string | null;
+  notification_id: string | null;
+  message: string | null;
+  sent_at: string;
+  created_at: string;
+}
+
+// Payment reminder with parent info
+export interface PaymentReminderWithParent extends PaymentReminder {
+  parent: Parent;
+}
+
+// Reminder settings for automation (stored in tutor_settings.reminder_settings)
+export interface ReminderSettings {
+  enabled: boolean;
+  due_day_of_month: number;         // Day of month when payment is due (e.g., 7)
+  friendly_reminder_days_before: number; // Days before due date for friendly reminder
+  past_due_intervals: number[];     // Days after due date for past-due reminders (e.g., [3, 7, 14])
+  send_email: boolean;              // Whether to send email reminders
+  send_notification: boolean;       // Whether to send in-app notifications
+}
+
+// Input for sending a payment reminder
+export interface SendPaymentReminderInput {
+  payment_id: string;
+  reminder_type: PaymentReminderType;
+  custom_message?: string;
+}
+
+// Response from sending a payment reminder
+export interface SendPaymentReminderResponse {
+  success: boolean;
+  message: string;
+  emailId?: string;
+  emailSent?: boolean;
+  notificationId?: string;
+  reminderId?: string;
+  duplicate?: boolean;
+}
+
+// Reminder history summary for display
+export interface ReminderHistorySummary {
+  totalReminders: number;
+  lastReminderSent: string | null;
+  lastReminderType: PaymentReminderType | null;
+  remindersByType: Record<PaymentReminderType, number>;
+}
+
+// Helper function to get reminder type display info
+export function getReminderTypeInfo(type: PaymentReminderType): {
+  label: string;
+  description: string;
+  color: string;
+  bgColor: string;
+  icon: string;
+} {
+  switch (type) {
+    case 'friendly':
+      return {
+        label: 'Friendly Reminder',
+        description: 'Sent before due date',
+        color: '#7CB342',
+        bgColor: '#F1F8E9',
+        icon: 'happy-outline',
+      };
+    case 'due_date':
+      return {
+        label: 'Due Date',
+        description: 'Sent on due date',
+        color: '#FF9800',
+        bgColor: '#FFF3E0',
+        icon: 'calendar-outline',
+      };
+    case 'past_due_3':
+      return {
+        label: '3 Days Overdue',
+        description: 'Sent 3 days after due',
+        color: '#F57C00',
+        bgColor: '#FFF3E0',
+        icon: 'alert-outline',
+      };
+    case 'past_due_7':
+      return {
+        label: '7 Days Overdue',
+        description: 'Sent 7 days after due',
+        color: '#E53935',
+        bgColor: '#FFEBEE',
+        icon: 'warning-outline',
+      };
+    case 'past_due_14':
+      return {
+        label: '14 Days Overdue',
+        description: 'Sent 14 days after due',
+        color: '#C62828',
+        bgColor: '#FFEBEE',
+        icon: 'alert-circle-outline',
+      };
+    case 'manual':
+      return {
+        label: 'Manual Reminder',
+        description: 'Sent by tutor',
+        color: '#3D9CA8',
+        bgColor: '#E0F7FA',
+        icon: 'mail-outline',
+      };
+    default:
+      return {
+        label: 'Reminder',
+        description: 'Payment reminder',
+        color: '#9E9E9E',
+        bgColor: '#F5F5F5',
+        icon: 'mail-outline',
+      };
+  }
+}
+
 // Tutor settings for rate configuration
 export interface TutorSettings {
   id: string;
@@ -1121,6 +1315,7 @@ export interface TutorSettings {
   default_base_duration: number;  // Default base duration in minutes (e.g., 60)
   subject_rates: SubjectRates;    // Per-subject rate overrides
   combined_session_rate: number;  // Flat rate per student for combined sessions
+  reminder_settings: ReminderSettings; // Payment reminder automation settings
   created_at: string;
   updated_at: string;
 }

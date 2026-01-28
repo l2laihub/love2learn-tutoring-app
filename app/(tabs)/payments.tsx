@@ -47,6 +47,8 @@ import { ParentViewPreviewModal } from '../../src/components/ParentViewPreviewMo
 import { LessonDetailsModal, LessonFilterType, PrepaidPaymentDisplay } from '../../src/components/LessonDetailsModal';
 import { StatusFilterType } from '../../src/components/MonthlyPaymentSummary';
 import { PaymentFilterBar, PaymentFilterStatus, PaymentSortOption } from '../../src/components/PaymentFilterBar';
+import { SendReminderModal } from '../../src/components/SendReminderModal';
+import { usePaymentRemindersBatch, formatRelativeTime } from '../../src/hooks/usePaymentReminders';
 
 type PaymentViewMode = 'invoice' | 'prepaid';
 
@@ -89,6 +91,9 @@ export default function PaymentsScreen() {
   const [filterStatus, setFilterStatus] = useState<PaymentFilterStatus>('all');
   const [sortOption, setSortOption] = useState<PaymentSortOption>('name-asc');
   const [summaryExpanded, setSummaryExpanded] = useState(false);
+  // Send reminder modal state
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [reminderPayment, setReminderPayment] = useState<PaymentWithParent | null>(null);
 
   // Fetch data
   const { data: payments, loading, error, refetch } = usePayments(selectedMonth);
@@ -106,6 +111,13 @@ export default function PaymentsScreen() {
     loading: prepaidLoading,
     refetch: refetchPrepaid,
   } = usePrepaidPayments(selectedMonth);
+
+  // Get payment IDs for batch reminder fetching
+  const paymentIds = useMemo(() => payments.map(p => p.id), [payments]);
+  const {
+    data: remindersByPayment,
+    refetch: refetchReminders,
+  } = usePaymentRemindersBatch(paymentIds);
 
   // Mutations
   const createPayment = useCreatePayment();
@@ -269,6 +281,7 @@ export default function PaymentsScreen() {
       refetchLessonSummary(),
       refetchPrepaid(),
       refetchParents(), // Refetch parents to update billing mode and tab counts
+      refetchReminders(), // Refetch payment reminders
     ]);
     setRefreshing(false);
   };
@@ -358,6 +371,12 @@ export default function PaymentsScreen() {
 
   const handleInvoiceSuccess = async () => {
     await handleRefresh();
+  };
+
+  // Open reminder modal for a payment
+  const handleOpenReminderModal = (payment: PaymentWithParent) => {
+    setReminderPayment(payment);
+    setShowReminderModal(true);
   };
 
   // Prepaid handlers
@@ -751,6 +770,17 @@ export default function PaymentsScreen() {
                             <Text style={styles.markUnpaidText}>Mark Unpaid</Text>
                           </Pressable>
                         )}
+                        {payment.status !== 'paid' && (
+                          <Pressable
+                            style={styles.sendReminderButton}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleOpenReminderModal(payment);
+                            }}
+                          >
+                            <Ionicons name="mail-outline" size={16} color={colors.piano.primary} />
+                          </Pressable>
+                        )}
                         <Pressable
                           style={styles.switchModeButton}
                           onPress={(e) => {
@@ -788,6 +818,24 @@ export default function PaymentsScreen() {
                                 : dates.length <= 3
                                   ? `Lessons: ${dates.join(', ')}`
                                   : `${count} lessons: ${dates.slice(0, 2).join(', ')} +${count - 2} more`}
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Reminder indicator */}
+                    {(() => {
+                      const reminders = remindersByPayment.get(payment.id) || [];
+                      if (reminders.length > 0) {
+                        const lastReminder = reminders[0];
+                        return (
+                          <View style={styles.reminderIndicator}>
+                            <Ionicons name="mail-outline" size={14} color={colors.neutral.textMuted} />
+                            <Text style={styles.reminderIndicatorText}>
+                              Updated: {formatRelativeTime(lastReminder.sent_at)}
+                              {reminders.length > 1 && ` (${reminders.length} reminders)`}
                             </Text>
                           </View>
                         );
@@ -1220,6 +1268,17 @@ export default function PaymentsScreen() {
           }}
         />
       )}
+
+      {/* Send Reminder Modal */}
+      <SendReminderModal
+        visible={showReminderModal}
+        onClose={() => {
+          setShowReminderModal(false);
+          setReminderPayment(null);
+        }}
+        payment={reminderPayment}
+        onSuccess={handleRefresh}
+      />
     </SafeAreaView>
   );
 }
@@ -1501,6 +1560,23 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.piano.primary,
+  },
+  sendReminderButton: {
+    padding: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  reminderIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  reminderIndicatorText: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
   },
   paymentNotes: {
     fontSize: typography.sizes.sm,
