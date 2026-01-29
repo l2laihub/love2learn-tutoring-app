@@ -1797,7 +1797,7 @@ export function useQuickInvoice() {
 
       if (lessonsError) throw new Error(lessonsError.message);
       if (!lessons || lessons.length === 0) {
-        throw new Error('No uninvoiced lessons found for this month');
+        throw new Error(`No completed lessons found for parent ${parentId} in ${monthStart}`);
       }
 
       // Get already invoiced lessons
@@ -1812,7 +1812,7 @@ export function useQuickInvoice() {
       const uninvoicedLessons = lessons.filter((l: { id: string }) => !invoicedLessonIds.has(l.id));
 
       if (uninvoicedLessons.length === 0) {
-        throw new Error('All completed lessons are already invoiced');
+        throw new Error(`All ${lessons.length} completed lesson(s) are already invoiced for parent ${parentId}`);
       }
 
       const lessonAmounts = uninvoicedLessons.map((lesson: {

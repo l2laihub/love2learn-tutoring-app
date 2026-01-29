@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Modal,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -591,16 +592,21 @@ export default function CalendarScreen() {
     const lessonDate = new Date(selectedGroupedLesson.scheduled_at);
     for (const [parentId, parentInfo] of parentMap) {
       if (parentInfo.billing_mode === 'prepaid') {
-        // For prepaid families: increment sessions_used for each completed lesson
-        const lessonsForParent = selectedGroupedLesson.lessons.filter(
-          l => l.student.parent.id === parentId
-        );
-        for (const _ of lessonsForParent) {
-          await incrementSessionUsage.mutate(parentId, lessonDate);
-        }
+        // For prepaid families: session usage is already incremented in useCompleteLesson hook
+        // No additional action needed here
       } else {
         // For invoice families: auto-generate/update invoice
-        await quickInvoice.generateQuickInvoice(parentId, lessonDate);
+        const payment = await quickInvoice.generateQuickInvoice(parentId, lessonDate);
+        if (!payment && quickInvoice.error) {
+          // Show error to user - invoice generation failed
+          const parentName = selectedGroupedLesson.lessons.find(
+            l => l.student.parent.id === parentId
+          )?.student.parent.name || 'Unknown';
+          Alert.alert(
+            'Invoice Error',
+            `Failed to generate invoice for ${parentName}: ${quickInvoice.error.message}`
+          );
+        }
       }
     }
   };
