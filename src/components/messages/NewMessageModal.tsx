@@ -19,10 +19,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing } from '../../theme';
-import { useParentGroups, useCreateThread } from '../../hooks';
+import { useParentGroups, useCreateThread, useParents } from '../../hooks';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { MessageRecipientType } from '../../types/messages';
-import { ParentGroupSelector } from './ParentGroupSelector';
+import { ParentGroupSelector, Selection } from './ParentGroupSelector';
 import { MessageImagePicker } from './MessageImagePicker';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -38,30 +38,29 @@ export function NewMessageModal({
   onSuccess,
 }: NewMessageModalProps) {
   const { groups } = useParentGroups();
+  const { data: parents } = useParents();
   const { mutate: createThread, loading: creating } = useCreateThread();
   const { uploadFile } = useFileUpload();
 
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<string[]>([]); // Local URIs
-  const [recipientType, setRecipientType] = useState<MessageRecipientType>('all');
-  const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
-  const [selectedGroupName, setSelectedGroupName] = useState<string | undefined>();
+  const [recipientSelection, setRecipientSelection] = useState<Selection>({ type: 'all' });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const canSend =
     subject.trim().length > 0 &&
     content.trim().length > 0 &&
-    (recipientType === 'all' || selectedGroupId);
+    (recipientSelection.type === 'all' ||
+      (recipientSelection.type === 'group' && recipientSelection.groupId) ||
+      (recipientSelection.type === 'parent' && recipientSelection.parentIds && recipientSelection.parentIds.length > 0));
 
   const handleClose = useCallback(() => {
     setSubject('');
     setContent('');
     setImages([]);
-    setRecipientType('all');
-    setSelectedGroupId(undefined);
-    setSelectedGroupName(undefined);
+    setRecipientSelection({ type: 'all' });
     onClose();
   }, [onClose]);
 
@@ -91,26 +90,35 @@ export function NewMessageModal({
 
       setUploading(false);
 
-      // Create thread
+      // Create thread with appropriate recipient type
       const threadId = await createThread({
         subject: subject.trim(),
         content: content.trim(),
-        recipient_type: recipientType,
-        group_id: recipientType === 'group' ? selectedGroupId : undefined,
+        recipient_type: recipientSelection.type,
+        group_id: recipientSelection.type === 'group' ? recipientSelection.groupId : undefined,
+        parent_ids: recipientSelection.type === 'parent' ? recipientSelection.parentIds : undefined,
         images: uploadedPaths,
       });
 
       if (threadId) {
-        Alert.alert('Success', 'Message sent successfully!');
+        if (Platform.OS === 'web') {
+          window.alert('Message sent successfully!');
+        } else {
+          Alert.alert('Success', 'Message sent successfully!');
+        }
         handleClose();
         onSuccess?.(threadId);
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
+      if (Platform.OS === 'web') {
+        window.alert('Failed to send message. Please try again.');
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please try again.');
+      }
       setUploading(false);
     }
-  }, [canSend, subject, content, images, recipientType, selectedGroupId, createThread, uploadFile, handleClose, onSuccess]);
+  }, [canSend, subject, content, images, recipientSelection, createThread, uploadFile, handleClose, onSuccess]);
 
   const handleEmojiSelect = useCallback((emoji: string) => {
     setContent((prev) => prev + emoji);
@@ -165,16 +173,9 @@ export function NewMessageModal({
             <Text style={styles.label}>To</Text>
             <ParentGroupSelector
               groups={groups}
-              selected={{
-                type: recipientType,
-                groupId: selectedGroupId,
-                groupName: selectedGroupName,
-              }}
-              onSelect={(selection) => {
-                setRecipientType(selection.type);
-                setSelectedGroupId(selection.groupId);
-                setSelectedGroupName(selection.groupName);
-              }}
+              parents={parents}
+              selected={recipientSelection}
+              onSelect={setRecipientSelection}
               disabled={isLoading}
             />
           </View>

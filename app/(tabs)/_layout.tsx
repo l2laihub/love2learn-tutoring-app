@@ -22,9 +22,7 @@ function TabIcon({ name, color, size }: TabIconProps) {
 }
 
 // Messages tab icon with unread badge
-function MessagesTabIcon({ color, size }: { color: string; size: number }) {
-  const { count } = useUnreadMessageCount();
-
+function MessagesTabIcon({ color, size, count }: { color: string; size: number; count: number }) {
   return (
     <View style={tabStyles.iconContainer}>
       <Ionicons name="chatbubbles" size={size} color={color} />
@@ -52,6 +50,9 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { isTutor, isParent } = useAuthContext();
   const { isDesktop } = useResponsive();
+
+  // Get unread message count at the layout level to ensure subscription is always active
+  const { count: unreadMessageCount } = useUnreadMessageCount();
 
   // On desktop, use sidebar layout instead of bottom tabs
   if (isDesktop) {
@@ -209,7 +210,7 @@ export default function TabLayout() {
           title: 'Messages',
           headerShown: false, // Stack inside handles its own header
           tabBarIcon: ({ color, size }) => (
-            <MessagesTabIcon color={color} size={size} />
+            <MessagesTabIcon color={color} size={size} count={unreadMessageCount} />
           ),
         }}
       />

@@ -31,7 +31,10 @@ export function ReactionPicker({
 
   const handleDelete = () => {
     onClose();
-    onDelete?.();
+    // Delay onDelete to ensure modal fully closes before Alert.alert is called
+    // This prevents a race condition where the modal closing animation
+    // interferes with the Alert presentation on both mobile and web platforms
+    setTimeout(() => onDelete?.(), 150);
   };
 
   return (

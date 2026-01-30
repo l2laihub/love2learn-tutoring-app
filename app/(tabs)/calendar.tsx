@@ -433,9 +433,16 @@ export default function CalendarScreen() {
 
     // Determine how to calculate per-lesson duration:
     //
-    // Scenario A: Each student takes ONE subject (different or same)
-    //   - Long Bui (Piano) + An Bui (Speech) in 60min session → 30min each
+    // Scenario A1: GROUP LESSON - Multiple students, SAME subject
+    //   - Ella Luong (Math) + Another student (Math) in 60min group session
+    //   - Each student gets FULL session duration (they learn together)
+    //   - 60min session → each student gets 60min
+    //
+    // Scenario A2: SEQUENTIAL LESSONS - Multiple students, DIFFERENT subjects
+    //   - Long Bui (Piano) + An Bui (Speech) in 60min session
+    //   - Tutor teaches one subject, then the other
     //   - Divide total session time by number of lessons
+    //   - 60min session / 2 students = 30min each
     //
     // Scenario B: Same student takes MULTIPLE subjects
     //   - Lauren Vu (Piano + Reading) in one session
@@ -450,6 +457,10 @@ export default function CalendarScreen() {
     });
     const hasStudentWithMultipleSubjects = Array.from(studentSubjectCounts.values()).some(count => count > 1);
 
+    // Check if all students have the same subject (Group Lesson - Scenario A1)
+    const uniqueSubjects = new Set(sessionData.lessons.map(l => l.subject));
+    const isGroupLesson = uniqueSubjects.size === 1 && sessionData.lessons.length > 1;
+
     // Debug logging
     console.log('=== Combined Session Creation Debug ===');
     console.log('Session duration_min:', sessionData.duration_min);
@@ -457,7 +468,8 @@ export default function CalendarScreen() {
     console.log('Lessons:', sessionData.lessons.map(l => ({ student_id: l.student_id, subject: l.subject })));
     console.log('Student subject counts:', Object.fromEntries(studentSubjectCounts));
     console.log('Has student with multiple subjects (Scenario B):', hasStudentWithMultipleSubjects);
-    console.log('Per-lesson duration (Scenario A):', Math.floor(sessionData.duration_min / sessionData.lessons.length));
+    console.log('Is group lesson (same subject, Scenario A1):', isGroupLesson);
+    console.log('Per-lesson duration (Scenario A2):', Math.floor(sessionData.duration_min / sessionData.lessons.length));
 
     // Create a session for each date
     for (const date of datesToCreate) {
@@ -480,10 +492,22 @@ export default function CalendarScreen() {
 
         // Calculate total session duration as sum of all individual lesson durations
         calculatedTotalDuration = lessonInputs.reduce((sum, l) => sum + l.duration_min, 0);
+      } else if (isGroupLesson) {
+        // Scenario A1: GROUP LESSON - Multiple students learning the SAME subject together
+        // Each student gets the FULL session duration (they all attend the same class)
+        // E.g., 60min Math group lesson → each student gets 60min
+        calculatedTotalDuration = sessionData.duration_min;
+
+        lessonInputs = sessionData.lessons.map(lesson => ({
+          student_id: lesson.student_id,
+          subject: lesson.subject,
+          scheduled_at: date.toISOString(),
+          duration_min: sessionData.duration_min, // Full session duration for each student
+        }));
       } else {
-        // Scenario A: Each student takes one subject
+        // Scenario A2: SEQUENTIAL LESSONS - Students have DIFFERENT subjects
         // Divide total session time equally among all lessons
-        // (e.g., 60min session / 2 students = 30min each, regardless of subject)
+        // (e.g., 60min session / 2 students = 30min each, tutor teaches one then the other)
         const perLessonDuration = Math.floor(sessionData.duration_min / sessionData.lessons.length);
         calculatedTotalDuration = sessionData.duration_min;
 

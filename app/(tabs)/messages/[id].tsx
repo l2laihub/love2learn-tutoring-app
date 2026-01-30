@@ -50,12 +50,30 @@ export default function ThreadDetailScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
 
+  // Track if thread was previously loaded (to detect deletion)
+  const [wasLoaded, setWasLoaded] = useState(false);
+
   // Mark as read when viewing
   useEffect(() => {
     if (id && parent?.id) {
       markAsRead();
     }
   }, [id, parent?.id, markAsRead]);
+
+  // Track when thread is loaded
+  useEffect(() => {
+    if (thread && !wasLoaded) {
+      setWasLoaded(true);
+    }
+  }, [thread, wasLoaded]);
+
+  // Navigate back if thread was deleted (thread becomes null after being loaded)
+  useEffect(() => {
+    if (wasLoaded && !loading && !thread) {
+      // Thread was deleted - navigate back to messages list
+      router.back();
+    }
+  }, [wasLoaded, loading, thread]);
 
   // Scroll to bottom when new messages arrive
   useEffect(() => {
@@ -107,76 +125,113 @@ export default function ThreadDetailScreen() {
   }, [toggleReaction, refetch]);
 
   const handleDeleteMessage = useCallback(async (messageId: string) => {
-    Alert.alert(
-      'Delete Message',
-      'Are you sure you want to delete this message?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const success = await deleteMessage(messageId);
-            if (success) {
-              refetch();
-            }
-          },
-        },
-      ]
-    );
+    const confirmMessage = 'Are you sure you want to delete this message?';
+
+    const performDelete = async () => {
+      const success = await deleteMessage(messageId);
+      if (success) {
+        refetch();
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        await performDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Message',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: performDelete },
+        ]
+      );
+    }
   }, [deleteMessage, refetch]);
 
   const handleArchiveThread = useCallback(async () => {
     setShowMenu(false);
-    Alert.alert(
-      'Archive Thread',
-      'Are you sure you want to archive this conversation? It will no longer appear in the messages list.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Archive',
-          onPress: async () => {
-            try {
-              const success = await archiveThread(id!);
-              if (success) {
-                router.back();
-              } else {
-                Alert.alert('Error', 'Failed to archive thread. Please make sure the database migration has been applied.');
-              }
-            } catch (err) {
-              Alert.alert('Error', err instanceof Error ? err.message : 'Failed to archive thread');
-            }
-          },
-        },
-      ]
-    );
+    const confirmMessage = 'Are you sure you want to archive this conversation? It will no longer appear in the messages list.';
+
+    const performArchive = async () => {
+      try {
+        const success = await archiveThread(id!);
+        if (success) {
+          router.back();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert('Failed to archive thread. Please make sure the database migration has been applied.');
+          } else {
+            Alert.alert('Error', 'Failed to archive thread. Please make sure the database migration has been applied.');
+          }
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to archive thread';
+        if (Platform.OS === 'web') {
+          window.alert(errorMessage);
+        } else {
+          Alert.alert('Error', errorMessage);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        await performArchive();
+      }
+    } else {
+      Alert.alert(
+        'Archive Thread',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Archive', onPress: performArchive },
+        ]
+      );
+    }
   }, [archiveThread, id]);
 
   const handleDeleteThread = useCallback(async () => {
     setShowMenu(false);
-    Alert.alert(
-      'Delete Thread',
-      'Are you sure you want to permanently delete this conversation? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const success = await deleteThread(id!);
-              if (success) {
-                router.back();
-              } else {
-                Alert.alert('Error', 'Failed to delete thread. Please make sure the database migration has been applied.');
-              }
-            } catch (err) {
-              Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete thread');
-            }
-          },
-        },
-      ]
-    );
+    const confirmMessage = 'Are you sure you want to permanently delete this conversation? This action cannot be undone.';
+
+    const performDelete = async () => {
+      try {
+        const success = await deleteThread(id!);
+        if (success) {
+          router.back();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert('Failed to delete thread. Please make sure the database migration has been applied.');
+          } else {
+            Alert.alert('Error', 'Failed to delete thread. Please make sure the database migration has been applied.');
+          }
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to delete thread';
+        if (Platform.OS === 'web') {
+          window.alert(errorMessage);
+        } else {
+          Alert.alert('Error', errorMessage);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        await performDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Thread',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: performDelete },
+        ]
+      );
+    }
   }, [deleteThread, id]);
 
   const canDeleteMessage = useCallback((message: MessageWithDetails) => {
@@ -217,30 +272,45 @@ export default function ThreadDetailScreen() {
   const handleBulkDelete = useCallback(async () => {
     if (selectedMessageIds.size === 0) return;
 
-    Alert.alert(
-      'Delete Messages',
-      `Are you sure you want to delete ${selectedMessageIds.size} message${selectedMessageIds.size > 1 ? 's' : ''}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const deleted = await bulkDeleteMessages(Array.from(selectedMessageIds));
-              if (deleted > 0) {
-                handleExitSelectionMode();
-                refetch();
-              } else {
-                Alert.alert('Error', 'Failed to delete messages');
-              }
-            } catch (err) {
-              Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete messages');
-            }
-          },
-        },
-      ]
-    );
+    const confirmMessage = `Are you sure you want to delete ${selectedMessageIds.size} message${selectedMessageIds.size > 1 ? 's' : ''}?`;
+
+    const performBulkDelete = async () => {
+      try {
+        const deleted = await bulkDeleteMessages(Array.from(selectedMessageIds));
+        if (deleted > 0) {
+          handleExitSelectionMode();
+          refetch();
+        } else {
+          if (Platform.OS === 'web') {
+            window.alert('Failed to delete messages');
+          } else {
+            Alert.alert('Error', 'Failed to delete messages');
+          }
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to delete messages';
+        if (Platform.OS === 'web') {
+          window.alert(errorMessage);
+        } else {
+          Alert.alert('Error', errorMessage);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(confirmMessage)) {
+        await performBulkDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Messages',
+        confirmMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: performBulkDelete },
+        ]
+      );
+    }
   }, [selectedMessageIds, bulkDeleteMessages, handleExitSelectionMode, refetch]);
 
   const renderMessage = ({ item }: { item: MessageWithDetails }) => (
@@ -367,7 +437,11 @@ export default function ThreadDetailScreen() {
         <View style={styles.threadHeader}>
           <View style={styles.recipientInfo}>
             <Text style={styles.recipientLabel}>
-              {thread.recipient_type === 'all' ? 'All Parents' : thread.group?.name || 'Group'}
+              {thread.recipient_type === 'all'
+                ? 'All Parents'
+                : thread.recipient_type === 'group'
+                  ? thread.group?.name || 'Group'
+                  : `${thread.participants?.length || 0} Selected Parent${(thread.participants?.length || 0) !== 1 ? 's' : ''}`}
             </Text>
             <Text style={styles.participantCount}>
               {thread.participants?.length || 0} participant

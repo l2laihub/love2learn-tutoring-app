@@ -8,7 +8,7 @@ import { Parent } from './database';
 // ============================================================================
 // Recipient type for message threads
 // ============================================================================
-export type MessageRecipientType = 'all' | 'group';
+export type MessageRecipientType = 'all' | 'group' | 'parent';
 
 // ============================================================================
 // Base database record types
@@ -192,6 +192,7 @@ export interface CreateMessageThreadInput {
   content: string; // Initial message content
   recipient_type: MessageRecipientType;
   group_id?: string | null; // Required if recipient_type is 'group'
+  parent_ids?: string[]; // Required if recipient_type is 'parent' (individual parent selection)
   images?: string[]; // Optional images for initial message
 }
 

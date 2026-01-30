@@ -90,9 +90,9 @@ export function useMessageThreads(limit: number = 50): MessageThreadsState & {
 
     fetchThreads();
 
-    // Subscribe to new messages
+    // Subscribe to message changes (insert, update, delete)
     const channel = supabase
-      .channel(`messages:${parentId}`)
+      .channel(`messages-list:${parentId}`)
       .on(
         'postgres_changes',
         {
@@ -102,6 +102,54 @@ export function useMessageThreads(limit: number = 50): MessageThreadsState & {
         },
         () => {
           // Refetch threads when a new message arrives
+          fetchThreads();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          // Refetch threads when a message is deleted
+          fetchThreads();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'message_threads',
+        },
+        () => {
+          // Refetch threads when a thread is deleted
+          fetchThreads();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'message_threads',
+        },
+        () => {
+          // Refetch when thread is updated (e.g., archived)
+          fetchThreads();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'message_thread_participants',
+        },
+        () => {
+          // Refetch when read status changes
           fetchThreads();
         }
       )
@@ -170,13 +218,35 @@ export function useUnreadMessageCount(): {
     fetchCount();
 
     const channel = supabase
-      .channel(`unread-messages:${parentId}`)
+      .channel(`unread-messages-count:${parentId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
+        },
+        () => {
+          fetchCount();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          fetchCount();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'message_threads',
         },
         () => {
           fetchCount();
@@ -235,7 +305,7 @@ export function useMessageThread(threadId: string | null): MessageThreadState & 
       setLoading(true);
       setError(null);
 
-      // Fetch thread details
+      // Fetch thread details - use maybeSingle to handle deleted threads gracefully
       const { data: threadData, error: threadError } = await supabase
         .from('message_threads')
         .select(`
@@ -244,10 +314,17 @@ export function useMessageThread(threadId: string | null): MessageThreadState & 
           group:parent_groups(*)
         `)
         .eq('id', threadId)
-        .single();
+        .maybeSingle();
 
       if (threadError) {
         throw new Error(threadError.message);
+      }
+
+      // Thread was deleted - set to null without error
+      if (!threadData) {
+        setThread(null);
+        setLoading(false);
+        return;
       }
 
       // Fetch participants
@@ -382,9 +459,9 @@ export function useMessageThread(threadId: string | null): MessageThreadState & 
     // Mark as read when viewing
     markAsRead();
 
-    // Subscribe to new messages in this thread
+    // Subscribe to messages in this thread (insert, update, delete)
     const channel = supabase
-      .channel(`thread:${threadId}`)
+      .channel(`thread-detail:${threadId}`)
       .on(
         'postgres_changes',
         {
@@ -396,6 +473,31 @@ export function useMessageThread(threadId: string | null): MessageThreadState & 
         () => {
           fetchThread();
           markAsRead();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+        },
+        () => {
+          // Refetch when a message is deleted
+          // Note: DELETE events don't include filter data, so we refetch regardless
+          fetchThread();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `thread_id=eq.${threadId}`,
+        },
+        () => {
+          fetchThread();
         }
       )
       .on(
@@ -456,6 +558,7 @@ export function useCreateThread() {
           p_recipient_type: input.recipient_type,
           p_group_id: input.group_id || null,
           p_images: input.images || [],
+          p_parent_ids: input.parent_ids || [],
         });
 
       if (createError) {
