@@ -114,15 +114,25 @@ export function useParentInvitationStatus(parentId: string | null) {
 }
 
 /**
- * Validate an invitation token (for registration page)
+ * Invitation validation result with tutor info
  */
-export async function validateInvitationToken(token: string): Promise<{
+export interface InvitationValidationResult {
   isValid: boolean;
   parentId?: string;
   email?: string;
   name?: string;
+  tutorId?: string;
+  tutorBusinessName?: string;
+  tutorName?: string;
+  tutorSubscriptionActive?: boolean;
   error?: string;
-}> {
+}
+
+/**
+ * Validate an invitation token (for registration page)
+ * Returns tutor information for multi-tenant branding
+ */
+export async function validateInvitationToken(token: string): Promise<InvitationValidationResult> {
   try {
     const { data, error } = await supabase
       .rpc('validate_invitation_token', { token });
@@ -146,6 +156,10 @@ export async function validateInvitationToken(token: string): Promise<{
       parentId: result.parent_id,
       email: result.email,
       name: result.name,
+      tutorId: result.tutor_id,
+      tutorBusinessName: result.tutor_business_name,
+      tutorName: result.tutor_name,
+      tutorSubscriptionActive: result.tutor_subscription_active,
     };
   } catch (err) {
     return {
@@ -153,6 +167,52 @@ export async function validateInvitationToken(token: string): Promise<{
       error: err instanceof Error ? err.message : 'Failed to validate token',
     };
   }
+}
+
+/**
+ * Hook for getting tutor info for the current parent user
+ */
+export function useTutorInfo() {
+  const [tutorInfo, setTutorInfo] = useState<{
+    tutorId: string | null;
+    tutorName: string | null;
+    businessName: string | null;
+    subscriptionActive: boolean;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchTutorInfo = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error: fetchError } = await supabase
+        .rpc('get_my_tutor_info');
+
+      if (fetchError) {
+        throw new Error(fetchError.message);
+      }
+
+      if (data && data.length > 0) {
+        const result = data[0];
+        setTutorInfo({
+          tutorId: result.tutor_id,
+          tutorName: result.tutor_name,
+          businessName: result.business_name,
+          subscriptionActive: result.subscription_active,
+        });
+      } else {
+        setTutorInfo(null);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch tutor info'));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { tutorInfo, loading, error, refetch: fetchTutorInfo };
 }
 
 /**

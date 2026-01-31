@@ -32,6 +32,10 @@ interface AuthContextType {
   role: UserRole;
   isTutor: boolean;
   isParent: boolean;
+  // Onboarding helpers
+  needsOnboarding: boolean;
+  tutorNeedsOnboarding: boolean;
+  parentNeedsOnboarding: boolean;
   // Error state
   parentQueryError: 'timeout' | 'not_found' | 'query_error' | null;
   // Auth methods
@@ -138,11 +142,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const isTutor = role === 'tutor';
   const isParent = role === 'parent';
 
+  // Onboarding helpers
+  const needsOnboarding = authState.parent ? !authState.parent.onboarding_completed_at : false;
+  const tutorNeedsOnboarding = isTutor && needsOnboarding;
+  const parentNeedsOnboarding = isParent && needsOnboarding;
+
   const value: AuthContextType = {
     ...authState,
     role,
     isTutor,
     isParent,
+    needsOnboarding,
+    tutorNeedsOnboarding,
+    parentNeedsOnboarding,
     signIn,
     signUp,
     signOut,

@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../../src/contexts/AuthContext';
+import { useTutorInfo } from '../../../src/hooks/useParentInvitation';
 import { Button } from '../../../src/components/ui/Button';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
 
@@ -38,7 +39,16 @@ const FEATURES: FeatureItem[] = [
 
 export default function CompleteScreen() {
   const { parent, refreshParent } = useAuthContext();
+  const { tutorInfo, refetch: fetchTutorInfo } = useTutorInfo();
   const firstName = parent?.name?.split(' ')[0] ?? '';
+
+  // Get tutor display name for branding
+  const tutorDisplayName = tutorInfo?.businessName || tutorInfo?.tutorName;
+
+  // Fetch tutor info on mount
+  useEffect(() => {
+    fetchTutorInfo();
+  }, [fetchTutorInfo]);
 
   // Animation values
   const checkScale = useRef(new Animated.Value(0)).current;
@@ -133,7 +143,7 @@ export default function CompleteScreen() {
         <Animated.View style={[styles.helpNote, { opacity: contentOpacity }]}>
           <Ionicons name="help-circle-outline" size={18} color={colors.neutral.textSecondary} />
           <Text style={styles.helpText}>
-            Need help? Contact your tutor anytime through the app.
+            Need help? Contact {tutorDisplayName || 'your tutor'} anytime through the app.
           </Text>
         </Animated.View>
       </View>

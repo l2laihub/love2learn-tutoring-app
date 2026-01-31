@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
 import { useResponsive } from '../../src/hooks/useResponsive';
+import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
 import { supabase } from '../../src/lib/supabase';
 import {
   useWeekGroupedLessons,
@@ -92,16 +93,16 @@ function formatDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-// Helper to format ISO timestamp to date key in Pacific timezone
+// Helper to format ISO timestamp to date key in the tutor's configured timezone
 // This ensures lessons are displayed on the correct day regardless of user's local timezone
-// since the tutoring business operates in Pacific timezone
-function formatISOToPacificDateKey(isoString: string): string {
-  // Parse the ISO string and format in Pacific timezone
+// since times should be shown in the tutor's business timezone
+function formatISOToDateKey(isoString: string, timezone: string): string {
+  // Parse the ISO string and format in the specified timezone
   const date = new Date(isoString);
 
-  // Use Intl.DateTimeFormat to get the date parts in Pacific timezone
+  // Use Intl.DateTimeFormat to get the date parts in the configured timezone
   const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Los_Angeles',
+    timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -143,6 +144,10 @@ export default function CalendarScreen() {
   const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: tutorSettings } = useTutorSettings();
+
+  // Fetch tutor branding (includes timezone)
+  const { data: tutorBranding } = useTutorBranding();
+  const tutorTimezone = tutorBranding?.timezone || DEFAULT_TIMEZONE;
 
   // Fetch parent's students (for drop-in requests)
   const { data: parentStudents } = useStudentsByParent(!isTutor ? parent?.id || null : null);
@@ -233,12 +238,12 @@ export default function CalendarScreen() {
   }, [selectedIds, groupedLessons, deleteLessonSession, deleteLesson, refetch]);
 
   // Group lessons by date for calendar display
-  // Use Pacific timezone for consistent display since the tutoring business operates in Pacific
+  // Use tutor's configured timezone for consistent display
   const lessonsByDate = useMemo(() => {
     const map = new Map<string, GroupedLesson[]>();
 
     groupedLessons.forEach(group => {
-      const dateKey = formatISOToPacificDateKey(group.scheduled_at);
+      const dateKey = formatISOToDateKey(group.scheduled_at, tutorTimezone);
       const existing = map.get(dateKey) || [];
       map.set(dateKey, [...existing, group]);
     });
@@ -250,7 +255,7 @@ export default function CalendarScreen() {
       ));
     });
     return map;
-  }, [groupedLessons]);
+  }, [groupedLessons, tutorTimezone]);
 
   // Generate week days
   const weekDays = useMemo(() => {
@@ -851,8 +856,8 @@ export default function CalendarScreen() {
           }
         >
           {weekDays.map((day, index) => {
-            // Use Pacific timezone for consistency with lesson grouping
-            const dateKey = formatISOToPacificDateKey(day.toISOString());
+            // Use tutor's configured timezone for consistency with lesson grouping
+            const dateKey = formatISOToDateKey(day.toISOString(), tutorTimezone);
             const dayLessons = lessonsByDate.get(dateKey) || [];
             const dayBreaks = getBreaksForDate(day);
             const today = isToday(day);

@@ -287,12 +287,102 @@ export const layout = {
   contentMaxWidth: 1200,
 } as const;
 
-// Subject type including all subjects
+// Subject type including all default subjects
 export type Subject = 'piano' | 'math' | 'reading' | 'speech' | 'english';
 
-// Helper to get subject color
-export const getSubjectColor = (subject: Subject) => {
-  switch (subject) {
+/**
+ * Subject color palette structure
+ */
+export interface SubjectColorPalette {
+  primary: string;
+  light: string;
+  dark: string;
+  subtle: string;
+  gradient: readonly [string, string];
+}
+
+/**
+ * Custom subject definition (from tutor_settings)
+ */
+export interface CustomSubject {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/**
+ * Generate a lighter shade of a hex color
+ */
+function lightenColor(hex: string, percent: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const amt = Math.round(2.55 * percent);
+  const R = Math.min(255, (num >> 16) + amt);
+  const G = Math.min(255, ((num >> 8) & 0x00ff) + amt);
+  const B = Math.min(255, (num & 0x0000ff) + amt);
+  return `#${((1 << 24) + (R << 16) + (G << 8) + B).toString(16).slice(1).toUpperCase()}`;
+}
+
+/**
+ * Generate a darker shade of a hex color
+ */
+function darkenColor(hex: string, percent: number): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const amt = Math.round(2.55 * percent);
+  const R = Math.max(0, (num >> 16) - amt);
+  const G = Math.max(0, ((num >> 8) & 0x00ff) - amt);
+  const B = Math.max(0, (num & 0x0000ff) - amt);
+  return `#${((1 << 24) + (R << 16) + (G << 8) + B).toString(16).slice(1).toUpperCase()}`;
+}
+
+/**
+ * Generate a subtle/pastel shade of a hex color
+ */
+function subtleColor(hex: string): string {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const R = Math.round(((num >> 16) + 255 * 4) / 5);
+  const G = Math.round((((num >> 8) & 0x00ff) + 255 * 4) / 5);
+  const B = Math.round(((num & 0x0000ff) + 255 * 4) / 5);
+  return `#${((1 << 24) + (R << 16) + (G << 8) + B).toString(16).slice(1).toUpperCase()}`;
+}
+
+/**
+ * Generate a full color palette from a base color
+ */
+export function generateColorPalette(baseColor: string): SubjectColorPalette {
+  return {
+    primary: baseColor,
+    light: lightenColor(baseColor, 30),
+    dark: darkenColor(baseColor, 15),
+    subtle: subtleColor(baseColor),
+    gradient: [baseColor, lightenColor(baseColor, 30)] as const,
+  };
+}
+
+/**
+ * Get subject color palette.
+ * Checks custom subjects first (by ID or name), then falls back to default subjects.
+ *
+ * @param subject - Subject key, ID, or name
+ * @param customSubjects - Optional array of custom subjects to check first
+ * @returns Color palette for the subject
+ */
+export const getSubjectColor = (
+  subject: Subject | string,
+  customSubjects?: CustomSubject[]
+): SubjectColorPalette => {
+  // Check custom subjects first (by ID or name)
+  if (customSubjects) {
+    const customSubject = customSubjects.find(
+      s => s.id === subject || s.name.toLowerCase() === subject.toString().toLowerCase()
+    );
+    if (customSubject) {
+      return generateColorPalette(customSubject.color);
+    }
+  }
+
+  // Check default subjects
+  const subjectLower = subject.toString().toLowerCase() as Subject;
+  switch (subjectLower) {
     case 'piano':
       return colors.piano;
     case 'math':
@@ -337,6 +427,7 @@ export const theme = {
   getSubjectColor,
   getPaymentStatusColor,
   getAvatarColor,
+  generateColorPalette,
 } as const;
 
 export type Theme = typeof theme;

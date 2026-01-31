@@ -22,6 +22,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../src/lib/supabase';
 import { useParentAgreement } from '../../../src/hooks/useParentAgreement';
+import { useTutorInfo } from '../../../src/hooks/useParentInvitation';
 import { AgreementScrollView, AGREEMENT_VERSION, AgreementTemplateInfo } from '../../../src/components/AgreementContent';
 import SignaturePad from '../../../src/components/SignaturePad';
 
@@ -37,6 +38,10 @@ export default function AgreementScreen() {
   // Parent info
   const [parentInfo, setParentInfo] = useState<ParentInfo | null>(null);
   const [loadingParent, setLoadingParent] = useState(true);
+
+  // Tutor info for branding
+  const { tutorInfo, refetch: fetchTutorInfo } = useTutorInfo();
+  const tutorDisplayName = tutorInfo?.businessName || tutorInfo?.tutorName || 'Love to Learn Academy';
 
   // Agreement state
   const [hasScrolledToEnd, setHasScrolledToEnd] = useState(false);
@@ -55,7 +60,7 @@ export default function AgreementScreen() {
     clearError,
   } = useParentAgreement();
 
-  // Fetch parent info on mount
+  // Fetch parent and tutor info on mount
   useEffect(() => {
     async function fetchParentInfo() {
       try {
@@ -80,6 +85,9 @@ export default function AgreementScreen() {
 
         setParentInfo(parent);
         setSignedName(parent.name || '');
+
+        // Also fetch tutor info for branding
+        fetchTutorInfo();
       } catch (err) {
         console.error('Error in fetchParentInfo:', err);
       } finally {
@@ -88,7 +96,7 @@ export default function AgreementScreen() {
     }
 
     fetchParentInfo();
-  }, []);
+  }, [fetchTutorInfo]);
 
   // Handle scroll to end
   const handleScrollEnd = useCallback(() => {
@@ -301,7 +309,7 @@ export default function AgreementScreen() {
         {/* Agreement Content */}
         <View style={styles.agreementContainer}>
           <AgreementScrollView
-            tutorName="Love to Learn Academy"
+            tutorName={tutorDisplayName}
             onScrollEnd={handleScrollEnd}
             onTemplateLoaded={handleTemplateLoaded}
           />
