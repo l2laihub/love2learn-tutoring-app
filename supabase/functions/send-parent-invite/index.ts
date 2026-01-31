@@ -23,7 +23,15 @@ interface ParentData {
   name: string;
   user_id: string | null;
   invitation_token: string | null;
+  tutor_id: string | null;
   children: Array<{ name: string; subjects: string[] }>;
+}
+
+interface TutorData {
+  id: string;
+  name: string;
+  business_name: string | null;
+  email: string;
 }
 
 serve(async (req: Request) => {
@@ -104,6 +112,7 @@ serve(async (req: Request) => {
         name,
         user_id,
         invitation_token,
+        tutor_id,
         students (
           name,
           subjects
@@ -126,6 +135,48 @@ serve(async (req: Request) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Get tutor info for branding (use the parent's tutor_id or the caller's tutor record)
+    let tutorData: TutorData | null = null;
+    const tutorId = parentData.tutor_id;
+
+    if (tutorId) {
+      const { data: tutor, error: tutorError } = await supabase
+        .from('parents')
+        .select('id, name, business_name, email')
+        .eq('id', tutorId)
+        .eq('role', 'tutor')
+        .single();
+
+      if (!tutorError && tutor) {
+        tutorData = tutor;
+      }
+    }
+
+    // If no tutor_id on parent, use the caller's tutor info
+    if (!tutorData) {
+      const { data: callerTutor, error: callerTutorError } = await supabase
+        .from('parents')
+        .select('id, name, business_name, email')
+        .eq('user_id', user.id)
+        .eq('role', 'tutor')
+        .single();
+
+      if (!callerTutorError && callerTutor) {
+        tutorData = callerTutor;
+
+        // Also update the parent's tutor_id if not set
+        if (!parentData.tutor_id) {
+          await supabase
+            .from('parents')
+            .update({ tutor_id: callerTutor.id })
+            .eq('id', parentId);
+        }
+      }
+    }
+
+    // Get display name for branding
+    const businessDisplayName = tutorData?.business_name || tutorData?.name || 'Love to Learn Academy';
 
     // Generate invitation token
     const { data: tokenData, error: tokenError } = await supabase
@@ -160,34 +211,34 @@ serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Love to Learn Academy <noreply@app.lovetolearn.site>',
+        from: `${businessDisplayName} <noreply@app.lovetolearn.site>`,
         to: [parentData.email],
-        subject: 'You\'re Invited to Love to Learn Academy Parent Portal!',
+        subject: `You're Invited to ${businessDisplayName} Parent Portal!`,
         html: `
           <!DOCTYPE html>
           <html>
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Welcome to Love to Learn Academy</title>
+            <title>Welcome to ${businessDisplayName}</title>
           </head>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #1B3A4B; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F8FAFB;">
             <div style="background: #FFFFFF; border-radius: 14px; padding: 30px; box-shadow: 0 4px 8px rgba(27, 58, 75, 0.08);">
 
               <!-- Header -->
               <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #3D9CA8; margin: 0; font-size: 28px;">Love to Learn Academy</h1>
+                <h1 style="color: #3D9CA8; margin: 0; font-size: 28px;">${businessDisplayName}</h1>
                 <p style="color: #4A6572; font-size: 14px; margin-top: 5px;">Parent Portal</p>
               </div>
 
               <!-- Welcome Banner -->
               <div style="background: linear-gradient(135deg, #3D9CA8 0%, #5FB3BC 100%); border-radius: 12px; padding: 30px; margin-bottom: 30px; color: white;">
                 <h2 style="margin: 0 0 10px 0; font-size: 24px;">Welcome, ${parentData.name}!</h2>
-                <p style="margin: 0; opacity: 0.95;">You've been invited to join the Love to Learn Academy Parent Portal</p>
+                <p style="margin: 0; opacity: 0.95;">You've been invited to join the ${businessDisplayName} Parent Portal</p>
               </div>
 
               <!-- Features List -->
-              <p style="color: #1B3A4B; font-size: 16px;">Your tutor has set up access for you to:</p>
+              <p style="color: #1B3A4B; font-size: 16px;">${tutorData?.name || 'Your tutor'} has set up access for you to:</p>
               <ul style="padding-left: 20px; color: #4A6572;">
                 <li style="margin-bottom: 8px;">View your children's lesson schedule</li>
                 <li style="margin-bottom: 8px;">Track worksheet assignments</li>
@@ -226,11 +277,11 @@ serve(async (req: Request) => {
               <!-- Footer -->
               <p style="color: #8A9BA8; font-size: 12px; text-align: center;">
                 If you didn't expect this invitation, you can safely ignore this email.<br>
-                Questions? Contact your tutor directly.
+                Questions? Contact ${tutorData?.name || 'your tutor'} directly.
               </p>
 
               <p style="color: #8A9BA8; font-size: 12px; text-align: center; margin-top: 20px;">
-                &copy; ${new Date().getFullYear()} Love to Learn Academy
+                &copy; ${new Date().getFullYear()} ${businessDisplayName}
               </p>
             </div>
           </body>

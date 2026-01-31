@@ -16,7 +16,7 @@ function LoadingScreen() {
 }
 
 function RootLayoutNav() {
-  const { isAuthenticated, isLoading, isParent, parent } = useAuthContext();
+  const { isAuthenticated, isLoading, isParent, isTutor, parent } = useAuthContext();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
 
@@ -41,6 +41,7 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === '(auth)';
     const inOnboarding = segments[1] === 'onboarding';
+    const inTutorOnboarding = segments[2] === 'tutor';
     const inResetPassword = segments[1] === 'reset-password';
 
     if (isLoading) {
@@ -53,25 +54,55 @@ function RootLayoutNav() {
       return;
     }
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // Redirect to login if not authenticated and not already on auth screens
-      router.replace('/(auth)/login');
+    const inLanding = segments[0] === 'landing';
+
+    // Helper to check if user needs onboarding
+    const needsOnboarding = parent && !parent.onboarding_completed_at;
+    const tutorNeedsOnboarding = isTutor && needsOnboarding;
+    const parentNeedsOnboarding = isParent && needsOnboarding;
+
+    if (!isAuthenticated && !inAuthGroup && !inLanding) {
+      // Redirect to landing page if not authenticated and not already on auth/landing screens
+      router.replace('/landing');
     } else if (isAuthenticated && inAuthGroup && !inOnboarding) {
-      // Check if parent needs onboarding
-      if (isParent && parent && !parent.onboarding_completed_at) {
-        // Redirect to onboarding flow
+      // Check if user needs onboarding
+      if (tutorNeedsOnboarding) {
+        // Redirect to tutor onboarding flow
+        router.replace('/(auth)/onboarding/tutor/business');
+      } else if (parentNeedsOnboarding) {
+        // Redirect to parent onboarding flow
         router.replace('/(auth)/onboarding/welcome');
       } else {
         // Redirect to main app if authenticated and on auth screens (not onboarding)
         router.replace('/(tabs)');
       }
-    } else if (isAuthenticated && !inAuthGroup) {
-      // User is authenticated and in main app - check if parent needs onboarding
-      if (isParent && parent && !parent.onboarding_completed_at) {
+    } else if (isAuthenticated && inLanding) {
+      // Authenticated user on landing page - redirect to app
+      if (tutorNeedsOnboarding) {
+        router.replace('/(auth)/onboarding/tutor/business');
+      } else if (parentNeedsOnboarding) {
+        router.replace('/(auth)/onboarding/welcome');
+      } else {
+        router.replace('/(tabs)');
+      }
+    } else if (isAuthenticated && !inAuthGroup && !inLanding) {
+      // User is authenticated and in main app - check if they need onboarding
+      if (tutorNeedsOnboarding) {
+        router.replace('/(auth)/onboarding/tutor/business');
+      } else if (parentNeedsOnboarding) {
+        router.replace('/(auth)/onboarding/welcome');
+      }
+    } else if (isAuthenticated && inOnboarding) {
+      // User is in onboarding - make sure they're in the right flow
+      if (isTutor && !inTutorOnboarding && needsOnboarding) {
+        // Tutor in parent onboarding - redirect to tutor onboarding
+        router.replace('/(auth)/onboarding/tutor/business');
+      } else if (isParent && inTutorOnboarding) {
+        // Parent in tutor onboarding - redirect to parent onboarding
         router.replace('/(auth)/onboarding/welcome');
       }
     }
-  }, [isAuthenticated, isLoading, isParent, parent, segments, navigationState?.key]);
+  }, [isAuthenticated, isLoading, isParent, isTutor, parent, segments, navigationState?.key]);
 
   // Show loading screen while checking auth
   if (isLoading) {
@@ -80,6 +111,7 @@ function RootLayoutNav() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="landing" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="student/[id]"

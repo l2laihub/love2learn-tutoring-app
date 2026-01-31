@@ -824,11 +824,33 @@ export type Database = {
       validate_invitation_token: {
         Args: { token: string }
         Returns: {
-          email: string
-          error_message: string
-          is_valid: boolean
-          name: string
           parent_id: string
+          email: string
+          name: string
+          tutor_id: string | null
+          tutor_business_name: string | null
+          tutor_name: string | null
+          tutor_subscription_active: boolean
+          is_valid: boolean
+          error_message: string | null
+        }[]
+      }
+      get_parent_tutor_info: {
+        Args: { p_parent_id: string }
+        Returns: {
+          tutor_id: string | null
+          tutor_name: string | null
+          business_name: string | null
+          subscription_active: boolean
+        }[]
+      }
+      get_my_tutor_info: {
+        Args: Record<string, never>
+        Returns: {
+          tutor_id: string | null
+          tutor_name: string | null
+          business_name: string | null
+          subscription_active: boolean
         }[]
       }
     }

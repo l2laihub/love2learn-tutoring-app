@@ -68,9 +68,17 @@ const menuItems: MenuItem[] = [
   {
     key: 'admin',
     label: 'Admin',
-    icon: 'settings',
+    icon: 'briefcase',
     href: '/admin',
     description: 'Manage parents, agreements, and settings',
+    tutorOnly: true,
+  },
+  {
+    key: 'settings',
+    label: 'Settings',
+    icon: 'cog',
+    href: '/settings',
+    description: 'Business profile, subjects, rates & subscription',
     tutorOnly: true,
   },
   {

@@ -230,6 +230,15 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </Link>
           </View>
+
+          <View style={styles.tutorSignup}>
+            <Text style={styles.tutorSignupText}>Are you a tutor? </Text>
+            <Link href="/(auth)/register-tutor" asChild>
+              <TouchableOpacity disabled={isLoading}>
+                <Text style={styles.tutorSignupLink}>Sign up as a Tutor</Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -351,6 +360,25 @@ const styles = StyleSheet.create({
   registerLink: {
     fontSize: typography.sizes.sm,
     color: colors.primary.main,
+    fontWeight: typography.weights.semibold,
+  },
+  tutorSignup: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.borderLight,
+    marginTop: spacing.lg,
+  },
+  tutorSignupText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+  },
+  tutorSignupLink: {
+    fontSize: typography.sizes.sm,
+    color: colors.accent.main,
     fontWeight: typography.weights.semibold,
   },
 });

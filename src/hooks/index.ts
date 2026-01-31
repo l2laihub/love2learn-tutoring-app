@@ -193,3 +193,47 @@ export {
   useCancelEnrollment,
   useAllEnrollments,
 } from './useGroupSessions';
+
+// Subscription hooks
+export {
+  useSubscription,
+  useRequiresSubscription,
+} from './useSubscription';
+export type { UseSubscriptionState } from './useSubscription';
+
+// Tutor Branding hooks
+export {
+  useTutorBranding,
+  getSubjectColorWithCustom,
+  generateColorPalette,
+  formatInTimezone,
+  getDateKeyInTimezone,
+  getTimeInTimezone,
+  DEFAULT_TIMEZONE,
+  DEFAULT_BUSINESS_NAME,
+} from './useTutorBranding';
+export type {
+  CustomSubject,
+  SubjectColorPalette,
+  SubjectConfig,
+  TutorBranding,
+} from './useTutorBranding';
+
+// Tutor Profile hooks
+export {
+  useTutorProfile,
+  useUpdateBusinessInfo,
+  useLogoUpload,
+  useUpdateSubjectRates,
+  useCustomSubjects,
+  extractCustomSubjects,
+  TIMEZONE_OPTIONS,
+  DEFAULT_SUBJECTS,
+  SUBJECT_COLOR_PALETTE,
+} from './useTutorProfile';
+export type {
+  TutorProfile,
+  UpdateBusinessInfoInput,
+  CustomSubjectInput,
+} from './useTutorProfile';
+export type { CustomSubject as TutorCustomSubject } from './useTutorProfile';

@@ -3,12 +3,14 @@
  * First step of parent onboarding - shows welcome message and linked children
  */
 
+import { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../../src/contexts/AuthContext';
 import { useStudents } from '../../../src/hooks/useStudents';
+import { useTutorInfo } from '../../../src/hooks/useParentInvitation';
 import { Button } from '../../../src/components/ui/Button';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
 import { Student } from '../../../src/types/database';
@@ -25,9 +27,18 @@ const subjectEmojis: Record<string, string> = {
 export default function WelcomeScreen() {
   const { parent } = useAuthContext();
   const { data: students, loading: studentsLoading } = useStudents();
+  const { tutorInfo, loading: tutorLoading, refetch: fetchTutorInfo } = useTutorInfo();
+
+  // Fetch tutor info on mount
+  useEffect(() => {
+    fetchTutorInfo();
+  }, [fetchTutorInfo]);
 
   // Get first name for greeting
   const firstName = parent?.name?.split(' ')[0] ?? '';
+
+  // Get tutor business name for branding
+  const tutorDisplayName = tutorInfo?.businessName || tutorInfo?.tutorName;
 
   // Check if this is an imported parent (has children already)
   const hasChildren = students.length > 0;
@@ -52,6 +63,13 @@ export default function WelcomeScreen() {
           />
         </View>
 
+        {/* Tutor Branding */}
+        {tutorDisplayName && (
+          <Text style={styles.tutorBranding}>
+            {tutorDisplayName}
+          </Text>
+        )}
+
         {/* Welcome Message */}
         <Text style={styles.title}>
           Welcome{firstName ? `, ${firstName}` : ''}!
@@ -60,7 +78,7 @@ export default function WelcomeScreen() {
         {hasChildren ? (
           <>
             <Text style={styles.subtitle}>
-              Your tutor has already set up your account.{'\n'}
+              {tutorDisplayName ? `${tutorDisplayName} has` : 'Your tutor has'} already set up your account.{'\n'}
               Let's make sure everything looks right.
             </Text>
 
@@ -99,7 +117,9 @@ export default function WelcomeScreen() {
         ) : (
           <>
             <Text style={styles.subtitle}>
-              Welcome to Love2Learn! Let's set up your parent account.
+              {tutorDisplayName
+                ? `Welcome to ${tutorDisplayName}! Let's set up your parent account.`
+                : "Welcome! Let's set up your parent account."}
             </Text>
 
             {/* No Children Note */}
@@ -111,7 +131,9 @@ export default function WelcomeScreen() {
               />
               <Text style={styles.noChildrenTitle}>No Children Linked Yet</Text>
               <Text style={styles.noChildrenText}>
-                Your tutor will add your children to the system. Once they do, you'll be able to see their lessons and worksheets here.
+                {tutorDisplayName
+                  ? `${tutorDisplayName} will add your children to the system. Once they do, you'll be able to see their lessons and worksheets here.`
+                  : 'Your tutor will add your children to the system. Once they do, you\'ll be able to see their lessons and worksheets here.'}
               </Text>
             </View>
           </>
@@ -192,6 +214,13 @@ const styles = StyleSheet.create({
   logo: {
     width: 70,
     height: 70,
+  },
+  tutorBranding: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.primary.main,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
   },
   title: {
     fontSize: typography.sizes['2xl'],
