@@ -53,9 +53,9 @@ export function useLessonRequests(
         .from('lesson_requests')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           ),
           original_lesson:scheduled_lessons!original_lesson_id(
             id,
@@ -147,9 +147,9 @@ export function useLessonRequest(
         .from('lesson_requests')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           )
         `)
         .eq('id', id)

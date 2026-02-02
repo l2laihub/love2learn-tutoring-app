@@ -147,7 +147,7 @@ export function useAdminAgreements() {
           signed_by_name,
           created_at,
           expires_at,
-          parents (
+          parents!parent_id(
             id,
             name,
             email
@@ -229,7 +229,7 @@ export function useAdminParents() {
           invitation_sent_at,
           invitation_expires_at,
           invitation_accepted_at,
-          students (id)
+          students!parent_id(id)
         `)
         .eq('role', 'parent')
         .order('name');

@@ -61,9 +61,9 @@ export function usePayments(month?: Date): ListQueryState<PaymentWithParent> {
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .eq('month', monthStart)
@@ -109,9 +109,9 @@ export function useAllPayments(status?: PaymentStatus): ListQueryState<PaymentWi
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .order('month', { ascending: false });
@@ -168,9 +168,9 @@ export function usePayment(id: string | null): QueryState<PaymentWithParent> & {
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .eq('id', id)
@@ -525,9 +525,9 @@ export function useOverduePayments(): ListQueryState<PaymentWithParent> {
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .in('status', ['unpaid', 'partial'])
@@ -1056,9 +1056,9 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .eq('id', paymentId)
@@ -1075,9 +1075,9 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
           *,
           lesson:scheduled_lessons(
             *,
-            student:students(
+            student:students!student_id(
               *,
-              parent:parents(*)
+              parent:parents!parent_id(*)
             )
           )
         `)
@@ -1422,7 +1422,7 @@ export function useMonthlyLessonSummary(month?: Date) {
       // 2. Fetch all parents with students (only invoice billing mode, not prepaid)
       const { data: parents, error: parentsError } = await supabase
         .from('parents')
-        .select('id, name, billing_mode, students(id, name)')
+        .select('id, name, billing_mode, students!parent_id(id, name)')
         .or('billing_mode.is.null,billing_mode.eq.invoice');
 
       if (parentsError) throw new Error(parentsError.message);
@@ -2420,9 +2420,9 @@ export function usePrepaidPayments(month?: Date): ListQueryState<PaymentWithPare
         .from('payments')
         .select(`
           *,
-          parent:parents(
+          parent:parents!parent_id(
             *,
-            students(*)
+            students!parent_id(*)
           )
         `)
         .eq('month', monthStart)

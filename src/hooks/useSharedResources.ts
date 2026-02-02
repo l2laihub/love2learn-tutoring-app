@@ -54,7 +54,7 @@ export function useSharedResources(
         .select(
           `
           *,
-          student:students(*)
+          student:students!student_id(*)
         `
         )
         .eq('is_visible_to_parent', true)
@@ -141,7 +141,7 @@ export function useParentSharedResources(
         .select(
           `
           *,
-          student:students(*)
+          student:students!student_id(*)
         `
         )
         .eq('parent_id', parentId)
@@ -203,7 +203,7 @@ export function useUnviewedResources(parentId: string | null): ListQueryState<Sh
         .select(
           `
           *,
-          student:students(*)
+          student:students!student_id(*)
         `
         )
         .eq('parent_id', parentId)
@@ -309,8 +309,8 @@ export function useSharedResource(
         .select(
           `
           *,
-          student:students(*),
-          parent:parents(*),
+          student:students!student_id(*),
+          parent:parents!parent_id(*),
           assignment:assignments(*)
         `
         )
@@ -709,7 +709,7 @@ export function useResourcesByLesson(lessonId: string | null): ListQueryState<Sh
         .select(
           `
           *,
-          student:students(*)
+          student:students!student_id(*)
         `
         )
         .eq('lesson_id', lessonId)

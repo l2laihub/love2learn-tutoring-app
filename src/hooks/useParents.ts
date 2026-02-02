@@ -41,7 +41,7 @@ export function useParents(): ListQueryState<ParentWithStudents> {
         .from('parents')
         .select(`
           *,
-          students(*)
+          students!parent_id(*)
         `)
         .order('name', { ascending: true });
 
@@ -91,7 +91,7 @@ export function useParent(id: string | null): QueryState<ParentWithStudents> & {
         .from('parents')
         .select(`
           *,
-          students(*)
+          students!parent_id(*)
         `)
         .eq('id', id)
         .single();
@@ -282,7 +282,7 @@ export function useParentByUserId(userId: string | null): QueryState<ParentWithS
         .from('parents')
         .select(`
           *,
-          students(*)
+          students!parent_id(*)
         `)
         .eq('user_id', userId)
         .single();
@@ -372,7 +372,7 @@ export function useSearchParents(searchTerm: string): ListQueryState<Parent> {
 
 /**
  * Fetch the tutor (parent with role='tutor')
- * In this single-tutor app model, there's one tutor who manages all clients
+ * Returns the tutor record for the current authenticated user
  * @returns The tutor's parent profile
  */
 export function useTutor(): QueryState<Parent> & { refetch: () => Promise<void> } {
@@ -385,18 +385,28 @@ export function useTutor(): QueryState<Parent> & { refetch: () => Promise<void> 
       setLoading(true);
       setError(null);
 
+      // Get the current authenticated user
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        setData(null);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch tutor record for the current user
       const { data: tutor, error: fetchError } = await supabase
         .from('parents')
         .select('*')
         .eq('role', 'tutor')
-        .limit(1)
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (fetchError) {
         throw new Error(fetchError.message);
       }
 
-      // tutor may be null if no tutor exists yet
+      // tutor may be null if user is not a tutor
       setData(tutor as Parent | null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch tutor');
@@ -482,7 +492,7 @@ export function useParentsByBillingMode(billingMode: BillingMode): ListQueryStat
         .from('parents')
         .select(`
           *,
-          students(*)
+          students!parent_id(*)
         `)
         .eq('billing_mode', billingMode)
         .order('name', { ascending: true });

@@ -53,9 +53,9 @@ export function useLessons(options: LessonsFilterOptions = {}): ListQueryState<S
         .from('scheduled_lessons')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           )
         `)
         .order('scheduled_at', { ascending: true });
@@ -134,9 +134,9 @@ export function useUpcomingLessons(limit: number = 10): ListQueryState<Scheduled
         .from('scheduled_lessons')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           )
         `)
         .gte('scheduled_at', now)
@@ -187,9 +187,9 @@ export function useUpcomingGroupedLessons(limit: number = 10): ListQueryState<Gr
         .from('scheduled_lessons')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           )
         `)
         .gte('scheduled_at', now)
@@ -247,9 +247,9 @@ export function useLesson(id: string | null): QueryState<ScheduledLessonWithStud
         .from('scheduled_lessons')
         .select(`
           *,
-          student:students(
+          student:students!student_id(
             *,
-            parent:parents(*)
+            parent:parents!parent_id(*)
           )
         `)
         .eq('id', id)
@@ -599,7 +599,7 @@ export function useCompleteLesson() {
       // First get the lesson details to find the parent
       const { data: lessonDetails } = await supabase
         .from('scheduled_lessons')
-        .select('scheduled_at, student:students(parent_id)')
+        .select('scheduled_at, student:students!student_id(parent_id)')
         .eq('id', id)
         .single();
 
@@ -685,7 +685,7 @@ export function useUncompleteLesson() {
       // First get the lesson details to find the parent
       const { data: lessonDetails } = await supabase
         .from('scheduled_lessons')
-        .select('scheduled_at, student:students(parent_id)')
+        .select('scheduled_at, student:students!student_id(parent_id)')
         .eq('id', id)
         .single();
 
@@ -1143,8 +1143,11 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
   const sessionMap = new Map<string, ScheduledLessonWithStudent[]>();
   const standaloneLessons: ScheduledLessonWithStudent[] = [];
 
+  // Filter out lessons with null students (orphaned lessons from deleted students)
+  const validLessons = lessons.filter(lesson => lesson.student !== null);
+
   // Separate lessons into sessions and standalone
-  for (const lesson of lessons) {
+  for (const lesson of validLessons) {
     if (lesson.session_id) {
       const existing = sessionMap.get(lesson.session_id) || [];
       existing.push(lesson);

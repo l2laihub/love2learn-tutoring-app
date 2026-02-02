@@ -289,9 +289,9 @@ export function useAvailableGroupSessions(
             *,
             lessons:scheduled_lessons(
               *,
-              student:students(
+              student:students!student_id(
                 *,
-                parent:parents(*)
+                parent:parents!parent_id(*)
               )
             )
           )
@@ -432,8 +432,8 @@ export function useSessionEnrollments(
         .from('session_enrollments')
         .select(`
           *,
-          student:students(*),
-          parent:parents(*)
+          student:students!student_id(*),
+          parent:parents!parent_id(*)
         `)
         .eq('session_id', sessionId)
         .order('created_at', { ascending: false });
@@ -477,8 +477,8 @@ export function usePendingEnrollments(): ListQueryState<SessionEnrollmentWithDet
         .from('session_enrollments')
         .select(`
           *,
-          student:students(*),
-          parent:parents(*),
+          student:students!student_id(*),
+          parent:parents!parent_id(*),
           session:lesson_sessions(*)
         `)
         .eq('status', 'pending')
@@ -576,8 +576,8 @@ export function useMyEnrollments(
         .from('session_enrollments')
         .select(`
           *,
-          student:students(*),
-          parent:parents(*),
+          student:students!student_id(*),
+          parent:parents!parent_id(*),
           session:lesson_sessions(*)
         `)
         .eq('parent_id', parentId)
@@ -915,7 +915,7 @@ export function useRejectEnrollment(): {
         // Get enrollment details for notification (include session for email)
         const { data: enrollment, error: enrollmentError } = await supabase
           .from('session_enrollments')
-          .select('*, student:students(name), session:lesson_sessions(scheduled_at)')
+          .select('*, student:students!student_id(name), session:lesson_sessions(scheduled_at)')
           .eq('id', enrollmentId)
           .single();
 
@@ -1057,8 +1057,8 @@ export function useAllEnrollments(
         .from('session_enrollments')
         .select(`
           *,
-          student:students(*),
-          parent:parents(*),
+          student:students!student_id(*),
+          parent:parents!parent_id(*),
           session:lesson_sessions(*)
         `)
         .order('created_at', { ascending: false });

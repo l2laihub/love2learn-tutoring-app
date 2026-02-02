@@ -40,7 +40,7 @@ export function useStudents(): ListQueryState<StudentWithParent> {
         .from('students')
         .select(`
           *,
-          parent:parents(*)
+          parent:parents!parent_id(*)
         `)
         .order('name', { ascending: true });
 
@@ -95,7 +95,7 @@ export function useStudent(id: string | null): QueryState<StudentWithParent> & {
         .from('students')
         .select(`
           *,
-          parent:parents(*)
+          parent:parents!parent_id(*)
         `)
         .eq('id', id)
         .single();

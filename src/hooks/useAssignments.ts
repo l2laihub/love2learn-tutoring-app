@@ -45,7 +45,7 @@ export function useAssignments(options: AssignmentsFilterOptions = {}): ListQuer
         .from('assignments')
         .select(`
           *,
-          student:students(*)
+          student:students!student_id(*)
         `)
         .order('assigned_at', { ascending: false });
 
@@ -125,7 +125,7 @@ export function useAssignmentsDueSoon(studentId?: string): ListQueryState<Assign
         .from('assignments')
         .select(`
           *,
-          student:students(*)
+          student:students!student_id(*)
         `)
         .eq('status', 'assigned')
         .not('due_date', 'is', null)
@@ -185,7 +185,7 @@ export function useAssignment(id: string | null): QueryState<AssignmentWithStude
         .from('assignments')
         .select(`
           *,
-          student:students(*)
+          student:students!student_id(*)
         `)
         .eq('id', id)
         .single();
@@ -513,7 +513,7 @@ export function useOverdueAssignments(studentId?: string): ListQueryState<Assign
         .from('assignments')
         .select(`
           *,
-          student:students(*)
+          student:students!student_id(*)
         `)
         .eq('status', 'assigned')
         .not('due_date', 'is', null)

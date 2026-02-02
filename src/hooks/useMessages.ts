@@ -330,7 +330,7 @@ export function useMessageThread(threadId: string | null): MessageThreadState & 
       // Fetch participants
       const { data: participantsData } = await supabase
         .from('message_thread_participants')
-        .select('parent:parents(*)')
+        .select('parent:parents!parent_id(*)')
         .eq('thread_id', threadId);
 
       // Fetch messages with sender using RPC to bypass RLS
