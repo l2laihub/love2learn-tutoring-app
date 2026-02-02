@@ -25,6 +25,12 @@ export default function AuthLayout() {
         }}
       />
       <Stack.Screen
+        name="register-tutor"
+        options={{
+          title: 'Register as Tutor',
+        }}
+      />
+      <Stack.Screen
         name="forgot-password"
         options={{
           title: 'Forgot Password',

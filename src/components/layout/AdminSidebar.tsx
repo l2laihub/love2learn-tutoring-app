@@ -12,6 +12,7 @@ import { usePathname, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography, borderRadius } from '../../theme';
 import { useAuthContext } from '../../contexts/AuthContext';
+import { useTutorBranding } from '../../hooks/useTutorBranding';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -37,6 +38,10 @@ export function AdminSidebar({ children }: AdminSidebarProps) {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const { parent, user, signOut } = useAuthContext();
+
+  // Get tutor branding for business name
+  const { data: tutorBranding } = useTutorBranding();
+  const brandName = tutorBranding?.businessName || 'Love2Learn';
 
   const isActive = (href: string) => {
     if (href === '/admin') {
@@ -65,7 +70,7 @@ export function AdminSidebar({ children }: AdminSidebarProps) {
           </View>
           <View>
             <Text style={styles.brandText}>Admin Panel</Text>
-            <Text style={styles.brandSubtext}>Love2Learn</Text>
+            <Text style={styles.brandSubtext} numberOfLines={1}>{brandName}</Text>
           </View>
         </View>
 

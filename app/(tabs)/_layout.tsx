@@ -6,6 +6,7 @@ import { colors, spacing } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useUnreadMessageCount } from '../../src/hooks/useMessages';
+import { useTutorBranding } from '../../src/hooks/useTutorBranding';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
 import { NotificationBell } from '../../src/components/NotificationBell';
 
@@ -54,6 +55,11 @@ export default function TabLayout() {
   // Get unread message count at the layout level to ensure subscription is always active
   const { count: unreadMessageCount } = useUnreadMessageCount();
 
+  // Get tutor branding for business name
+  const { data: tutorBranding } = useTutorBranding();
+  const businessName = tutorBranding?.businessName || 'Tutoring';
+  const tutorHeaderTitle = `${businessName}${businessName.toLowerCase().includes('tutor') ? '' : ' Tutoring'}`;
+
   // On desktop, use sidebar layout instead of bottom tabs
   if (isDesktop) {
     return (
@@ -75,7 +81,7 @@ export default function TabLayout() {
             name="index"
             options={{
               title: 'Home',
-              headerTitle: isParent ? 'Parent Dashboard' : 'Love2Learn Tutoring',
+              headerTitle: isParent ? 'Parent Dashboard' : tutorHeaderTitle,
             }}
           />
           <Tabs.Screen
@@ -151,6 +157,15 @@ export default function TabLayout() {
               href: null,
             }}
           />
+          <Tabs.Screen
+            name="settings"
+            options={{
+              title: 'Settings',
+              headerShown: false, // Stack inside handles its own header
+              // Only show for tutors, accessible via More menu
+              href: isParent ? null : null,
+            }}
+          />
         </Tabs>
       </DesktopSidebar>
     );
@@ -188,7 +203,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: isParent ? 'Parent Dashboard' : 'Love2Learn Tutoring',
+          headerTitle: isParent ? 'Parent Dashboard' : tutorHeaderTitle,
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="home" color={color} size={size} />
           ),
@@ -294,6 +309,18 @@ export default function TabLayout() {
             <TabIcon name="library" color={color} size={size} />
           ),
           // Library is now integrated into Worksheets tab - hide for all users
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          headerShown: false, // Stack inside handles its own header
+          tabBarIcon: ({ color, size }) => (
+            <TabIcon name="settings" color={color} size={size} />
+          ),
+          // Hide from bottom nav - accessible via More menu
           href: null,
         }}
       />

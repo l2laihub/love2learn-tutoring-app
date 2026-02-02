@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, typography, borderRadius, shadows } from '../../theme';
 import { useAuthContext } from '../../contexts/AuthContext';
 import { useUnreadMessageCount } from '../../hooks/useMessages';
+import { useTutorBranding } from '../../hooks/useTutorBranding';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -53,6 +54,10 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
   const { isTutor, isParent, parent, user, signOut } = useAuthContext();
   const { count: unreadMessageCount } = useUnreadMessageCount();
 
+  // Get tutor branding for business name
+  const { data: tutorBranding } = useTutorBranding();
+  const brandName = tutorBranding?.businessName || 'Love2Learn';
+
   const filteredNavItems = navItems.filter(item => {
     if (item.tutorOnly && !isTutor) return false;
     if (item.parentOnly && !isParent) return false;
@@ -86,7 +91,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
           <View style={styles.logoContainer}>
             <Ionicons name="school" size={28} color={colors.primary.main} />
           </View>
-          <Text style={styles.brandText}>Love2Learn</Text>
+          <Text style={styles.brandText} numberOfLines={1}>{brandName}</Text>
         </View>
 
         {/* Primary Navigation */}

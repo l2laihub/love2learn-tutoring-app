@@ -1,4 +1,11 @@
-import { useState, useEffect } from 'react';
+/**
+ * Tutor Registration Screen
+ * Love2Learn Tutoring App
+ *
+ * Registration screen specifically for tutors with business name field
+ */
+
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +17,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router, useLocalSearchParams } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthContext } from '../../src/contexts/AuthContext';
-import { validateInvitationToken } from '../../src/hooks/useParentInvitation';
+import { supabase } from '../../src/lib/supabase';
 import { colors, typography, spacing, borderRadius, shadows } from '../../src/theme';
 
 type MessageType = 'error' | 'success' | 'info';
@@ -25,83 +32,32 @@ interface Message {
   text: string;
 }
 
-export default function RegisterScreen() {
-  // Get invitation token from URL params
-  const { token, email: invitedEmail } = useLocalSearchParams<{ token?: string; email?: string }>();
-
-  const [name, setName] = useState('');
+export default function RegisterTutorScreen() {
+  const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [registrationComplete, setRegistrationComplete] = useState(false);
 
-  // Invitation state
-  const [invitationToken, setInvitationToken] = useState<string | null>(null);
-  const [invitedParentName, setInvitedParentName] = useState<string | null>(null);
-  const [tutorBusinessName, setTutorBusinessName] = useState<string | null>(null);
-  const [tutorName, setTutorName] = useState<string | null>(null);
-  const [isValidatingToken, setIsValidatingToken] = useState(false);
-
-  const { signUp } = useAuthContext();
-
-  // Validate invitation token on mount
-  useEffect(() => {
-    async function checkInvitation() {
-      if (token) {
-        setIsValidatingToken(true);
-        try {
-          const result = await validateInvitationToken(token);
-          if (result.isValid && result.email) {
-            setInvitationToken(token);
-            setEmail(result.email);
-            if (result.name) {
-              setName(result.name);
-              setInvitedParentName(result.name);
-            }
-            // Set tutor info for branding
-            if (result.tutorBusinessName) {
-              setTutorBusinessName(result.tutorBusinessName);
-            }
-            if (result.tutorName) {
-              setTutorName(result.tutorName);
-            }
-            // Show welcome message with tutor branding if available
-            const businessDisplayName = result.tutorBusinessName || result.tutorName || 'your tutor';
-            setMessage({
-              type: 'info',
-              text: `Welcome! You've been invited to join ${businessDisplayName}. Please complete your registration.`
-            });
-          } else {
-            setMessage({
-              type: 'error',
-              text: result.error || 'This invitation link is invalid or has expired. Please contact the tutor for a new invitation.'
-            });
-          }
-        } catch (error) {
-          console.error('Error validating token:', error);
-          setMessage({
-            type: 'error',
-            text: 'Failed to validate invitation. Please try again.'
-          });
-        } finally {
-          setIsValidatingToken(false);
-        }
-      } else if (invitedEmail) {
-        // If email is passed directly (without token), pre-fill it
-        setEmail(invitedEmail);
-      }
+  const getMessageStyle = (type: MessageType) => {
+    switch (type) {
+      case 'error':
+        return { bg: colors.status.errorBg, color: colors.status.error, icon: 'alert-circle' as const };
+      case 'success':
+        return { bg: colors.status.successBg, color: colors.status.success, icon: 'checkmark-circle' as const };
+      case 'info':
+        return { bg: colors.status.infoBg, color: colors.status.info, icon: 'information-circle' as const };
     }
-
-    checkInvitation();
-  }, [token, invitedEmail]);
+  };
 
   const validateForm = (): boolean => {
-    if (!name.trim()) {
-      setMessage({ type: 'error', text: 'Please enter your name' });
+    if (!businessName.trim()) {
+      setMessage({ type: 'error', text: 'Please enter your business name' });
       return false;
     }
     if (!email.trim()) {
@@ -125,6 +81,10 @@ export default function RegisterScreen() {
       setMessage({ type: 'error', text: 'Passwords do not match' });
       return false;
     }
+    if (!agreedToTerms) {
+      setMessage({ type: 'error', text: 'Please agree to the Terms of Service and Privacy Policy' });
+      return false;
+    }
     return true;
   };
 
@@ -138,41 +98,61 @@ export default function RegisterScreen() {
     setIsLoading(true);
 
     try {
-      // Pass invitation token if available (for linking to existing parent record)
-      const { data: session, error: signUpError } = await signUp(
-        email.trim(),
-        password,
-        name.trim(),
-        invitationToken || undefined
-      );
+      const normalizedEmail = email.trim().toLowerCase();
 
-      if (signUpError) {
+      // Calculate trial end date (14 days from now)
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
+      // Sign up the user with tutor role metadata
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: {
+          data: {
+            name: businessName.trim(),
+            role: 'tutor',
+            business_name: businessName.trim(),
+            trial_ends_at: trialEndsAt.toISOString(),
+          },
+        },
+      });
+
+      if (authError) {
         // Handle specific error messages
-        if (signUpError.message.includes('already registered') ||
-            signUpError.message.includes('already been registered')) {
+        if (authError.message.includes('already registered') ||
+            authError.message.includes('already been registered')) {
           setMessage({
             type: 'error',
             text: 'An account with this email already exists. Please sign in instead.'
           });
-        } else if (signUpError.message.includes('valid email')) {
+        } else if (authError.message.includes('valid email')) {
           setMessage({ type: 'error', text: 'Please enter a valid email address' });
-        } else if (signUpError.message.includes('password')) {
+        } else if (authError.message.includes('password')) {
           setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
         } else {
-          setMessage({ type: 'error', text: signUpError.message });
+          setMessage({ type: 'error', text: authError.message });
         }
         return;
       }
 
+      if (!authData.user) {
+        setMessage({
+          type: 'error',
+          text: 'User creation failed. Please try again.'
+        });
+        return;
+      }
+
       // Check if session exists (auto-confirmed) or not (email confirmation required)
-      if (session) {
-        // User is auto-confirmed and logged in
+      if (authData.session) {
+        // User is auto-confirmed and logged in - redirect to tutor onboarding
         setMessage({
           type: 'success',
-          text: 'Account created successfully! Redirecting...'
+          text: 'Account created successfully! Redirecting to setup...'
         });
         setTimeout(() => {
-          router.replace('/(tabs)');
+          router.replace('/(auth)/onboarding/tutor/business');
         }, 1500);
       } else {
         // Email confirmation is required
@@ -197,15 +177,14 @@ export default function RegisterScreen() {
     router.back();
   };
 
-  const getMessageStyle = (type: MessageType) => {
-    switch (type) {
-      case 'error':
-        return { bg: colors.status.errorBg, color: colors.status.error, icon: 'alert-circle' as const };
-      case 'success':
-        return { bg: colors.status.successBg, color: colors.status.success, icon: 'checkmark-circle' as const };
-      case 'info':
-        return { bg: colors.status.infoBg, color: colors.status.info, icon: 'information-circle' as const };
-    }
+  const openTermsOfService = () => {
+    // TODO: Replace with actual Terms of Service URL
+    Linking.openURL('https://love2learn.com/terms');
+  };
+
+  const openPrivacyPolicy = () => {
+    // TODO: Replace with actual Privacy Policy URL
+    Linking.openURL('https://love2learn.com/privacy');
   };
 
   // Show success state after registration
@@ -237,7 +216,7 @@ export default function RegisterScreen() {
             onPress={() => {
               setMessage({
                 type: 'info',
-                text: 'If you don\'t see the email, check your spam folder.'
+                text: "If you don't see the email, check your spam folder."
               });
             }}
           >
@@ -262,18 +241,6 @@ export default function RegisterScreen() {
               </Text>
             </View>
           )}
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Show loading state while validating invitation token
-  if (isValidatingToken) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary.main} />
-          <Text style={styles.loadingText}>Validating invitation...</Text>
         </View>
       </SafeAreaView>
     );
@@ -305,18 +272,9 @@ export default function RegisterScreen() {
                 resizeMode="contain"
               />
             </View>
-            {invitationToken && tutorBusinessName && (
-              <Text style={styles.tutorBranding}>
-                {tutorBusinessName}
-              </Text>
-            )}
-            <Text style={styles.title}>
-              {invitationToken ? 'Complete Registration' : 'Create Account'}
-            </Text>
+            <Text style={styles.title}>Start Your Tutoring Business</Text>
             <Text style={styles.subtitle}>
-              {invitationToken
-                ? `Welcome${invitedParentName ? `, ${invitedParentName}` : ''}! Set up your password to get started.`
-                : 'Start your tutoring journey'}
+              Create your tutor account and start managing lessons in minutes
             </Text>
           </View>
 
@@ -340,59 +298,53 @@ export default function RegisterScreen() {
           )}
 
           <View style={styles.form}>
+            {/* Business Name */}
             <View style={styles.inputContainer}>
               <Ionicons
-                name="person-outline"
+                name="business-outline"
                 size={20}
                 color={colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
                 style={styles.input}
-                placeholder="Full Name"
+                placeholder="Business Name"
                 placeholderTextColor={colors.neutral.textMuted}
-                value={name}
+                value={businessName}
                 onChangeText={(text) => {
-                  setName(text);
+                  setBusinessName(text);
                   setMessage(null);
                 }}
                 autoCapitalize="words"
-                autoComplete="name"
                 editable={!isLoading}
               />
             </View>
 
-            <View style={[
-              styles.inputContainer,
-              invitationToken && styles.inputContainerLocked
-            ]}>
+            {/* Email */}
+            <View style={styles.inputContainer}>
               <Ionicons
                 name="mail-outline"
                 size={20}
-                color={invitationToken ? colors.status.success : colors.neutral.textMuted}
+                color={colors.neutral.textMuted}
                 style={styles.inputIcon}
               />
               <TextInput
-                style={[styles.input, invitationToken && styles.inputLocked]}
+                style={styles.input}
                 placeholder="Email"
                 placeholderTextColor={colors.neutral.textMuted}
                 value={email}
                 onChangeText={(text) => {
-                  if (!invitationToken) {
-                    setEmail(text);
-                    setMessage(null);
-                  }
+                  setEmail(text);
+                  setMessage(null);
                 }}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
-                editable={!isLoading && !invitationToken}
+                editable={!isLoading}
               />
-              {invitationToken && (
-                <Ionicons name="checkmark-circle" size={20} color={colors.status.success} />
-              )}
             </View>
 
+            {/* Password */}
             <View style={styles.inputContainer}>
               <Ionicons
                 name="lock-closed-outline"
@@ -426,6 +378,7 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Confirm Password */}
             <View style={styles.inputContainer}>
               <Ionicons
                 name="lock-closed-outline"
@@ -463,6 +416,32 @@ export default function RegisterScreen() {
               Password must be at least 6 characters
             </Text>
 
+            {/* Terms Checkbox */}
+            <TouchableOpacity
+              style={styles.termsContainer}
+              onPress={() => setAgreedToTerms(!agreedToTerms)}
+              disabled={isLoading}
+            >
+              <View style={[
+                styles.checkbox,
+                agreedToTerms && styles.checkboxChecked
+              ]}>
+                {agreedToTerms && (
+                  <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+                )}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to the{' '}
+                <Text style={styles.termsLink} onPress={openTermsOfService}>
+                  Terms of Service
+                </Text>
+                {' '}and{' '}
+                <Text style={styles.termsLink} onPress={openPrivacyPolicy}>
+                  Privacy Policy
+                </Text>
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.registerButton,
@@ -477,6 +456,14 @@ export default function RegisterScreen() {
                 <Text style={styles.registerButtonText}>Create Account</Text>
               )}
             </TouchableOpacity>
+
+            {/* Trial info */}
+            <View style={styles.trialInfo}>
+              <Ionicons name="gift-outline" size={18} color={colors.secondary.main} />
+              <Text style={styles.trialInfoText}>
+                Start with a 14-day free trial. No credit card required.
+              </Text>
+            </View>
           </View>
 
           <View style={styles.footer}>
@@ -530,18 +517,12 @@ const styles = StyleSheet.create({
     width: 70,
     height: 70,
   },
-  tutorBranding: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.semibold,
-    color: colors.primary.main,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
   title: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.neutral.text,
     marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: typography.sizes.base,
@@ -573,11 +554,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral.borderLight,
   },
-  inputContainerLocked: {
-    backgroundColor: colors.status.successBg,
-    borderWidth: 1,
-    borderColor: colors.status.success,
-  },
   inputIcon: {
     marginRight: spacing.md,
   },
@@ -587,17 +563,42 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.neutral.text,
   },
-  inputLocked: {
-    color: colors.secondary.dark,
-  },
   eyeIcon: {
     padding: spacing.xs,
   },
   passwordHint: {
     fontSize: typography.sizes.xs,
     color: colors.neutral.textMuted,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.base,
     marginTop: -spacing.sm,
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xl,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.primary.main,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary.main,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.text,
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: colors.primary.main,
+    fontWeight: typography.weights.medium,
   },
   registerButton: {
     backgroundColor: colors.accent.main,
@@ -614,6 +615,19 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.textInverse,
+  },
+  trialInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.base,
+    paddingVertical: spacing.sm,
+  },
+  trialInfoText: {
+    fontSize: typography.sizes.sm,
+    color: colors.secondary.main,
+    marginLeft: spacing.sm,
+    fontWeight: typography.weights.medium,
   },
   footer: {
     flexDirection: 'row',
@@ -695,17 +709,5 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.primary.main,
     fontWeight: typography.weights.medium,
-  },
-  // Loading container for token validation
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  loadingText: {
-    marginTop: spacing.base,
-    fontSize: typography.sizes.base,
-    color: colors.neutral.textSecondary,
   },
 });
