@@ -112,7 +112,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       id: groupId,
       requests: groupedRequests,
       isCombinedSession: groupedRequests.length > 1,
-      student_names: groupedRequests.map(r => r.student.name),
+      student_names: groupedRequests.map(r => r.student?.name ?? 'Student'),
       subjects: groupedRequests.map(r => r.subject as TutoringSubject),
       preferred_date: first.preferred_date,
       preferred_time: first.preferred_time,
@@ -132,7 +132,7 @@ function groupRequests(requests: LessonRequestWithStudent[]): GroupedRequest[] {
       id: request.id,
       requests: [request],
       isCombinedSession: false,
-      student_names: [request.student.name],
+      student_names: [request.student?.name ?? 'Student'],
       subjects: [request.subject as TutoringSubject],
       preferred_date: request.preferred_date,
       preferred_time: request.preferred_time,
@@ -913,7 +913,7 @@ function EnrollmentRequestCard({ enrollment, onApprove, onReject }: EnrollmentRe
       <View style={[styles.requestHeader, { backgroundColor: subjectColor.subtle }]}>
         <Text style={styles.requestSubjectIcon}>{SUBJECT_EMOJI[subject]}</Text>
         <View style={styles.requestHeaderInfo}>
-          <Text style={styles.requestStudentName}>{enrollment.student.name}</Text>
+          <Text style={styles.requestStudentName}>{enrollment.student?.name ?? 'Student'}</Text>
           <Text style={styles.requestSubject}>{SUBJECT_NAMES[subject]}</Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
@@ -942,7 +942,7 @@ function EnrollmentRequestCard({ enrollment, onApprove, onReject }: EnrollmentRe
         <View style={styles.requestDetail}>
           <Ionicons name="person-outline" size={18} color={colors.neutral.textSecondary} />
           <Text style={styles.requestDetailText}>
-            Parent: {enrollment.parent.name}
+            Parent: {enrollment.parent?.name ?? 'Parent'}
           </Text>
         </View>
 
@@ -1039,7 +1039,7 @@ function EnrollmentApproveModal({ visible, enrollment, onClose, onApprove, loadi
           <Ionicons name="checkmark-circle" size={48} color={colors.status.success} />
           <Text style={modalStyles.title}>Approve Enrollment</Text>
           <Text style={modalStyles.subtitle}>
-            Approve {enrollment.student.name}'s request to join the {SUBJECT_NAMES[subject]} session
+            Approve {enrollment.student?.name ?? 'Student'}'s request to join the {SUBJECT_NAMES[subject]} session
             {sessionDate && ` on ${sessionDate.toLocaleDateString('en-US', {
               weekday: 'short',
               month: 'short',
@@ -1054,7 +1054,7 @@ function EnrollmentApproveModal({ visible, enrollment, onClose, onApprove, loadi
             </View>
             <View style={modalStyles.infoRow}>
               <Text style={modalStyles.infoLabel}>Parent:</Text>
-              <Text style={modalStyles.infoValue}>{enrollment.parent.name}</Text>
+              <Text style={modalStyles.infoValue}>{enrollment.parent?.name ?? 'Parent'}</Text>
             </View>
           </View>
 
@@ -1111,7 +1111,7 @@ function EnrollmentRejectModal({ visible, enrollment, onClose, onReject, loading
           <Ionicons name="close-circle" size={48} color={colors.status.error} />
           <Text style={modalStyles.title}>Decline Enrollment</Text>
           <Text style={modalStyles.subtitle}>
-            Let {enrollment.parent.name} know why {enrollment.student.name} cannot join this session.
+            Let {enrollment.parent?.name ?? 'the parent'} know why {enrollment.student?.name ?? 'the student'} cannot join this session.
           </Text>
 
           <TextInput

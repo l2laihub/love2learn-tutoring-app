@@ -661,7 +661,7 @@ function LessonCard({ lesson }: { lesson: ScheduledLessonWithStudent }) {
         <Text style={styles.lessonDuration}>{lesson.duration_min}m</Text>
       </View>
       <View style={styles.lessonInfo}>
-        <Text style={styles.lessonStudent}>{lesson.student.name}</Text>
+        <Text style={styles.lessonStudent}>{lesson.student?.name ?? 'Student'}</Text>
         <View style={styles.lessonSubject}>
           <Text style={{ fontSize: 14 }}>{emoji}</Text>
           <Text style={[styles.lessonSubjectText, { color: subjectColor.primary }]}>
@@ -755,7 +755,7 @@ function AssignmentCard({ assignment }: { assignment: AssignmentWithStudent }) {
       </View>
       <View style={styles.assignmentInfo}>
         <Text style={styles.assignmentType}>{typeInfo.name}</Text>
-        <Text style={styles.assignmentStudent}>{assignment.student.name}</Text>
+        <Text style={styles.assignmentStudent}>{assignment.student?.name ?? 'Student'}</Text>
       </View>
       {dueDate && (
         <View style={[styles.assignmentDue, isOverdue && styles.assignmentDueOverdue]}>

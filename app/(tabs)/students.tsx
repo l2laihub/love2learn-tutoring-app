@@ -171,7 +171,7 @@ export default function StudentsScreen() {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const matchesName = student.name.toLowerCase().includes(query);
+        const matchesName = (student.name ?? '').toLowerCase().includes(query);
         const matchesParent = student.parent?.name?.toLowerCase().includes(query);
         if (!matchesName && !matchesParent) return false;
       }
@@ -350,8 +350,8 @@ export default function StudentsScreen() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
-        parent.name.toLowerCase().includes(query) ||
-        parent.email.toLowerCase().includes(query)
+        (parent.name ?? '').toLowerCase().includes(query) ||
+        (parent.email ?? '').toLowerCase().includes(query)
       );
     }
     return true;
@@ -1088,11 +1088,11 @@ export default function StudentsScreen() {
                   >
                     <AvatarDisplay
                       avatarUrl={parent.avatar_url}
-                      name={parent.name}
+                      name={parent.name ?? 'Parent'}
                       size={48}
                     />
                     <View style={styles.parentInfo}>
-                      <Text style={styles.parentName}>{parent.name}</Text>
+                      <Text style={styles.parentName}>{parent.name ?? 'Parent'}</Text>
                       <Text style={styles.parentEmail}>{parent.email}</Text>
                       <View style={styles.parentMetaRow}>
                         <Text style={styles.parentStudentCount}>

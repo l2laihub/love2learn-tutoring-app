@@ -56,13 +56,13 @@ export function ParentFormModal({
   useEffect(() => {
     if (visible) {
       if (parent) {
-        setName(parent.name);
-        setEmail(parent.email);
+        setName(parent.name ?? '');
+        setEmail(parent.email ?? '');
         setPhone(parent.phone || '');
         // Store original values for change detection
         originalValues.current = {
-          name: parent.name,
-          email: parent.email,
+          name: parent.name ?? '',
+          email: parent.email ?? '',
           phone: parent.phone || '',
         };
       } else {

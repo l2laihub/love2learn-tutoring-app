@@ -630,7 +630,7 @@ export default function CalendarScreen() {
           // Show error to user - invoice generation failed
           const parentName = selectedGroupedLesson.lessons.find(
             l => l.student.parent.id === parentId
-          )?.student.parent.name || 'Unknown';
+          )?.student?.parent?.name ?? 'Unknown';
           Alert.alert(
             'Invoice Error',
             `Failed to generate invoice for ${parentName}: ${quickInvoice.error.message}`
@@ -1015,10 +1015,10 @@ export default function CalendarScreen() {
                           <StackedAvatars
                             students={Array.from(
                               new Map(
-                                group.lessons.map(l => [l.student.id, {
-                                  id: l.student.id,
-                                  name: l.student.name,
-                                  avatar_url: l.student.avatar_url,
+                                group.lessons.map(l => [l.student?.id ?? '', {
+                                  id: l.student?.id ?? '',
+                                  name: l.student?.name ?? 'Student',
+                                  avatar_url: l.student?.avatar_url,
                                 }])
                               ).values()
                             )}

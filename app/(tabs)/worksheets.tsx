@@ -143,7 +143,7 @@ export default function WorksheetsScreen() {
     const uniqueStudents = new Map<string, { id: string; name: string }>();
     assignments.forEach(a => {
       if (a.student) {
-        uniqueStudents.set(a.student.id, { id: a.student.id, name: a.student.name });
+        uniqueStudents.set(a.student.id, { id: a.student.id, name: a.student.name ?? 'Student' });
       }
     });
     return Array.from(uniqueStudents.values());

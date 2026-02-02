@@ -175,17 +175,17 @@ export function StudentFormModal({
   useEffect(() => {
     if (visible) {
       if (student) {
-        setName(student.name);
+        setName(student.name ?? '');
         setBirthday(student.birthday || '');
         setBirthdayDisplay(formatDateForDisplay(student.birthday || null));
-        setAge(student.age.toString());
+        setAge(student.age?.toString() ?? '');
         setGradeLevel(student.grade_level);
         setParentId(student.parent_id);
         setSubjects(student.subjects || []);
         setAutoGradeEnabled(!!student.birthday);
         // Store original values for change detection
         originalValues.current = {
-          name: student.name,
+          name: student.name ?? '',
           birthday: student.birthday || '',
           age: student.age.toString(),
           gradeLevel: student.grade_level,
@@ -572,9 +572,9 @@ export function StudentFormModal({
                               parentId === parent.id && styles.parentNameSelected,
                             ]}
                           >
-                            {parent.name}
+                            {parent.name ?? 'Parent'}
                           </Text>
-                          <Text style={styles.parentEmail}>{parent.email}</Text>
+                          <Text style={styles.parentEmail}>{parent.email ?? ''}</Text>
                         </View>
                         {parentId === parent.id ? (
                           <Ionicons

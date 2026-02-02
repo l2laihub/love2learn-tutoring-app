@@ -78,7 +78,8 @@ const painPoints = [
 const plans = [
   {
     name: 'Solo',
-    price: 29,
+    monthlyPrice: 29,
+    yearlyPrice: 290, // 2 months free ($348 -> $290)
     description: 'Perfect for tutors just getting started',
     features: [
       'Up to 20 students',
@@ -92,7 +93,8 @@ const plans = [
   },
   {
     name: 'Pro',
-    price: 49,
+    monthlyPrice: 49,
+    yearlyPrice: 490, // 2 months free ($588 -> $490)
     description: 'For growing tutoring businesses',
     features: [
       'Unlimited students',
@@ -181,6 +183,7 @@ const useFadeIn = (delay: number = 0) => {
 export default function LandingPage() {
   const [email, setEmail] = useState('');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const scrollViewRef = useRef<ScrollView>(null);
   const { width } = useWindowDimensions();
   const responsive = useResponsive();
@@ -193,7 +196,7 @@ export default function LandingPage() {
   const isTablet = responsive.isMdUp && !isDesktop;
 
   const handleStartTrial = () => {
-    router.push('/(auth)/register');
+    router.push('/(auth)/register-tutor');
   };
 
   const handleLogin = () => {
@@ -438,8 +441,45 @@ export default function LandingPage() {
               Start free, upgrade when you're ready
             </Text>
 
+            {/* Billing Period Toggle */}
+            <View style={styles.billingToggleContainer}>
+              <Pressable
+                style={[
+                  styles.billingToggleOption,
+                  billingPeriod === 'monthly' && styles.billingToggleOptionActive,
+                ]}
+                onPress={() => setBillingPeriod('monthly')}
+              >
+                <Text style={[
+                  styles.billingToggleText,
+                  billingPeriod === 'monthly' && styles.billingToggleTextActive,
+                ]}>Monthly</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.billingToggleOption,
+                  billingPeriod === 'yearly' && styles.billingToggleOptionActive,
+                ]}
+                onPress={() => setBillingPeriod('yearly')}
+              >
+                <Text style={[
+                  styles.billingToggleText,
+                  billingPeriod === 'yearly' && styles.billingToggleTextActive,
+                ]}>Yearly</Text>
+                <View style={styles.savingsBadge}>
+                  <Text style={styles.savingsBadgeText}>2 months free</Text>
+                </View>
+              </Pressable>
+            </View>
+
             <View style={[styles.pricingGrid, isDesktop && styles.pricingGridDesktop]}>
-              {plans.map((plan, index) => (
+              {plans.map((plan, index) => {
+                const displayPrice = billingPeriod === 'monthly'
+                  ? plan.monthlyPrice
+                  : Math.round(plan.yearlyPrice / 12);
+                const totalYearlyPrice = plan.yearlyPrice;
+
+                return (
                 <View
                   key={index}
                   style={[
@@ -460,9 +500,14 @@ export default function LandingPage() {
                   <Text style={styles.planName}>{plan.name}</Text>
                   <View style={styles.priceRow}>
                     <Text style={[styles.priceCurrency, plan.highlighted && styles.priceHighlighted]}>$</Text>
-                    <Text style={[styles.priceAmount, plan.highlighted && styles.priceHighlighted]}>{plan.price}</Text>
+                    <Text style={[styles.priceAmount, plan.highlighted && styles.priceHighlighted]}>{displayPrice}</Text>
                     <Text style={styles.pricePeriod}>/month</Text>
                   </View>
+                  {billingPeriod === 'yearly' && (
+                    <Text style={styles.yearlyTotal}>
+                      ${totalYearlyPrice}/year billed annually
+                    </Text>
+                  )}
                   <Text style={styles.planDescription}>{plan.description}</Text>
 
                   <View style={styles.planFeatures}>
@@ -496,7 +541,8 @@ export default function LandingPage() {
                   </Pressable>
                   <Text style={styles.planTrialNote}>Free for 14 days, cancel anytime</Text>
                 </View>
-              ))}
+              );
+              })}
             </View>
           </View>
         </View>
@@ -1222,6 +1268,55 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral.white,
     paddingVertical: spacing['5xl'],
     paddingHorizontal: spacing.base,
+  },
+  billingToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutral.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xs,
+    marginBottom: spacing.xl,
+    alignSelf: 'center',
+  },
+  billingToggleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  billingToggleOptionActive: {
+    backgroundColor: colors.neutral.white,
+    ...shadows.sm,
+  },
+  billingToggleText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textMuted,
+  },
+  billingToggleTextActive: {
+    color: colors.neutral.text,
+    fontWeight: typography.weights.semibold,
+  },
+  savingsBadge: {
+    backgroundColor: colors.secondary.main,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+  },
+  savingsBadgeText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.white,
+  },
+  yearlyTotal: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    textAlign: 'center',
+    marginTop: -spacing.xs,
+    marginBottom: spacing.sm,
   },
   pricingGrid: {
     gap: spacing.xl,

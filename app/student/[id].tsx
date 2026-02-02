@@ -271,16 +271,17 @@ export default function StudentDetailScreen() {
               <View style={styles.parentInfo}>
                 <View style={styles.parentAvatar}>
                   <Text style={styles.parentAvatarText}>
-                    {student.parent.name
+                    {(student.parent?.name ?? '')
                       .split(' ')
+                      .filter(n => n.length > 0)
                       .map((n) => n[0])
                       .join('')
                       .substring(0, 2)
-                      .toUpperCase()}
+                      .toUpperCase() || '??'}
                   </Text>
                 </View>
                 <View style={styles.parentDetails}>
-                  <Text style={styles.parentName}>{student.parent.name}</Text>
+                  <Text style={styles.parentName}>{student.parent?.name ?? 'Loading...'}</Text>
                   <Text style={styles.parentEmail}>{student.parent.email}</Text>
                   {student.parent.phone && (
                     <Text style={styles.parentPhone}>{student.parent.phone}</Text>

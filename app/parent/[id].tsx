@@ -143,13 +143,14 @@ export default function ParentDetailScreen() {
     );
   }
 
-  // Get initials for avatar
-  const initials = parent.name
+  // Get initials for avatar (safely handle null/undefined name)
+  const initials = (parent?.name ?? '')
     .split(' ')
+    .filter(n => n.length > 0)
     .map((n) => n[0])
     .join('')
     .substring(0, 2)
-    .toUpperCase();
+    .toUpperCase() || '??';
 
   // Get students
   const students = parent.students || [];
@@ -171,7 +172,7 @@ export default function ParentDetailScreen() {
           <View style={styles.avatarContainer}>
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
-          <Text style={styles.parentName}>{parent.name}</Text>
+          <Text style={styles.parentName}>{parent?.name ?? 'Loading...'}</Text>
           <Text style={styles.studentCount}>
             {students.length} student{students.length !== 1 ? 's' : ''}
           </Text>
