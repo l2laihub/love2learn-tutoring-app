@@ -3,7 +3,7 @@
  * Payment tracking for tutor (all families) and parents (their own)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 import { useAuthContext } from '../../src/contexts/AuthContext';
@@ -118,6 +119,18 @@ export default function PaymentsScreen() {
     data: remindersByPayment,
     refetch: refetchReminders,
   } = usePaymentRemindersBatch(paymentIds);
+
+  // Refetch all data when tab gains focus (e.g., after completing a lesson on Calendar)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      refetchSummary();
+      refetchOverdue();
+      refetchLessonSummary();
+      refetchPrepaid();
+      refetchParents();
+    }, [refetch, refetchSummary, refetchOverdue, refetchLessonSummary, refetchPrepaid, refetchParents])
+  );
 
   // Mutations
   const createPayment = useCreatePayment();

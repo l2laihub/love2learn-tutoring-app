@@ -36,13 +36,14 @@ export function useParents(): ListQueryState<ParentWithStudents> {
       setLoading(true);
       setError(null);
 
-      // Fetch parents with students
+      // Fetch parents with students (only role='parent', not tutors)
       const { data: parents, error: fetchError } = await supabase
         .from('parents')
         .select(`
           *,
           students!parent_id(*)
         `)
+        .eq('role', 'parent')
         .order('name', { ascending: true });
 
       if (fetchError) {
@@ -344,6 +345,7 @@ export function useSearchParents(searchTerm: string): ListQueryState<Parent> {
       const { data: parents, error: fetchError } = await supabase
         .from('parents')
         .select('*')
+        .eq('role', 'parent')
         .or(`name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`)
         .order('name', { ascending: true })
         .limit(20);
@@ -494,6 +496,7 @@ export function useParentsByBillingMode(billingMode: BillingMode): ListQueryStat
           *,
           students!parent_id(*)
         `)
+        .eq('role', 'parent')
         .eq('billing_mode', billingMode)
         .order('name', { ascending: true });
 
