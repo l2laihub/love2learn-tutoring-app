@@ -30,7 +30,7 @@ import {
   formatTimeDisplay,
 } from '../hooks/useTutorAvailability';
 import { useCreateLessonRequest } from '../hooks/useLessonRequests';
-import { useTutor } from '../hooks/useParents';
+import { useMyTutorId } from '../hooks/useParents';
 import { useTutorSettings } from '../hooks/useTutorSettings';
 
 // Subject display names
@@ -88,9 +88,9 @@ export function DropinRequestModal({
   onClose,
   onSuccess,
 }: DropinRequestModalProps) {
-  // Get the tutor for availability lookup
-  const { data: tutor, loading: tutorLoading } = useTutor();
-  const { data: tutorSettings } = useTutorSettings(tutor?.id);
+  // Get the tutor ID for availability lookup (works for both parents and tutors)
+  const { tutorId, loading: tutorLoading } = useMyTutorId();
+  const { data: tutorSettings } = useTutorSettings();
 
   // Step flow: student -> date -> time -> confirm
   const [step, setStep] = useState<'student' | 'date' | 'time' | 'confirm'>('student');
@@ -106,11 +106,11 @@ export function DropinRequestModal({
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch tutor availability
+  // Fetch tutor availability filtered to the specific tutor
   const {
     data: availability,
     loading: availabilityLoading,
-  } = useTutorAvailability({ tutorId: tutor?.id, isRecurring: true });
+  } = useTutorAvailability({ tutorId: tutorId ?? undefined, isRecurring: true });
 
   const { createRequest, loading: submitting } = useCreateLessonRequest();
 

@@ -427,6 +427,35 @@ export function useTutor(): QueryState<Parent> & { refetch: () => Promise<void> 
 }
 
 /**
+ * Get the tutor ID for the current user (works for both tutors and parents).
+ * Uses the `get_my_tutor_info` RPC (SECURITY DEFINER) which resolves:
+ * - For tutors: their own parents.id
+ * - For parents: their assigned parents.tutor_id
+ */
+export function useMyTutorId(): { tutorId: string | null; loading: boolean } {
+  const [tutorId, setTutorId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchTutorId = useCallback(async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.rpc('get_my_tutor_info');
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      setTutorId(row?.tutor_id || null);
+    } catch (err) {
+      console.error('useMyTutorId error:', err);
+      setTutorId(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchTutorId(); }, [fetchTutorId]);
+  return { tutorId, loading };
+}
+
+/**
  * Hook for updating a parent's billing mode
  * @returns Mutation state with update function
  */

@@ -49,6 +49,7 @@ import { LessonDetailsModal, LessonFilterType, PrepaidPaymentDisplay } from '../
 import { StatusFilterType } from '../../src/components/MonthlyPaymentSummary';
 import { PaymentFilterBar, PaymentFilterStatus, PaymentSortOption } from '../../src/components/PaymentFilterBar';
 import { SendReminderModal } from '../../src/components/SendReminderModal';
+import { MonthlyReportExport } from '../../src/components/MonthlyReportExport';
 import { usePaymentRemindersBatch, formatRelativeTime } from '../../src/hooks/usePaymentReminders';
 
 type PaymentViewMode = 'invoice' | 'prepaid';
@@ -95,6 +96,8 @@ export default function PaymentsScreen() {
   // Send reminder modal state
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderPayment, setReminderPayment] = useState<PaymentWithParent | null>(null);
+  // Monthly report export modal state
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // Fetch data
   const { data: payments, loading, error, refetch } = usePayments(selectedMonth);
@@ -570,6 +573,12 @@ export default function PaymentsScreen() {
           <Text style={styles.title}>Payments</Text>
           {isTutor && (
             <View style={styles.headerButtons}>
+              <Pressable
+                style={styles.settingsButton}
+                onPress={() => setShowReportModal(true)}
+              >
+                <Ionicons name="document-text-outline" size={20} color={colors.neutral.textSecondary} />
+              </Pressable>
               <Pressable
                 style={styles.settingsButton}
                 onPress={() => setShowSettingsModal(true)}
@@ -1292,6 +1301,15 @@ export default function PaymentsScreen() {
         }}
         payment={reminderPayment}
         onSuccess={handleRefresh}
+      />
+
+      {/* Monthly Report Export Modal */}
+      <MonthlyReportExport
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        summary={monthlyLessonSummary}
+        payments={payments}
+        month={selectedMonth}
       />
     </SafeAreaView>
   );

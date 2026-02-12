@@ -104,6 +104,8 @@ serve(async (req: Request) => {
     }
 
     // Get parent data with children
+    // Must use students!parent_id to disambiguate since students has both
+    // parent_id and tutor_id FKs to the parents table
     const { data: parentData, error: parentError } = await supabase
       .from('parents')
       .select(`
@@ -113,7 +115,7 @@ serve(async (req: Request) => {
         user_id,
         invitation_token,
         tutor_id,
-        students (
+        students!parent_id (
           name,
           subjects
         )

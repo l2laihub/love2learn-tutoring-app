@@ -24,6 +24,7 @@ export {
   useParentByUserId,
   useSearchParents,
   useTutor,
+  useMyTutorId,
 } from './useParents';
 
 // Lesson hooks

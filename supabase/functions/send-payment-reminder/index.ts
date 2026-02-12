@@ -191,7 +191,7 @@ serve(async (req: Request) => {
           email,
           name,
           preferences,
-          students(id, name)
+          students!parent_id(id, name)
         )
       `)
       .eq('id', payment_id)

@@ -52,6 +52,7 @@ interface LessonDetailModalProps {
   onEdit: () => void;
   onEditSeries?: () => void; // Edit all lessons in the recurring series
   onComplete: (notes?: string) => Promise<void>;
+  onCompleteAndPay?: (notes?: string) => Promise<void>; // Complete and mark as paid
   onCancel: (reason?: string) => Promise<void>;
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
   onDelete?: () => Promise<void>;
@@ -69,6 +70,7 @@ export function LessonDetailModal({
   onEdit,
   onEditSeries,
   onComplete,
+  onCompleteAndPay,
   onCancel,
   onUncomplete,
   onDelete,
@@ -183,6 +185,21 @@ export function LessonDetailModal({
       onClose();
     } catch (err) {
       console.error('Failed to complete lesson:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteAndPay = async () => {
+    if (!onCompleteAndPay) return;
+    setLoading(true);
+    try {
+      await onCompleteAndPay(completeNotes.trim() || undefined);
+      setShowCompleteConfirm(false);
+      setCompleteNotes('');
+      onClose();
+    } catch (err) {
+      console.error('Failed to complete and mark paid:', err);
     } finally {
       setLoading(false);
     }
@@ -338,6 +355,22 @@ export function LessonDetailModal({
                 )}
               </Pressable>
             </View>
+            {onCompleteAndPay && (
+              <Pressable
+                style={styles.completeAndPayButton}
+                onPress={handleCompleteAndPay}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.primary.main} />
+                ) : (
+                  <>
+                    <Ionicons name="cash-outline" size={16} color={colors.primary.main} />
+                    <Text style={styles.completeAndPayText}>Complete & Mark as Paid</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
           </View>
         </View>
       </Modal>
@@ -1171,6 +1204,25 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.white,
+  },
+  completeAndPayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    backgroundColor: colors.primary.subtle,
+    width: '100%',
+  },
+  completeAndPayText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
   },
   // Delete section
   deleteSection: {

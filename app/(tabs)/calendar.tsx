@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -53,7 +54,7 @@ import { AvailableSessionsModal } from '../../src/components/AvailableSessionsMo
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { useAvailableGroupSessions } from '../../src/hooks/useGroupSessions';
 import { TutorBreak } from '../../src/types/database';
-import { useQuickInvoice, useIncrementSessionUsage } from '../../src/hooks/usePayments';
+import { useQuickInvoice, useIncrementSessionUsage, useMarkPaymentPaid } from '../../src/hooks/usePayments';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
 import { StackedAvatars } from '../../src/components/AvatarUpload';
 
@@ -142,6 +143,13 @@ export default function CalendarScreen() {
 
   // Fetch data - now using grouped lessons
   const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
+
+  // Refetch when tab gains focus (e.g., after tutor approves a reschedule on another screen)
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: tutorSettings } = useTutorSettings();
 
@@ -174,6 +182,7 @@ export default function CalendarScreen() {
   const deleteLessonSeries = useDeleteLessonSeries();
   const quickInvoice = useQuickInvoice();
   const incrementSessionUsage = useIncrementSessionUsage();
+  const markPaymentPaid = useMarkPaymentPaid();
 
   // Series state for delete/edit series functionality
   const [seriesLessonIds, setSeriesLessonIds] = useState<string[]>([]);
@@ -628,6 +637,46 @@ export default function CalendarScreen() {
         const payment = await quickInvoice.generateQuickInvoice(parentId, lessonDate);
         if (!payment && quickInvoice.error) {
           // Show error to user - invoice generation failed
+          const parentName = selectedGroupedLesson.lessons.find(
+            l => l.student.parent.id === parentId
+          )?.student?.parent?.name ?? 'Unknown';
+          Alert.alert(
+            'Invoice Error',
+            `Failed to generate invoice for ${parentName}: ${quickInvoice.error.message}`
+          );
+        }
+      }
+    }
+  };
+
+  const handleCompleteLessonAndPay = async (notes?: string) => {
+    if (!selectedGroupedLesson) return;
+
+    // Complete all lessons in the group
+    for (const lesson of selectedGroupedLesson.lessons) {
+      await completeLesson.mutate(lesson.id, notes);
+    }
+    await refetch();
+
+    // Auto-generate invoice and mark as paid
+    const parentMap = new Map<string, { id: string; billing_mode: 'invoice' | 'prepaid' }>();
+    for (const lesson of selectedGroupedLesson.lessons) {
+      const parent = lesson.student.parent;
+      if (!parentMap.has(parent.id)) {
+        parentMap.set(parent.id, { id: parent.id, billing_mode: parent.billing_mode });
+      }
+    }
+
+    const lessonDate = new Date(selectedGroupedLesson.scheduled_at);
+    for (const [parentId, parentInfo] of parentMap) {
+      if (parentInfo.billing_mode === 'prepaid') {
+        // For prepaid families: session usage already incremented
+      } else {
+        // For invoice families: generate invoice then mark as paid
+        const payment = await quickInvoice.generateQuickInvoice(parentId, lessonDate);
+        if (payment) {
+          await markPaymentPaid.mutate(payment.id);
+        } else if (quickInvoice.error) {
           const parentName = selectedGroupedLesson.lessons.find(
             l => l.student.parent.id === parentId
           )?.student?.parent?.name ?? 'Unknown';
@@ -1237,6 +1286,7 @@ export default function CalendarScreen() {
             : undefined
         }
         onComplete={handleCompleteLesson}
+        onCompleteAndPay={isTutor ? handleCompleteLessonAndPay : undefined}
         onCancel={handleCancelLesson}
         onUncomplete={isTutor ? handleUncompleteLesson : undefined}
         onDelete={isTutor ? handleDeleteLesson : undefined}

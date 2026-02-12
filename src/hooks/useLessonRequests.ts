@@ -195,6 +195,32 @@ export function useCreateLessonRequest(): {
         setLoading(true);
         setError(null);
 
+        // Fetch student and parent names before insert (needed for email)
+        const { data: studentData } = await supabase
+          .from('students')
+          .select('name')
+          .eq('id', input.student_id)
+          .single();
+
+        const { data: parentData } = await supabase
+          .from('parents')
+          .select('name')
+          .eq('id', input.parent_id)
+          .single();
+
+        // Fetch original lesson date if this is a reschedule
+        let originalLessonDate: string | null = null;
+        if (input.original_lesson_id) {
+          const { data: lessonData } = await supabase
+            .from('scheduled_lessons')
+            .select('scheduled_at')
+            .eq('id', input.original_lesson_id)
+            .single();
+          if (lessonData?.scheduled_at) {
+            originalLessonDate = lessonData.scheduled_at.split('T')[0];
+          }
+        }
+
         const { data, error: createError } = await supabase
           .from('lesson_requests')
           .insert({
@@ -208,38 +234,29 @@ export function useCreateLessonRequest(): {
           throw new Error(createError.message);
         }
 
-        // Create notification for tutor (recipient_id = null means tutors see it via RLS)
-        try {
-          const { data: student } = await supabase
-            .from('students')
-            .select('name')
-            .eq('id', input.student_id)
-            .single();
+        // Notification is created automatically by the DB trigger (notify_on_reschedule_request)
+        // which sets the correct tutor_id and recipient_id for multi-tutor support
 
-          const requestType = (input as any).request_type || 'reschedule';
-          const notificationType = requestType === 'dropin' ? 'dropin_request' : 'reschedule_request';
-          const title = requestType === 'dropin' ? 'New Drop-in Request' : 'New Reschedule Request';
+        const createdRequest = data as LessonRequest;
 
-          await supabase.from('notifications').insert({
-            recipient_id: null, // Tutors see all notifications via RLS
-            sender_id: input.parent_id,
-            type: notificationType,
-            title,
-            message: `${student?.name || 'A student'} has requested a ${requestType === 'dropin' ? 'drop-in lesson' : 'lesson reschedule'} for ${input.subject}`,
-            data: {
-              request_id: data.id,
-              student_id: input.student_id,
-              subject: input.subject,
-              preferred_date: input.preferred_date,
-              request_type: requestType,
-            },
-            action_url: '/requests',
-          });
-        } catch (notifyErr) {
-          console.error('Failed to create notification:', notifyErr);
-        }
+        // Send email notification to tutor (fire-and-forget, same pattern as approval/rejection)
+        sendTutorRequestEmail({
+          request_id: createdRequest.id,
+          parent_id: input.parent_id,
+          parent_name: parentData?.name || 'Parent',
+          student_name: studentData?.name || 'Student',
+          subject: input.subject,
+          preferred_date: input.preferred_date,
+          preferred_time: input.preferred_time || null,
+          reason: input.notes || null,
+          request_type: (input.request_type as LessonRequestType) || 'reschedule',
+          original_lesson_date: originalLessonDate,
+        }).catch((emailErr) => {
+          // Log but don't fail the request creation if email fails
+          console.error('Failed to send tutor request email:', emailErr);
+        });
 
-        return data as LessonRequest;
+        return createdRequest;
       } catch (err) {
         const errorMessage =
           err instanceof Error ? err : new Error('Failed to create lesson request');
@@ -547,6 +564,30 @@ export function useRejectLessonRequest(): {
   );
 
   return { rejectRequest, loading, error };
+}
+
+/**
+ * Helper function to send tutor notification email when a new request is created
+ */
+async function sendTutorRequestEmail(data: {
+  request_id: string;
+  parent_id: string;
+  parent_name: string;
+  student_name: string;
+  subject: string;
+  preferred_date: string;
+  preferred_time: string | null;
+  reason: string | null;
+  request_type: LessonRequestType;
+  original_lesson_date: string | null;
+}): Promise<void> {
+  const response = await supabase.functions.invoke('send-reschedule-request', {
+    body: data,
+  });
+
+  if (response.error) {
+    throw new Error(response.error.message);
+  }
 }
 
 /**
