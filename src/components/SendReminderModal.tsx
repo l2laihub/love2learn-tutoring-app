@@ -112,6 +112,7 @@ export function SendReminderModal({
             subject,
             scheduled_at,
             duration_min,
+            status,
             student:students!inner(id, name)
           )
         `)
@@ -120,8 +121,10 @@ export function SendReminderModal({
 
       if (error) throw error;
 
-      // Sort by scheduled date
-      const sorted = (data as unknown as UnpaidLesson[] || []).sort(
+      // Filter out cancelled lessons and sort by scheduled date
+      const filtered = (data as unknown as (UnpaidLesson & { lesson: { status: string } })[] || [])
+        .filter((pl) => pl.lesson.status !== 'cancelled');
+      const sorted = filtered.sort(
         (a, b) => new Date(a.lesson.scheduled_at).getTime() - new Date(b.lesson.scheduled_at).getTime()
       );
       setUnpaidLessons(sorted);

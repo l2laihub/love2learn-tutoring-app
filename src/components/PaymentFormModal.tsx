@@ -122,7 +122,7 @@ export function PaymentFormModal({
     }
   }, [visible, mode, initialData?.id]);
 
-  // Fetch linked lessons for this payment
+  // Fetch linked lessons for this payment (cleans up cancelled lessons)
   const fetchPaymentLessons = async (paymentId: string) => {
     setLoadingLessons(true);
     try {
@@ -137,6 +137,7 @@ export function PaymentFormModal({
             subject,
             scheduled_at,
             duration_min,
+            status,
             student:students!inner(id, name)
           )
         `)
@@ -144,8 +145,49 @@ export function PaymentFormModal({
 
       if (fetchError) throw fetchError;
 
-      // Sort by scheduled date
-      const sorted = (data as unknown as PaymentLessonDisplay[] || []).sort(
+      const allLessons = (data as unknown as (PaymentLessonDisplay & { lesson: { status: string } })[] || []);
+
+      // Find cancelled lessons that are still linked to this payment
+      const cancelledLinks = allLessons.filter((pl) => pl.lesson.status === 'cancelled');
+
+      // If cancelled lessons are found, clean up the database
+      if (cancelledLinks.length > 0) {
+        const cancelledAmount = cancelledLinks.reduce((sum, pl) => sum + pl.amount, 0);
+        const cancelledIds = cancelledLinks.map((pl) => pl.id);
+
+        // Remove cancelled lesson links from payment_lessons
+        await supabase
+          .from('payment_lessons')
+          .delete()
+          .in('id', cancelledIds);
+
+        // Fetch the current payment to get latest amount_due
+        const { data: currentPayment } = await supabase
+          .from('payments')
+          .select('id, amount_due, amount_paid')
+          .eq('id', paymentId)
+          .single();
+
+        if (currentPayment) {
+          const newAmountDue = Math.max(0, Math.round((currentPayment.amount_due - cancelledAmount) * 100) / 100);
+          const newStatus = newAmountDue <= currentPayment.amount_paid ? 'paid' : 'unpaid';
+
+          await supabase
+            .from('payments')
+            .update({ amount_due: newAmountDue, status: newStatus })
+            .eq('id', paymentId);
+
+          // Update the displayed amount in the form
+          setAmountDue(newAmountDue.toString());
+        }
+
+        // Notify parent to refresh payment list
+        onRefresh?.();
+      }
+
+      // Show only non-cancelled lessons, sorted by date
+      const activeLessons = allLessons.filter((pl) => pl.lesson.status !== 'cancelled');
+      const sorted = activeLessons.sort(
         (a, b) => new Date(a.lesson.scheduled_at).getTime() - new Date(b.lesson.scheduled_at).getTime()
       );
       setPaymentLessons(sorted);

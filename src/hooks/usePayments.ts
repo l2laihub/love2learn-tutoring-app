@@ -1087,9 +1087,41 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
         throw new Error(lessonsError.message);
       }
 
+      // Find and clean up cancelled lessons still linked to this payment
+      const allLessons = paymentLessons || [];
+      const cancelledLinks = allLessons.filter(
+        (pl: any) => pl.lesson && pl.lesson.status === 'cancelled'
+      );
+
+      if (cancelledLinks.length > 0) {
+        const cancelledAmount = cancelledLinks.reduce((sum: number, pl: any) => sum + (pl.amount || 0), 0);
+        const cancelledIds = cancelledLinks.map((pl: any) => pl.id);
+
+        // Remove cancelled lesson links
+        await supabase
+          .from('payment_lessons')
+          .delete()
+          .in('id', cancelledIds);
+
+        // Adjust the payment's amount_due
+        const newAmountDue = Math.max(0, Math.round((payment.amount_due - cancelledAmount) * 100) / 100);
+        const newStatus = newAmountDue <= payment.amount_paid ? 'paid' : 'unpaid';
+        await supabase
+          .from('payments')
+          .update({ amount_due: newAmountDue, status: newStatus })
+          .eq('id', paymentId);
+
+        payment.amount_due = newAmountDue;
+        payment.status = newStatus;
+      }
+
+      const activePaymentLessons = allLessons.filter(
+        (pl: any) => !pl.lesson || pl.lesson.status !== 'cancelled'
+      );
+
       setData({
         ...payment,
-        payment_lessons: paymentLessons || [],
+        payment_lessons: activePaymentLessons,
       } as PaymentWithDetails);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch payment details');

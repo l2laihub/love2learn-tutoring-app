@@ -527,6 +527,41 @@ export function useCancelLesson() {
         throw new Error(updateError.message);
       }
 
+      // Clean up payment_lessons link if this lesson was already invoiced
+      const { data: paymentLessonLinks } = await supabase
+        .from('payment_lessons')
+        .select('id, payment_id, amount')
+        .eq('lesson_id', id);
+
+      if (paymentLessonLinks && paymentLessonLinks.length > 0) {
+        for (const pl of paymentLessonLinks) {
+          // Remove the payment_lessons record
+          await supabase
+            .from('payment_lessons')
+            .delete()
+            .eq('id', pl.id);
+
+          // Reduce the payment's amount_due
+          const { data: payment } = await supabase
+            .from('payments')
+            .select('id, amount_due, amount_paid')
+            .eq('id', pl.payment_id)
+            .single();
+
+          if (payment) {
+            const newAmountDue = Math.max(0, Math.round((payment.amount_due - pl.amount) * 100) / 100);
+            const newStatus = newAmountDue <= payment.amount_paid ? 'paid' : 'unpaid';
+            await supabase
+              .from('payments')
+              .update({
+                amount_due: newAmountDue,
+                status: newStatus,
+              })
+              .eq('id', payment.id);
+          }
+        }
+      }
+
       // TODO: Notify parent about cancellation when Edge Function is deployed
       // try {
       //   await supabase.functions.invoke('send-lesson-notification', {
