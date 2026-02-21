@@ -616,36 +616,53 @@ export default function CalendarScreen() {
     }
     await refetch();
 
-    // Auto-generate invoice or update prepaid sessions
-    // Get unique parents from the completed lessons
-    const parentMap = new Map<string, { id: string; billing_mode: 'invoice' | 'prepaid' }>();
+    // Auto-generate invoice for non-prepaid subjects
+    // Prepaid session usage is already handled in useCompleteLesson hook
+    // Get unique parents and check which have invoice-subject lessons
+    const parentMap = new Map<string, {
+      id: string;
+      billing_mode: 'invoice' | 'prepaid';
+      prepaid_subjects: string[];
+      hasInvoiceSubjects: boolean;
+    }>();
     for (const lesson of selectedGroupedLesson.lessons) {
       const parent = lesson.student.parent;
       if (!parentMap.has(parent.id)) {
-        parentMap.set(parent.id, { id: parent.id, billing_mode: parent.billing_mode });
+        const prepaidSubjects: string[] = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
+          .map((s: string) => s.toLowerCase());
+        parentMap.set(parent.id, {
+          id: parent.id,
+          billing_mode: parent.billing_mode,
+          prepaid_subjects: prepaidSubjects,
+          hasInvoiceSubjects: false,
+        });
+      }
+      // Check if this lesson's subject is NOT prepaid (needs invoicing)
+      const parentInfo = parentMap.get(parent.id)!;
+      const isFullyPrepaid = parentInfo.billing_mode === 'prepaid' && parentInfo.prepaid_subjects.length === 0;
+      const isSubjectPrepaid = isFullyPrepaid || parentInfo.prepaid_subjects.includes(lesson.subject.toLowerCase());
+      if (!isSubjectPrepaid) {
+        parentInfo.hasInvoiceSubjects = true;
       }
     }
 
-    // Process each parent
+    // Process each parent - only generate invoices for parents with non-prepaid subjects
     const lessonDate = new Date(selectedGroupedLesson.scheduled_at);
     for (const [parentId, parentInfo] of parentMap) {
-      if (parentInfo.billing_mode === 'prepaid') {
-        // For prepaid families: session usage is already incremented in useCompleteLesson hook
-        // No additional action needed here
-      } else {
-        // For invoice families: auto-generate/update invoice
+      if (parentInfo.hasInvoiceSubjects) {
+        // Generate/update invoice for non-prepaid-subject lessons
         const payment = await quickInvoice.generateQuickInvoice(parentId, lessonDate);
-        if (!payment && quickInvoice.error) {
-          // Show error to user - invoice generation failed
+        if (!payment) {
           const parentName = selectedGroupedLesson.lessons.find(
             l => l.student.parent.id === parentId
           )?.student?.parent?.name ?? 'Unknown';
           Alert.alert(
             'Invoice Error',
-            `Failed to generate invoice for ${parentName}: ${quickInvoice.error.message}`
+            `Failed to generate invoice for ${parentName}. You can generate it manually from the Payments page.`
           );
         }
       }
+      // Prepaid subjects: session usage already incremented in useCompleteLesson
     }
   };
 
@@ -658,34 +675,51 @@ export default function CalendarScreen() {
     }
     await refetch();
 
-    // Auto-generate invoice and mark as paid
-    const parentMap = new Map<string, { id: string; billing_mode: 'invoice' | 'prepaid' }>();
+    // Auto-generate invoice and mark as paid for non-prepaid subjects
+    const parentMap = new Map<string, {
+      id: string;
+      billing_mode: 'invoice' | 'prepaid';
+      prepaid_subjects: string[];
+      hasInvoiceSubjects: boolean;
+    }>();
     for (const lesson of selectedGroupedLesson.lessons) {
       const parent = lesson.student.parent;
       if (!parentMap.has(parent.id)) {
-        parentMap.set(parent.id, { id: parent.id, billing_mode: parent.billing_mode });
+        const prepaidSubjects: string[] = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
+          .map((s: string) => s.toLowerCase());
+        parentMap.set(parent.id, {
+          id: parent.id,
+          billing_mode: parent.billing_mode,
+          prepaid_subjects: prepaidSubjects,
+          hasInvoiceSubjects: false,
+        });
+      }
+      const parentInfo = parentMap.get(parent.id)!;
+      const isFullyPrepaid = parentInfo.billing_mode === 'prepaid' && parentInfo.prepaid_subjects.length === 0;
+      const isSubjectPrepaid = isFullyPrepaid || parentInfo.prepaid_subjects.includes(lesson.subject.toLowerCase());
+      if (!isSubjectPrepaid) {
+        parentInfo.hasInvoiceSubjects = true;
       }
     }
 
     const lessonDate = new Date(selectedGroupedLesson.scheduled_at);
     for (const [parentId, parentInfo] of parentMap) {
-      if (parentInfo.billing_mode === 'prepaid') {
-        // For prepaid families: session usage already incremented
-      } else {
-        // For invoice families: generate invoice then mark as paid
+      if (parentInfo.hasInvoiceSubjects) {
+        // Generate invoice then mark as paid for non-prepaid-subject lessons
         const payment = await quickInvoice.generateQuickInvoice(parentId, lessonDate);
         if (payment) {
           await markPaymentPaid.mutate(payment.id);
-        } else if (quickInvoice.error) {
+        } else {
           const parentName = selectedGroupedLesson.lessons.find(
             l => l.student.parent.id === parentId
           )?.student?.parent?.name ?? 'Unknown';
           Alert.alert(
             'Invoice Error',
-            `Failed to generate invoice for ${parentName}: ${quickInvoice.error.message}`
+            `Failed to generate invoice for ${parentName}. You can generate it manually from the Payments page.`
           );
         }
       }
+      // Prepaid subjects: session usage already incremented in useCompleteLesson
     }
   };
 

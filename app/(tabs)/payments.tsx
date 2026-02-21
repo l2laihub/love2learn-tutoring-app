@@ -148,26 +148,34 @@ export default function PaymentsScreen() {
   const updateBillingMode = useUpdateBillingMode();
   const updateSessionsUsed = useUpdatePrepaidSessionsUsed();
 
-  // Filter prepaid families (families set to prepaid billing mode)
+  // Filter prepaid families (families fully on prepaid OR with any per-subject prepaid)
   const prepaidFamilies = useMemo(() => {
-    return parents.filter(p => p.billing_mode === 'prepaid');
+    return parents.filter(p =>
+      p.billing_mode === 'prepaid' ||
+      ((p as { prepaid_subjects?: string[] }).prepaid_subjects || []).length > 0
+    );
   }, [parents]);
 
-  // Filter invoice families (families set to invoice billing mode or default)
+  // Filter invoice families (families that have at least some invoice subjects)
   const invoiceFamilies = useMemo(() => {
-    return parents.filter(p => !p.billing_mode || p.billing_mode === 'invoice');
+    return parents.filter(p => {
+      // If fully prepaid with no per-subject config, skip
+      const prepaidSubjects = (p as { prepaid_subjects?: string[] }).prepaid_subjects || [];
+      if (p.billing_mode === 'prepaid' && prepaidSubjects.length === 0) return false;
+      // Otherwise, the family has at least some invoice subjects
+      return true;
+    });
   }, [parents]);
 
   // Filter payments for parents (only show their own)
-  // For tutors on Invoice tab, only show invoice-based families (not prepaid)
+  // For tutors on Invoice tab, only show invoice-type payments (not prepaid)
   const displayPayments = useMemo(() => {
     if (!isTutor) {
       return payments.filter(p => p.parent_id === parent?.id);
     }
-    // For tutor: filter out prepaid families from invoice payments list
-    const prepaidParentIds = new Set(prepaidFamilies.map(p => p.id));
-    return payments.filter(p => !prepaidParentIds.has(p.parent_id));
-  }, [payments, isTutor, parent?.id, prepaidFamilies]);
+    // For tutor: show only invoice-type payments
+    return payments.filter(p => p.payment_type === 'invoice');
+  }, [payments, isTutor, parent?.id]);
 
   // Filtered and sorted payments for Invoice tab
   const filteredPayments = useMemo(() => {
@@ -400,6 +408,7 @@ export default function PaymentsScreen() {
     parent_id: string;
     sessions_count: number;
     amount: number;
+    subject?: string;
     notes?: string;
   }) => {
     const payment = await createPrepaid.mutate({
@@ -407,6 +416,7 @@ export default function PaymentsScreen() {
       month: selectedMonth.toISOString(),
       sessions_count: data.sessions_count,
       amount: data.amount,
+      subject: data.subject,
       notes: data.notes,
     });
 
@@ -1064,30 +1074,41 @@ export default function PaymentsScreen() {
             ) : (
               <View style={styles.prepaidList}>
                 {prepaidFamilies.map((parentData) => {
-                  const prepaidPayment = prepaidPayments.find(p => p.parent_id === parentData.id);
+                  // Get all prepaid payments for this family (may be multiple per-subject)
+                  const familyPrepaidPayments = prepaidPayments.filter(p => p.parent_id === parentData.id);
 
-                  if (prepaidPayment) {
-                    return (
-                      <PrepaidStatusCard
-                        key={parentData.id}
-                        parentName={parentData.name}
-                        studentNames={parentData.students?.map(s => s.name) || []}
-                        month={selectedMonth.toISOString().split('T')[0]}
-                        monthDisplay={monthDisplay}
-                        sessionsTotal={prepaidPayment.sessions_prepaid || 0}
-                        sessionsUsed={prepaidPayment.sessions_used || 0}
-                        sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
-                        sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
-                        amountDue={prepaidPayment.amount_due}
-                        isPaid={prepaidPayment.status === 'paid'}
-                        paidAt={prepaidPayment.paid_at ? new Date(prepaidPayment.paid_at).toLocaleDateString() : undefined}
-                        notes={prepaidPayment.notes || undefined}
-                        onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
-                        onPress={() => handleToggleBillingMode(parentData)}
-                        onUpdateSessionsUsed={(newCount) => handleUpdateSessionsUsed(prepaidPayment.id, newCount)}
-                        onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
-                      />
-                    );
+                  if (familyPrepaidPayments.length > 0) {
+                    return familyPrepaidPayments.map((prepaidPayment) => {
+                      const subjectLabel = prepaidPayment.subject
+                        ? prepaidPayment.subject.charAt(0).toUpperCase() + prepaidPayment.subject.slice(1)
+                        : null;
+                      const cardTitle = subjectLabel
+                        ? `${subjectLabel} Sessions`
+                        : undefined;
+                      return (
+                        <PrepaidStatusCard
+                          key={prepaidPayment.id}
+                          parentName={parentData.name}
+                          studentNames={parentData.students?.map(s => s.name) || []}
+                          month={selectedMonth.toISOString().split('T')[0]}
+                          monthDisplay={monthDisplay}
+                          sessionsTotal={prepaidPayment.sessions_prepaid || 0}
+                          sessionsUsed={prepaidPayment.sessions_used || 0}
+                          sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
+                          sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
+                          amountDue={prepaidPayment.amount_due}
+                          isPaid={prepaidPayment.status === 'paid'}
+                          paidAt={prepaidPayment.paid_at ? new Date(prepaidPayment.paid_at).toLocaleDateString() : undefined}
+                          notes={prepaidPayment.notes || undefined}
+                          subject={prepaidPayment.subject || undefined}
+                          subjectLabel={cardTitle || undefined}
+                          onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
+                          onPress={() => handleToggleBillingMode(parentData)}
+                          onUpdateSessionsUsed={(newCount) => handleUpdateSessionsUsed(prepaidPayment.id, newCount)}
+                          onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
+                        />
+                      );
+                    });
                   }
 
                   // No prepaid payment for this month yet
@@ -1250,6 +1271,13 @@ export default function PaymentsScreen() {
         parent={selectedPrepaidParent}
         month={selectedMonth}
         loading={createPrepaid.loading}
+        existingPrepaidSubjects={
+          selectedPrepaidParent
+            ? prepaidPayments
+                .filter(p => p.parent_id === selectedPrepaidParent.id && p.subject)
+                .map(p => p.subject as string)
+            : []
+        }
       />
 
       {/* Parent View Preview Modal */}

@@ -970,7 +970,7 @@ export function useGenerateInvoice() {
       const totalAmount = lessons.reduce((sum, l) => sum + l.calculated_amount, 0);
       const roundedTotal = Math.round(totalAmount * 100) / 100;
 
-      // Create the payment record
+      // Create the invoice payment record
       const { data: payment, error: paymentError } = await supabase
         .from('payments')
         .insert({
@@ -979,6 +979,7 @@ export function useGenerateInvoice() {
           amount_due: roundedTotal,
           amount_paid: 0,
           status: 'unpaid' as PaymentStatus,
+          payment_type: 'invoice' as PaymentType,
           notes: notes || `Auto-generated invoice for ${lessons.length} lesson(s)`,
         })
         .select()
@@ -1236,7 +1237,7 @@ export interface LessonDetail {
   scheduled_at: string;
   duration_min: number;
   status: 'scheduled' | 'completed' | 'cancelled';
-  payment_status: 'none' | 'invoiced' | 'paid';
+  payment_status: 'none' | 'invoiced' | 'paid' | 'prepaid';
   is_combined_session: boolean;
   session_id: string | null;
   // Rate calculation details
@@ -1451,11 +1452,10 @@ export function useMonthlyLessonSummary(month?: Date) {
         .eq('tutor_id', user.id)
         .maybeSingle();
 
-      // 2. Fetch all parents with students (only invoice billing mode, not prepaid)
+      // 2. Fetch all parents with students (include all billing modes for hybrid support)
       const { data: parents, error: parentsError } = await supabase
         .from('parents')
-        .select('id, name, billing_mode, students!parent_id(id, name)')
-        .or('billing_mode.is.null,billing_mode.eq.invoice');
+        .select('id, name, billing_mode, prepaid_subjects, students!parent_id(id, name)');
 
       if (parentsError) throw new Error(parentsError.message);
       if (!parents || parents.length === 0) {
@@ -1480,12 +1480,19 @@ export function useMonthlyLessonSummary(month?: Date) {
       }
 
       // Create parent-to-students map
-      const parentMap = new Map<string, { name: string; studentIds: string[] }>();
+      const parentMap = new Map<string, { name: string; studentIds: string[]; prepaidSubjects: string[] }>();
       const studentToParentMap = new Map<string, string>();
 
-      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; students: { id: string; name: string }[] }) => {
+      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; prepaid_subjects: string[] | null; students: { id: string; name: string }[] }) => {
         const studentIds = parent.students?.map((s: { id: string }) => s.id) || [];
-        parentMap.set(parent.id, { name: parent.name, studentIds });
+        const prepaidSubjects: string[] = (parent.prepaid_subjects || []).map((s: string) => s.toLowerCase());
+        // For legacy fully-prepaid families with no per-subject config, treat all subjects as prepaid
+        if (parent.billing_mode === 'prepaid' && prepaidSubjects.length === 0) {
+          // Mark with special flag - these families are fully prepaid
+          parentMap.set(parent.id, { name: parent.name, studentIds, prepaidSubjects: ['__all__'] });
+        } else {
+          parentMap.set(parent.id, { name: parent.name, studentIds, prepaidSubjects });
+        }
         studentIds.forEach((sid: string) => studentToParentMap.set(sid, parent.id));
       });
 
@@ -1620,9 +1627,16 @@ export function useMonthlyLessonSummary(month?: Date) {
         );
         const amount = rateCalc.amount;
 
+        // Check if this lesson's subject is handled by prepaid billing
+        const parentPrepaidSubjects = parentMap.get(parentId)?.prepaidSubjects || [];
+        const isSubjectPrepaid = parentPrepaidSubjects.includes('__all__') ||
+          parentPrepaidSubjects.includes(lesson.subject.toLowerCase());
+
         // Determine payment status
-        let paymentStatus: 'none' | 'invoiced' | 'paid' = 'none';
-        if (paidLessonIds.has(lesson.id)) {
+        let paymentStatus: 'none' | 'invoiced' | 'paid' | 'prepaid' = 'none';
+        if (isSubjectPrepaid) {
+          paymentStatus = 'prepaid';
+        } else if (paidLessonIds.has(lesson.id)) {
           paymentStatus = 'paid';
         } else if (invoicedLessonIds.has(lesson.id)) {
           paymentStatus = 'invoiced';
@@ -1662,7 +1676,16 @@ export function useMonthlyLessonSummary(month?: Date) {
           summary.combined_session_amount += amount;
         }
 
-        // Categorize by status and payment state
+        // Skip prepaid-subject lessons from invoice-related tallies
+        if (isSubjectPrepaid) {
+          // Still count in expected_amount for overall reporting
+          if (lesson.status !== 'cancelled') {
+            summary.expected_amount += amount;
+          }
+          return;
+        }
+
+        // Categorize by status and payment state (invoice subjects only)
         if (lesson.status === 'cancelled') {
           summary.cancelled_count++;
         } else if (lesson.status === 'scheduled') {
@@ -1790,13 +1813,40 @@ export function useQuickInvoice() {
       const monthStart = getMonthStart(month);
       const monthEnd = getMonthEnd(month);
 
-      // Check if payment already exists for this month
+      // Check if an invoice payment already exists for this month
       const { data: existingPayment } = await supabase
         .from('payments')
-        .select('id, amount_due, status')
+        .select('id, amount_due, status, payment_type')
         .eq('parent_id', parentId)
         .eq('month', monthStart)
+        .eq('payment_type', 'invoice')
+        .is('subject', null)
         .maybeSingle();
+
+      // Fetch the parent's prepaid_subjects to know which subjects to skip
+      const { data: parentRecord } = await supabase
+        .from('parents')
+        .select('prepaid_subjects')
+        .eq('id', parentId)
+        .single();
+
+      const prepaidSubjects: string[] = (parentRecord?.prepaid_subjects as string[]) || [];
+
+      // Also check for subject-specific prepaid payments this month
+      const { data: subjectPrepaidPayments } = await supabase
+        .from('payments')
+        .select('subject')
+        .eq('parent_id', parentId)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .not('subject', 'is', null);
+
+      const prepaidPaymentSubjects = new Set([
+        ...prepaidSubjects.map(s => s.toLowerCase()),
+        ...(subjectPrepaidPayments || [])
+          .filter((p: { subject: string | null }) => p.subject !== null)
+          .map((p: { subject: string | null }) => p.subject!.toLowerCase()),
+      ]);
 
       // Get tutor settings (filtered by current user's tutor_id)
       const { data: tutorSettings } = await supabase
@@ -1840,8 +1890,10 @@ export function useQuickInvoice() {
 
       const invoicedLessonIds = new Set((invoicedLessons || []).map((il: { lesson_id: string }) => il.lesson_id));
 
-      // Filter to uninvoiced lessons and calculate amounts
-      const uninvoicedLessons = lessons.filter((l: { id: string }) => !invoicedLessonIds.has(l.id));
+      // Filter to uninvoiced lessons, also excluding lessons whose subject is prepaid
+      const uninvoicedLessons = lessons.filter((l: { id: string; subject: TutoringSubject }) =>
+        !invoicedLessonIds.has(l.id) && !prepaidPaymentSubjects.has(l.subject.toLowerCase())
+      );
 
       if (uninvoicedLessons.length === 0) {
         throw new Error(`All ${lessons.length} completed lesson(s) are already invoiced for parent ${parentId}`);
@@ -1870,7 +1922,7 @@ export function useQuickInvoice() {
       let payment;
 
       if (existingPayment) {
-        // Update existing payment by adding new lessons to it
+        // Update existing invoice payment by adding new lessons to it
         const newAmountDue = Math.round((existingPayment.amount_due + roundedTotal) * 100) / 100;
 
         // If payment was already paid, reset to unpaid since we're adding new uninvoiced lessons
@@ -1890,7 +1942,7 @@ export function useQuickInvoice() {
         if (updateError) throw new Error(updateError.message);
         payment = updatedPayment;
       } else {
-        // Create new payment
+        // Create new invoice payment
         const { data: newPayment, error: paymentError } = await supabase
           .from('payments')
           .insert({
@@ -1899,12 +1951,22 @@ export function useQuickInvoice() {
             amount_due: roundedTotal,
             amount_paid: 0,
             status: 'unpaid' as PaymentStatus,
+            payment_type: 'invoice' as PaymentType,
             notes: `Quick invoice for ${uninvoicedLessons.length} lesson(s)`,
           })
           .select()
           .single();
 
-        if (paymentError) throw new Error(paymentError.message);
+        if (paymentError) {
+          // Handle unique constraint violation - a payment may exist but be invisible due to RLS
+          if (paymentError.message.includes('payments_parent_month_') || paymentError.code === '23505') {
+            throw new Error(
+              'A payment record already exists for this family and month but could not be found. ' +
+              'This may be a data issue. Please try generating the invoice from the Payments page.'
+            );
+          }
+          throw new Error(paymentError.message);
+        }
         payment = newPayment;
       }
 
@@ -2118,17 +2180,25 @@ export function useParentPaymentSummary(parentId: string | null) {
  * @param currentMonth - Current month Date object
  * @returns Number of sessions to roll over
  */
-async function getRolloverSessions(parentId: string, currentMonth: Date): Promise<number> {
+async function getRolloverSessions(parentId: string, currentMonth: Date, subject?: string | null): Promise<number> {
   const previousMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
   const previousMonthStart = getMonthStart(previousMonth);
 
-  const { data: prevPayment } = await supabase
+  let query = supabase
     .from('payments')
     .select('sessions_prepaid, sessions_used')
     .eq('parent_id', parentId)
     .eq('month', previousMonthStart)
-    .eq('payment_type', 'prepaid')
-    .maybeSingle();
+    .eq('payment_type', 'prepaid');
+
+  // Match subject-specific or legacy null-subject prepaid
+  if (subject) {
+    query = query.eq('subject', subject);
+  } else {
+    query = query.is('subject', null);
+  }
+
+  const { data: prevPayment } = await query.maybeSingle();
 
   if (!prevPayment) return 0;
 
@@ -2150,38 +2220,39 @@ export function useCreatePrepaidPayment() {
       setError(null);
 
       const monthStart = getMonthStart(new Date(input.month));
+      const subjectValue = input.subject?.toLowerCase() || null;
 
-      // Check if ANY payment already exists for this month (constraint is on parent_id + month)
-      const { data: existingPayment } = await supabase
+      // Check if a prepaid payment already exists for this month + subject combo
+      let existingQuery = supabase
         .from('payments')
         .select('id, payment_type')
         .eq('parent_id', input.parent_id)
         .eq('month', monthStart)
-        .maybeSingle();
+        .eq('payment_type', 'prepaid');
 
-      if (existingPayment) {
-        if (existingPayment.payment_type === 'prepaid') {
-          throw new Error('A prepaid payment already exists for this family and month');
-        } else {
-          // Delete existing invoice payment to allow prepaid plan creation
-          // This is safe because the family has been switched to prepaid billing mode
-          const { error: deleteError } = await supabase
-            .from('payments')
-            .delete()
-            .eq('id', existingPayment.id);
-
-          if (deleteError) {
-            throw new Error('Failed to remove existing invoice payment. Please try again.');
-          }
-        }
+      if (subjectValue) {
+        existingQuery = existingQuery.eq('subject', subjectValue);
+      } else {
+        existingQuery = existingQuery.is('subject', null);
       }
 
-      // Get rollover sessions from previous month if not provided
+      const { data: existingPayment } = await existingQuery.maybeSingle();
+
+      if (existingPayment) {
+        const subjectLabel = subjectValue || 'all subjects';
+        throw new Error(`A prepaid payment already exists for this family and month (${subjectLabel})`);
+      }
+
+      // Get rollover sessions from previous month if not provided (subject-aware)
       const rolloverSessions = input.sessions_rolled_over ??
-        await getRolloverSessions(input.parent_id, new Date(input.month));
+        await getRolloverSessions(input.parent_id, new Date(input.month), subjectValue);
 
       // Total sessions = new sessions + rollover
       const totalSessions = input.sessions_count + rolloverSessions;
+
+      const subjectLabel = subjectValue
+        ? subjectValue.charAt(0).toUpperCase() + subjectValue.slice(1)
+        : 'all subjects';
 
       const { data: payment, error: createError } = await supabase
         .from('payments')
@@ -2192,16 +2263,36 @@ export function useCreatePrepaidPayment() {
           amount_paid: 0,
           status: 'unpaid' as PaymentStatus,
           payment_type: 'prepaid' as PaymentType,
+          subject: subjectValue,
           sessions_prepaid: totalSessions,
           sessions_used: 0,
           sessions_rolled_over: rolloverSessions,
-          notes: input.notes || `Prepaid for ${input.sessions_count} sessions (${rolloverSessions} rolled over)`,
+          notes: input.notes || `Prepaid ${subjectLabel}: ${input.sessions_count} sessions (${rolloverSessions} rolled over)`,
         })
         .select()
         .single();
 
       if (createError) {
         throw new Error(createError.message);
+      }
+
+      // Update parent's prepaid_subjects array if this is a subject-specific plan
+      if (subjectValue) {
+        const { data: parentData } = await supabase
+          .from('parents')
+          .select('prepaid_subjects')
+          .eq('id', input.parent_id)
+          .single();
+
+        const currentSubjects: string[] = (parentData?.prepaid_subjects as string[]) || [];
+        if (!currentSubjects.includes(subjectValue)) {
+          await supabase
+            .from('parents')
+            .update({
+              prepaid_subjects: [...currentSubjects, subjectValue],
+            })
+            .eq('id', input.parent_id);
+        }
       }
 
       setData(payment);
@@ -2231,7 +2322,7 @@ export function useCreatePrepaidPayment() {
  * @param month - Month Date object (optional, defaults to current month)
  * @returns Prepaid status summary
  */
-export function usePrepaidStatus(parentId: string | null, month?: Date) {
+export function usePrepaidStatus(parentId: string | null, month?: Date, subject?: string) {
   const [data, setData] = useState<PrepaidStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -2250,13 +2341,20 @@ export function usePrepaidStatus(parentId: string | null, month?: Date) {
       setLoading(true);
       setError(null);
 
-      const { data: payment, error: fetchError } = await supabase
+      let query = supabase
         .from('payments')
         .select('*')
         .eq('parent_id', parentId)
         .eq('month', monthStart)
-        .eq('payment_type', 'prepaid')
-        .maybeSingle();
+        .eq('payment_type', 'prepaid');
+
+      if (subject) {
+        query = query.eq('subject', subject.toLowerCase());
+      } else {
+        query = query.is('subject', null);
+      }
+
+      const { data: payment, error: fetchError } = await query.maybeSingle();
 
       if (fetchError) {
         throw new Error(fetchError.message);
@@ -2281,6 +2379,7 @@ export function usePrepaidStatus(parentId: string | null, month?: Date) {
         sessionsRolledOver: payment.sessions_rolled_over || 0,
         usagePercentage,
         isPaid: payment.status === 'paid',
+        subject: payment.subject || null,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch prepaid status');
@@ -2289,7 +2388,7 @@ export function usePrepaidStatus(parentId: string | null, month?: Date) {
     } finally {
       setLoading(false);
     }
-  }, [parentId, monthStart]);
+  }, [parentId, monthStart, subject]);
 
   useEffect(() => {
     fetchStatus();
@@ -2618,6 +2717,7 @@ export function useParentPaymentSummaryWithPrepaid(parentId: string | null) {
             ? Math.round((sessionsUsed / sessionsTotal) * 100)
             : 0,
           isPaid: currentPayment.status === 'paid',
+          subject: currentPayment.subject || null,
         };
 
         // Calculate extra sessions (completed beyond prepaid count)

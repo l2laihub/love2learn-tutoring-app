@@ -27,12 +27,14 @@ interface CreatePrepaidModalProps {
     parent_id: string;
     sessions_count: number;
     amount: number;
+    subject?: string;
     notes?: string;
   }) => Promise<void>;
   parent: ParentWithStudents | null;
   month: Date;
   rolloverSessions?: number;
   loading?: boolean;
+  existingPrepaidSubjects?: string[];
 }
 
 function formatCurrency(amount: number): string {
@@ -47,11 +49,27 @@ export function CreatePrepaidModal({
   month,
   rolloverSessions = 0,
   loading = false,
+  existingPrepaidSubjects = [],
 }: CreatePrepaidModalProps) {
   const [sessionsCount, setSessionsCount] = useState('8');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Get available subjects from the family's students
+  const availableSubjects = React.useMemo(() => {
+    if (!parent?.students) return [];
+    const subjectSet = new Set<string>();
+    parent.students.forEach(student => {
+      (student.subjects || []).forEach(subject => {
+        subjectSet.add(subject.toLowerCase());
+      });
+    });
+    return Array.from(subjectSet).sort();
+  }, [parent?.students]);
+
+  const alreadyCoveredSubjects = new Set(existingPrepaidSubjects.map(s => s.toLowerCase()));
 
   // Reset form when modal opens
   useEffect(() => {
@@ -59,6 +77,7 @@ export function CreatePrepaidModal({
       setSessionsCount('8');
       setAmount('');
       setNotes('');
+      setSelectedSubject(null);
       setError(null);
     }
   }, [visible]);
@@ -91,11 +110,17 @@ export function CreatePrepaidModal({
       return;
     }
 
+    if (!selectedSubject) {
+      setError('Please select a subject');
+      return;
+    }
+
     try {
       await onSubmit({
         parent_id: parent.id,
         sessions_count: sessions,
         amount: amountValue,
+        subject: selectedSubject,
         notes: notes.trim() || undefined,
       });
       onClose();
@@ -152,6 +177,43 @@ export function CreatePrepaidModal({
                 <Text style={styles.familyStudents}>
                   {parent.students?.map(s => s.name).join(', ') || 'No students'}
                 </Text>
+              </View>
+            </View>
+
+            {/* Subject picker */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Subject</Text>
+              <View style={styles.subjectPicker}>
+                {availableSubjects.length === 0 ? (
+                  <Text style={styles.noSubjectsText}>No subjects found for this family's students</Text>
+                ) : (
+                  availableSubjects.map(subject => {
+                    const isSelected = selectedSubject === subject;
+                    const isCovered = alreadyCoveredSubjects.has(subject);
+                    const displayName = subject.charAt(0).toUpperCase() + subject.slice(1);
+                    return (
+                      <Pressable
+                        key={subject}
+                        style={[
+                          styles.subjectChip,
+                          isSelected && styles.subjectChipSelected,
+                          isCovered && styles.subjectChipDisabled,
+                        ]}
+                        onPress={() => !isCovered && setSelectedSubject(subject)}
+                        disabled={isCovered}
+                      >
+                        <Text style={[
+                          styles.subjectChipText,
+                          isSelected && styles.subjectChipTextSelected,
+                          isCovered && styles.subjectChipTextDisabled,
+                        ]}>
+                          {displayName}
+                          {isCovered ? ' (covered)' : ''}
+                        </Text>
+                      </Pressable>
+                    );
+                  })
+                )}
               </View>
             </View>
 
@@ -248,8 +310,20 @@ export function CreatePrepaidModal({
             {/* Summary */}
             <View style={styles.summary}>
               <Text style={styles.summaryTitle}>Summary</Text>
+              {selectedSubject && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Subject</Text>
+                  <Text style={styles.summaryValue}>
+                    {selectedSubject.charAt(0).toUpperCase() + selectedSubject.slice(1)}
+                  </Text>
+                </View>
+              )}
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Sessions</Text>
+                <Text style={styles.summaryLabel}>
+                  {selectedSubject
+                    ? `${selectedSubject.charAt(0).toUpperCase() + selectedSubject.slice(1)} Sessions`
+                    : 'Sessions'}
+                </Text>
                 <Text style={styles.summaryValue}>{totalSessions}</Text>
               </View>
               <View style={styles.summaryRow}>
@@ -365,6 +439,43 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
     marginTop: 2,
+  },
+  subjectPicker: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  subjectChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    backgroundColor: colors.neutral.white,
+  },
+  subjectChipSelected: {
+    borderColor: colors.piano.primary,
+    backgroundColor: colors.piano.subtle,
+  },
+  subjectChipDisabled: {
+    opacity: 0.5,
+    backgroundColor: colors.neutral.background,
+  },
+  subjectChipText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  subjectChipTextSelected: {
+    color: colors.piano.primary,
+  },
+  subjectChipTextDisabled: {
+    color: colors.neutral.textMuted,
+  },
+  noSubjectsText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
   },
   rolloverInfo: {
     flexDirection: 'row',

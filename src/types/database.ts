@@ -50,6 +50,7 @@ export type Database = {
           requires_agreement: boolean | null;
           agreement_signed_at: string | null;
           billing_mode: 'invoice' | 'prepaid';
+          prepaid_subjects: string[];
           created_at: string;
           updated_at: string;
         };
@@ -70,6 +71,7 @@ export type Database = {
           requires_agreement?: boolean | null;
           agreement_signed_at?: string | null;
           billing_mode?: 'invoice' | 'prepaid';
+          prepaid_subjects?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -90,6 +92,7 @@ export type Database = {
           requires_agreement?: boolean | null;
           agreement_signed_at?: string | null;
           billing_mode?: 'invoice' | 'prepaid';
+          prepaid_subjects?: string[];
           created_at?: string;
           updated_at?: string;
         };
@@ -597,6 +600,7 @@ export type Database = {
           paid_at: string | null;
           notes: string | null;
           payment_type: 'invoice' | 'prepaid';
+          subject: string | null;
           sessions_prepaid: number;
           sessions_used: number;
           sessions_rolled_over: number;
@@ -613,6 +617,7 @@ export type Database = {
           paid_at?: string | null;
           notes?: string | null;
           payment_type?: 'invoice' | 'prepaid';
+          subject?: string | null;
           sessions_prepaid?: number;
           sessions_used?: number;
           sessions_rolled_over?: number;
@@ -629,6 +634,7 @@ export type Database = {
           paid_at?: string | null;
           notes?: string | null;
           payment_type?: 'invoice' | 'prepaid';
+          subject?: string | null;
           sessions_prepaid?: number;
           sessions_used?: number;
           sessions_rolled_over?: number;
@@ -1178,6 +1184,7 @@ export interface Payment {
   notes: string | null;
   // Prepaid fields
   payment_type: PaymentType;
+  subject: string | null; // Subject for per-subject prepaid (null = all subjects / legacy / invoice)
   sessions_prepaid: number; // Total sessions covered (includes rollover)
   sessions_used: number; // Sessions consumed from prepayment
   sessions_rolled_over: number; // Sessions rolled over from previous month
@@ -1193,6 +1200,7 @@ export interface PrepaidStatus {
   sessionsRolledOver: number; // sessions_rolled_over
   usagePercentage: number; // (sessions_used / sessions_prepaid) * 100
   isPaid: boolean; // status === 'paid'
+  subject: string | null; // Subject for per-subject prepaid
 }
 
 // ============================================================================
@@ -1583,6 +1591,7 @@ export interface CreatePaymentInput {
   notes?: string | null;
   // Prepaid fields
   payment_type?: PaymentType;
+  subject?: string | null;
   sessions_prepaid?: number;
   sessions_used?: number;
   sessions_rolled_over?: number;
@@ -1608,12 +1617,36 @@ export interface CreatePrepaidPaymentInput {
   sessions_count: number; // Number of sessions for this month
   amount: number; // Amount charged for the prepaid sessions
   sessions_rolled_over?: number; // Sessions rolled over from previous month
+  subject?: string; // Subject for per-subject prepaid (omit for all-subjects legacy mode)
   notes?: string | null;
 }
 
 // Input for updating parent billing mode
 export interface UpdateParentBillingModeInput {
   billing_mode: BillingMode;
+}
+
+/**
+ * Determine the effective billing mode for a specific subject within a family.
+ * A subject is 'prepaid' if:
+ * - The family is fully prepaid (billing_mode='prepaid' and no per-subject config), OR
+ * - The subject is in the parent's prepaid_subjects array
+ * Otherwise it's 'invoice'.
+ */
+export function getSubjectBillingMode(
+  parent: { billing_mode: BillingMode; prepaid_subjects?: string[] | null },
+  subject: string
+): BillingMode {
+  const prepaidSubjects = parent.prepaid_subjects || [];
+  // If subject is explicitly listed as prepaid
+  if (prepaidSubjects.includes(subject.toLowerCase())) {
+    return 'prepaid';
+  }
+  // If family is fully prepaid and no per-subject config exists (legacy mode)
+  if (parent.billing_mode === 'prepaid' && prepaidSubjects.length === 0) {
+    return 'prepaid';
+  }
+  return 'invoice';
 }
 
 export interface CreateAssignmentInput {

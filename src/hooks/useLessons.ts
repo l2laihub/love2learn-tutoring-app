@@ -631,27 +631,55 @@ export function useCompleteLesson() {
       }
 
       // Update prepaid session usage if applicable
-      // First get the lesson details to find the parent
+      // First get the lesson details to find the parent and subject
       const { data: lessonDetails } = await supabase
         .from('scheduled_lessons')
-        .select('scheduled_at, student:students!student_id(parent_id)')
+        .select('scheduled_at, subject, student:students!student_id(parent_id)')
         .eq('id', id)
         .single();
 
       if (lessonDetails?.student?.parent_id) {
         const parentId = lessonDetails.student.parent_id;
         const lessonDate = new Date(lessonDetails.scheduled_at);
+        const lessonSubject = lessonDetails.subject;
         const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
           .toISOString().split('T')[0];
 
-        // Check if parent has a prepaid payment for this month
-        const { data: prepaidPayment } = await supabase
+        // Fetch parent's prepaid_subjects to determine billing mode
+        const { data: parentRecord } = await supabase
+          .from('parents')
+          .select('prepaid_subjects')
+          .eq('id', parentId)
+          .single();
+        const prepaidSubjects: string[] = ((parentRecord?.prepaid_subjects as string[]) || [])
+          .map((s: string) => s.toLowerCase());
+
+        // Try subject-specific prepaid payment first
+        const { data: subjectPrepaid } = await supabase
           .from('payments')
           .select('id, sessions_used')
           .eq('parent_id', parentId)
           .eq('month', monthStart)
           .eq('payment_type', 'prepaid')
+          .eq('subject', lessonSubject)
           .maybeSingle();
+
+        let prepaidPayment = subjectPrepaid;
+
+        if (!prepaidPayment && prepaidSubjects.length === 0) {
+          // Only fall back to legacy all-subjects prepaid when no per-subject config exists.
+          // If prepaid_subjects is non-empty, the family is in hybrid mode and
+          // subjects NOT in the list should be invoiced, not counted against legacy prepaid.
+          const { data: legacyPrepaid } = await supabase
+            .from('payments')
+            .select('id, sessions_used')
+            .eq('parent_id', parentId)
+            .eq('month', monthStart)
+            .eq('payment_type', 'prepaid')
+            .is('subject', null)
+            .maybeSingle();
+          prepaidPayment = legacyPrepaid;
+        }
 
         if (prepaidPayment) {
           // Increment sessions_used
@@ -717,27 +745,53 @@ export function useUncompleteLesson() {
       }
 
       // Decrement prepaid session usage if applicable
-      // First get the lesson details to find the parent
+      // First get the lesson details to find the parent and subject
       const { data: lessonDetails } = await supabase
         .from('scheduled_lessons')
-        .select('scheduled_at, student:students!student_id(parent_id)')
+        .select('scheduled_at, subject, student:students!student_id(parent_id)')
         .eq('id', id)
         .single();
 
       if (lessonDetails?.student?.parent_id) {
         const parentId = lessonDetails.student.parent_id;
         const lessonDate = new Date(lessonDetails.scheduled_at);
+        const lessonSubject = lessonDetails.subject;
         const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
           .toISOString().split('T')[0];
 
-        // Check if parent has a prepaid payment for this month
-        const { data: prepaidPayment } = await supabase
+        // Fetch parent's prepaid_subjects to determine billing mode
+        const { data: parentRecord } = await supabase
+          .from('parents')
+          .select('prepaid_subjects')
+          .eq('id', parentId)
+          .single();
+        const prepaidSubjects: string[] = ((parentRecord?.prepaid_subjects as string[]) || [])
+          .map((s: string) => s.toLowerCase());
+
+        // Try subject-specific prepaid payment first
+        const { data: subjectPrepaid } = await supabase
           .from('payments')
           .select('id, sessions_used')
           .eq('parent_id', parentId)
           .eq('month', monthStart)
           .eq('payment_type', 'prepaid')
+          .eq('subject', lessonSubject)
           .maybeSingle();
+
+        let prepaidPayment = subjectPrepaid;
+
+        if (!prepaidPayment && prepaidSubjects.length === 0) {
+          // Only fall back to legacy all-subjects prepaid when no per-subject config exists
+          const { data: legacyPrepaid } = await supabase
+            .from('payments')
+            .select('id, sessions_used')
+            .eq('parent_id', parentId)
+            .eq('month', monthStart)
+            .eq('payment_type', 'prepaid')
+            .is('subject', null)
+            .maybeSingle();
+          prepaidPayment = legacyPrepaid;
+        }
 
         if (prepaidPayment && (prepaidPayment.sessions_used || 0) > 0) {
           // Decrement sessions_used (but not below 0)

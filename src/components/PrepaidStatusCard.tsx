@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui/Card';
 import { Avatar } from './ui/Avatar';
-import { colors, spacing, typography, borderRadius } from '../theme';
+import { colors, spacing, typography, borderRadius, getSubjectColor } from '../theme';
 
 interface PrepaidStatusCardProps {
   // Family info
@@ -22,6 +22,9 @@ interface PrepaidStatusCardProps {
   isPaid: boolean;
   paidAt?: string;
   notes?: string;
+  // Subject info (for per-subject prepaid)
+  subject?: string;
+  subjectLabel?: string;
   // Actions
   onPress?: () => void;
   onMarkPaid?: () => void;
@@ -47,6 +50,8 @@ export function PrepaidStatusCard({
   isPaid,
   paidAt,
   notes,
+  subject,
+  subjectLabel,
   onPress,
   onMarkPaid,
   onUpdateSessionsUsed,
@@ -55,8 +60,12 @@ export function PrepaidStatusCard({
   const usagePercent = sessionsTotal > 0 ? (sessionsUsed / sessionsTotal) * 100 : 0;
   const isOverLimit = sessionsUsed > sessionsTotal;
 
+  // Get subject color for per-subject cards
+  const subjectColor = subject ? getSubjectColor(subject) : null;
+  const accentColor = subjectColor?.primary || colors.piano.primary;
+
   // Determine progress bar color
-  let progressColor: string = colors.piano.primary;
+  let progressColor: string = accentColor;
   if (usagePercent >= 100) {
     progressColor = colors.status.error;
   } else if (usagePercent >= 75) {
@@ -64,12 +73,15 @@ export function PrepaidStatusCard({
   }
 
   return (
-    <Card onPress={onPress} style={styles.card}>
+    <Card onPress={onPress} style={[styles.card, subject && { borderLeftWidth: 3, borderLeftColor: accentColor }]}>
       {/* Header */}
       <View style={styles.header}>
         <Avatar name={parentName} size="md" />
         <View style={styles.headerText}>
-          <Text style={styles.parentName}>{parentName}</Text>
+          <Text style={styles.parentName}>
+            {parentName}
+            {subjectLabel ? ` - ${subjectLabel}` : ''}
+          </Text>
           <Text style={styles.students}>
             {studentNames.join(', ')}
           </Text>

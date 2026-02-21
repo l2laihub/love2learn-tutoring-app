@@ -372,10 +372,11 @@ function getStatusIcon(status: 'scheduled' | 'completed' | 'cancelled'): string 
   }
 }
 
-function getPaymentStatusColor(paymentStatus: 'none' | 'invoiced' | 'paid'): string {
+function getPaymentStatusColor(paymentStatus: 'none' | 'invoiced' | 'paid' | 'prepaid'): string {
   switch (paymentStatus) {
     case 'paid': return colors.math.primary;
     case 'invoiced': return colors.piano.primary;
+    case 'prepaid': return colors.status.info;
     case 'none': return colors.neutral.textMuted;
   }
 }
