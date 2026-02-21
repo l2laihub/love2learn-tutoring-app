@@ -224,9 +224,12 @@ CREATE TRIGGER trigger_set_agreement_template_tutor_id
 -- UPDATE UNIQUE CONSTRAINT TO BE PER-TUTOR
 -- ============================================================================
 
--- Drop old constraint (version unique per type across ALL tutors)
+-- Drop old constraints
 ALTER TABLE agreement_templates
 DROP CONSTRAINT IF EXISTS unique_version_per_type;
+
+ALTER TABLE agreement_templates
+DROP CONSTRAINT IF EXISTS unique_version_per_type_per_tutor;
 
 -- Add new constraint (version unique per type PER TUTOR)
 ALTER TABLE agreement_templates

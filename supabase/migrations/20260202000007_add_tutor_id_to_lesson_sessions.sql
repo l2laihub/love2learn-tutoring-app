@@ -34,8 +34,9 @@ WHERE ls.tutor_id IS NULL;
 -- FIX RLS POLICY FOR MULTI-TUTOR
 -- ============================================================================
 
--- Drop old policy that allows any tutor to manage all sessions
+-- Drop old policies
 DROP POLICY IF EXISTS "Tutors can manage all lesson sessions" ON lesson_sessions;
+DROP POLICY IF EXISTS "Tutors can manage their lesson sessions" ON lesson_sessions;
 
 -- Create policy that restricts tutors to their own sessions
 CREATE POLICY "Tutors can manage their lesson sessions"
