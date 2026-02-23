@@ -1235,14 +1235,20 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
   // Filter out lessons with null students (orphaned lessons from deleted students)
   const validLessons = lessons.filter(lesson => lesson.student !== null);
 
-  // Separate lessons into sessions and standalone
+  // Separate lessons into sessions and standalone, deduplicating standalone lessons
+  const seenStandaloneKeys = new Set<string>();
+
   for (const lesson of validLessons) {
     if (lesson.session_id) {
       const existing = sessionMap.get(lesson.session_id) || [];
       existing.push(lesson);
       sessionMap.set(lesson.session_id, existing);
     } else {
-      standaloneLessons.push(lesson);
+      const dedupeKey = `${lesson.student_id}|${lesson.subject}|${lesson.scheduled_at}`;
+      if (!seenStandaloneKeys.has(dedupeKey)) {
+        seenStandaloneKeys.add(dedupeKey);
+        standaloneLessons.push(lesson);
+      }
     }
   }
 
@@ -1292,12 +1298,23 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
     });
   }
 
+  // Deduplicate session groups (different session_ids with same students/time)
+  const seenGroupKeys = new Set<string>();
+  const dedupedGrouped = grouped.filter(group => {
+    const names = [...group.student_names].sort().join(',');
+    const subjects = [...group.subjects].sort().join(',');
+    const key = `${group.scheduled_at}|${names}|${subjects}`;
+    if (seenGroupKeys.has(key)) return false;
+    seenGroupKeys.add(key);
+    return true;
+  });
+
   // Sort all grouped lessons by scheduled_at
-  grouped.sort((a, b) =>
+  dedupedGrouped.sort((a, b) =>
     new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime()
   );
 
-  return grouped;
+  return dedupedGrouped;
 }
 
 /**

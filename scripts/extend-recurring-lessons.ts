@@ -377,7 +377,24 @@ async function createStandaloneLessons(series: RecurringSeries, newDates: Date[]
     return newDates.length;
   }
 
-  const lessonInputs = newDates.map(date => ({
+  // Check for existing lessons to avoid duplicates
+  const scheduledAts = newDates.map(d => d.toISOString());
+  const { data: existing } = await supabase
+    .from('scheduled_lessons')
+    .select('scheduled_at')
+    .eq('student_id', series.studentId)
+    .eq('subject', series.subject)
+    .eq('status', 'scheduled')
+    .in('scheduled_at', scheduledAts);
+
+  const existingDates = new Set((existing || []).map(e => e.scheduled_at));
+  const filteredDates = newDates.filter(d => !existingDates.has(d.toISOString()));
+
+  if (filteredDates.length === 0) {
+    return 0;
+  }
+
+  const lessonInputs = filteredDates.map(date => ({
     student_id: series.studentId,
     subject: series.subject,
     scheduled_at: date.toISOString(),
@@ -407,6 +424,28 @@ async function createSessionLessons(series: SessionSeries, newDates: Date[]): Pr
   let createdCount = 0;
 
   for (const date of newDates) {
+    // Check if lessons already exist for all student/subject combos at this time
+    const scheduledAt = date.toISOString();
+    const studentIds = series.studentSubjects.map(ss => ss.studentId);
+
+    const { data: existing } = await supabase
+      .from('scheduled_lessons')
+      .select('student_id, subject')
+      .in('student_id', studentIds)
+      .eq('scheduled_at', scheduledAt)
+      .eq('status', 'scheduled');
+
+    if (existing && existing.length > 0) {
+      const existingKeys = new Set(existing.map(e => `${e.student_id}|${e.subject}`));
+      const allExist = series.studentSubjects.every(ss =>
+        existingKeys.has(`${ss.studentId}|${ss.subject}`)
+      );
+      if (allExist) {
+        console.log(`  Skipping ${scheduledAt} - lessons already exist`);
+        continue;
+      }
+    }
+
     // Create the session
     const { data: session, error: sessionError } = await supabase
       .from('lesson_sessions')
