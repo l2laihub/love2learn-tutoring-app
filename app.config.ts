@@ -148,7 +148,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
     eas: {
       // Replace with your actual EAS project ID from expo.dev
-      projectId: 'your-eas-project-id',
+      projectId: '',
     },
   },
 
