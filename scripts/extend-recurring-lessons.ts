@@ -85,13 +85,80 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Utility functions
+// Default timezone for lesson scheduling (tutor's business timezone)
+const SCRIPT_TIMEZONE = 'America/Los_Angeles';
+
+// Timezone-aware utility: extract date parts in the configured timezone
+function getPartsInTimezone(date: Date, timezone: string = SCRIPT_TIMEZONE) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) => {
+    const part = parts.find(p => p.type === type);
+    return part ? parseInt(part.value, 10) : 0;
+  };
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour') === 24 ? 0 : get('hour'),
+    minute: get('minute'),
+    second: get('second'),
+  };
+}
+
+// Create a UTC Date corresponding to wall-clock time in a timezone
+function dateFromTimezone(
+  year: number, month: number, day: number,
+  hour: number, minute: number, second: number,
+  timezone: string = SCRIPT_TIMEZONE
+): Date {
+  const rough = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const parts = getPartsInTimezone(rough, timezone);
+  const diffHours = hour - parts.hour;
+  const diffMinutes = minute - parts.minute;
+  const diffDays = day - parts.day;
+  let totalMinutesDiff = diffDays * 24 * 60 + diffHours * 60 + diffMinutes;
+  if (diffDays > 15) totalMinutesDiff -= 28 * 24 * 60;
+  if (diffDays < -15) totalMinutesDiff += 28 * 24 * 60;
+  const adjusted = new Date(rough.getTime() + totalMinutesDiff * 60 * 1000);
+  const verify = getPartsInTimezone(adjusted, timezone);
+  if (verify.hour !== hour || verify.minute !== minute || verify.day !== day) {
+    const finalDiff = (hour - verify.hour) * 60 + (minute - verify.minute);
+    return new Date(adjusted.getTime() + finalDiff * 60 * 1000);
+  }
+  return adjusted;
+}
+
+// Add N days preserving wall-clock time in the configured timezone
+function addDaysInTz(date: Date, days: number): Date {
+  const parts = getPartsInTimezone(date);
+  return dateFromTimezone(parts.year, parts.month, parts.day + days, parts.hour, parts.minute, parts.second);
+}
+
+// Utility functions (timezone-aware)
 function getDayOfWeek(date: Date): number {
-  return date.getDay();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: SCRIPT_TIMEZONE,
+    weekday: 'short',
+  });
+  const dayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6,
+  };
+  return dayMap[formatter.format(date)] ?? date.getDay();
 }
 
 function getTimeOfDay(date: Date): string {
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+  const parts = getPartsInTimezone(date);
+  return `${parts.hour.toString().padStart(2, '0')}:${parts.minute.toString().padStart(2, '0')}`;
 }
 
 function detectInterval(dates: Date[]): { type: 'weekly' | 'biweekly' | 'monthly' | 'unknown'; days: number } {
@@ -143,10 +210,12 @@ function generateNewDates(lastDate: Date, interval: 'weekly' | 'biweekly' | 'mon
 
   while (true) {
     if (interval === 'monthly') {
-      currentDate = new Date(currentDate);
-      currentDate.setMonth(currentDate.getMonth() + 1);
+      // For monthly, add 1 month preserving wall-clock time in timezone
+      const parts = getPartsInTimezone(currentDate);
+      currentDate = dateFromTimezone(parts.year, parts.month + 1, parts.day, parts.hour, parts.minute, parts.second);
     } else if (intervalDays > 0) {
-      currentDate = new Date(currentDate.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+      // Use timezone-aware day addition to preserve wall-clock time across DST
+      currentDate = addDaysInTz(currentDate, intervalDays);
     } else {
       break; // Unknown interval, can't generate
     }

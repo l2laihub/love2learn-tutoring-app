@@ -27,13 +27,13 @@ export function useSendParentInvitation() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const sendInvitation = useCallback(async (parentId: string): Promise<SendInvitationResult> => {
+  const sendInvitation = useCallback(async (parentId: string, resend: boolean = false): Promise<SendInvitationResult> => {
     try {
       setLoading(true);
       setError(null);
 
       const { data, error: invokeError } = await supabase.functions.invoke('send-parent-invite', {
-        body: { parentId },
+        body: { parentId, resend },
       });
 
       if (invokeError) {

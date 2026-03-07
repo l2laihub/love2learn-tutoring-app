@@ -15,6 +15,7 @@ const corsHeaders = {
 
 interface InviteRequest {
   parentId: string;
+  resend?: boolean;
 }
 
 interface ParentData {
@@ -56,7 +57,7 @@ serve(async (req: Request) => {
     }
 
     // Parse request body
-    const { parentId }: InviteRequest = await req.json();
+    const { parentId, resend }: InviteRequest = await req.json();
 
     if (!parentId) {
       return new Response(
@@ -130,10 +131,10 @@ serve(async (req: Request) => {
       );
     }
 
-    // Check if parent already has an account
-    if (parentData.user_id) {
+    // Check if parent already has an account (allow if resend is explicitly requested)
+    if (parentData.user_id && !resend) {
       return new Response(
-        JSON.stringify({ error: 'Parent already has an active account' }),
+        JSON.stringify({ error: 'Parent already has an active account. Use resend option to send again.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -180,9 +181,10 @@ serve(async (req: Request) => {
     // Get display name for branding
     const businessDisplayName = tutorData?.business_name || tutorData?.name || 'Love to Learn Academy';
 
-    // Generate invitation token
+    // Generate invitation token (use regenerate for resend to bypass user_id constraint)
+    const rpcName = resend ? 'regenerate_parent_invitation' : 'generate_parent_invitation';
     const { data: tokenData, error: tokenError } = await supabase
-      .rpc('generate_parent_invitation', { parent_id: parentId });
+      .rpc(rpcName, { parent_id: parentId });
 
     if (tokenError) {
       console.error('Error generating invitation token:', tokenError);

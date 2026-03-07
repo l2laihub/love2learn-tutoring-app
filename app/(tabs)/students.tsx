@@ -432,19 +432,9 @@ export default function StudentsScreen() {
   const handleSendInvitation = async (parent: Parent) => {
     console.log('[handleSendInvitation] Called for parent:', parent.id, parent.name);
 
-    // Check if parent already has an account
-    if (parent.user_id) {
-      console.log('[handleSendInvitation] Parent already has account');
-      if (Platform.OS === 'web') {
-        window.alert(`${parent.name} already has an account.`);
-      } else {
-        Alert.alert('Already Registered', `${parent.name} already has an account.`);
-      }
-      return;
-    }
-
-    // Confirm before sending
-    const isResend = parent.invitation_sent_at != null;
+    // Determine if this is a resend (has existing account or previous invitation)
+    const hasAccount = !!parent.user_id;
+    const isResend = parent.invitation_sent_at != null || hasAccount;
     const actionText = isResend ? 'Resend' : 'Send';
 
     console.log('[handleSendInvitation] Showing confirmation dialog');
@@ -454,7 +444,7 @@ export default function StudentsScreen() {
       console.log('[handleSendInvitation] User confirmed, sending invitation...');
       setSendingInviteForParentId(parent.id);
       try {
-        const result = await sendInvitation(parent.id);
+        const result = await sendInvitation(parent.id, isResend);
         console.log('[handleSendInvitation] Result:', result);
         if (result.success) {
           if (Platform.OS === 'web') {

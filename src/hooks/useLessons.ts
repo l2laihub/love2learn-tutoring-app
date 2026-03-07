@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { getWeekQueryRange } from '../utils/dateUtils';
 import {
   ScheduledLesson,
   ScheduledLessonWithStudent,
@@ -1235,10 +1236,15 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
   // Filter out lessons with null students (orphaned lessons from deleted students)
   const validLessons = lessons.filter(lesson => lesson.student !== null);
 
+  // Defense-in-depth: deduplicate by lesson ID to handle overlapping fetches or stale cache
+  const seenLessonIds = new Set<string>();
+
   // Separate lessons into sessions and standalone, deduplicating standalone lessons
   const seenStandaloneKeys = new Set<string>();
 
   for (const lesson of validLessons) {
+    if (seenLessonIds.has(lesson.id)) continue;
+    seenLessonIds.add(lesson.id);
     if (lesson.session_id) {
       const existing = sessionMap.get(lesson.session_id) || [];
       existing.push(lesson);
@@ -1335,19 +1341,15 @@ export function useGroupedLessons(options: LessonsFilterOptions = {}): ListQuery
 /**
  * Hook that returns grouped lessons for a specific week
  * @param weekStart - Start date of the week
+ * @param timezone - IANA timezone string for DST-safe date range calculation
  * @returns Grouped lessons for the week
  */
-export function useWeekGroupedLessons(weekStart: Date): ListQueryState<GroupedLesson> {
-  const startDate = new Date(weekStart);
-  startDate.setHours(0, 0, 0, 0);
-
-  const endDate = new Date(startDate);
-  endDate.setDate(endDate.getDate() + 6);
-  endDate.setHours(23, 59, 59, 999);
+export function useWeekGroupedLessons(weekStart: Date, timezone: string = 'America/Los_Angeles'): ListQueryState<GroupedLesson> {
+  const { startISO, endISO } = getWeekQueryRange(weekStart, timezone);
 
   return useGroupedLessons({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startDate: startISO,
+    endDate: endISO,
   });
 }
 

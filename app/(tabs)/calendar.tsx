@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
+import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone } from '../../src/utils/dateUtils';
 import { supabase } from '../../src/lib/supabase';
 import {
   useWeekGroupedLessons,
@@ -76,14 +77,10 @@ const SUBJECT_NAMES: Record<TutoringSubject, string> = {
   english: 'English',
 };
 
-// Helper to get the Monday of the current week
+// Helper to get the Monday of the current week (fallback for initial render before timezone loads)
 function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  // Use DEFAULT_TIMEZONE for DST-safe initial calculation
+  return getWeekStartInTimezone(date, DEFAULT_TIMEZONE);
 }
 
 // Helper to format date as key (using local date, not UTC)
@@ -141,8 +138,12 @@ export default function CalendarScreen() {
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  // Fetch data - now using grouped lessons
-  const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart);
+  // Fetch tutor branding (includes timezone) - must be before lesson fetch for timezone
+  const { data: tutorBranding } = useTutorBranding();
+  const tutorTimezone = tutorBranding?.timezone || DEFAULT_TIMEZONE;
+
+  // Fetch data - now using grouped lessons with timezone-aware query range
+  const { data: groupedLessons, loading, error, refetch } = useWeekGroupedLessons(weekStart, tutorTimezone);
 
   // Refetch when tab gains focus (e.g., after tutor approves a reschedule on another screen)
   useFocusEffect(
@@ -152,10 +153,6 @@ export default function CalendarScreen() {
   );
   const { data: students, loading: studentsLoading } = useStudents();
   const { data: tutorSettings } = useTutorSettings();
-
-  // Fetch tutor branding (includes timezone)
-  const { data: tutorBranding } = useTutorBranding();
-  const tutorTimezone = tutorBranding?.timezone || DEFAULT_TIMEZONE;
 
   // Fetch parent's students (for drop-in requests)
   const { data: parentStudents } = useStudentsByParent(!isTutor ? parent?.id || null : null);
@@ -266,16 +263,10 @@ export default function CalendarScreen() {
     return map;
   }, [groupedLessons, tutorTimezone]);
 
-  // Generate week days
+  // Generate week days (timezone-aware for DST safety)
   const weekDays = useMemo(() => {
-    const days: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const day = new Date(weekStart);
-      day.setDate(weekStart.getDate() + i);
-      days.push(day);
-    }
-    return days;
-  }, [weekStart]);
+    return getWeekDaysInTimezone(weekStart, tutorTimezone);
+  }, [weekStart, tutorTimezone]);
 
   // Helper to get breaks for a specific date
   const getBreaksForDate = useCallback((date: Date): TutorBreak[] => {
@@ -284,21 +275,17 @@ export default function CalendarScreen() {
     return weeklyBreaks.get(dayOfWeek) || [];
   }, [isTutor, weeklyBreaks]);
 
-  // Navigation
+  // Navigation (timezone-aware to handle DST transitions correctly)
   const goToPreviousWeek = () => {
-    const newStart = new Date(weekStart);
-    newStart.setDate(newStart.getDate() - 7);
-    setWeekStart(newStart);
+    setWeekStart(addDaysInTimezone(weekStart, -7, tutorTimezone));
   };
 
   const goToNextWeek = () => {
-    const newStart = new Date(weekStart);
-    newStart.setDate(newStart.getDate() + 7);
-    setWeekStart(newStart);
+    setWeekStart(addDaysInTimezone(weekStart, 7, tutorTimezone));
   };
 
   const goToToday = () => {
-    setWeekStart(getWeekStart(new Date()));
+    setWeekStart(getWeekStartInTimezone(new Date(), tutorTimezone));
   };
 
   // Handlers
