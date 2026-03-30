@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
-import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone } from '../../src/utils/dateUtils';
+import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone, getDayInTimezone, getDayOfWeekInTimezone, getPartsInTimezone, dateFromTimezone, isSameDayInTimezone, formatTimeInTimezone } from '../../src/utils/dateUtils';
 import { supabase } from '../../src/lib/supabase';
 import {
   useWeekGroupedLessons,
@@ -169,13 +169,13 @@ export default function CalendarScreen() {
   const createLesson = useCreateLesson();
   const createGroupedLesson = useCreateGroupedLesson();
   const updateLesson = useUpdateLesson();
-  const updateLessonSeries = useUpdateLessonSeries();
+  const updateLessonSeries = useUpdateLessonSeries(tutorTimezone);
   const completeLesson = useCompleteLesson();
   const cancelLesson = useCancelLesson();
   const uncompleteLesson = useUncompleteLesson();
   const deleteLesson = useDeleteLesson();
   const deleteLessonSession = useDeleteLessonSession();
-  const { findSeries, findSessionSeries } = useFindRecurringSeries();
+  const { findSeries, findSessionSeries } = useFindRecurringSeries(tutorTimezone);
   const deleteLessonSeries = useDeleteLessonSeries();
   const quickInvoice = useQuickInvoice();
   const incrementSessionUsage = useIncrementSessionUsage();
@@ -268,12 +268,12 @@ export default function CalendarScreen() {
     return getWeekDaysInTimezone(weekStart, tutorTimezone);
   }, [weekStart, tutorTimezone]);
 
-  // Helper to get breaks for a specific date
+  // Helper to get breaks for a specific date (timezone-aware)
   const getBreaksForDate = useCallback((date: Date): TutorBreak[] => {
     if (!isTutor || !weeklyBreaks) return [];
-    const dayOfWeek = date.getDay(); // 0=Sunday, 6=Saturday
+    const dayOfWeek = getDayOfWeekInTimezone(date, tutorTimezone); // 0=Sunday, 6=Saturday
     return weeklyBreaks.get(dayOfWeek) || [];
-  }, [isTutor, weeklyBreaks]);
+  }, [isTutor, weeklyBreaks, tutorTimezone]);
 
   // Navigation (timezone-aware to handle DST transitions correctly)
   const goToPreviousWeek = () => {
@@ -337,11 +337,11 @@ export default function CalendarScreen() {
       return;
     }
 
-    // Generate recurring dates
+    // Generate recurring dates (timezone-aware to handle DST transitions)
     const startDate = new Date(data.scheduled_at);
     const endDate = data.recurrence_end_date
       ? new Date(data.recurrence_end_date)
-      : new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000); // Default 1 year
+      : addDaysInTimezone(startDate, 365, tutorTimezone); // Default 1 year
 
     // Calculate interval in days based on recurrence type
     let intervalDays: number;
@@ -362,15 +362,18 @@ export default function CalendarScreen() {
     const datesToCreate: Date[] = [startDate];
     let currentDate = new Date(startDate);
 
-    // Generate dates for the recurrence period
+    // Generate dates for the recurrence period using timezone-aware arithmetic
+    // to preserve wall-clock time across DST transitions
     while (true) {
       if (data.recurrence === 'monthly') {
-        // For monthly, add one month to the date
-        currentDate = new Date(currentDate);
-        currentDate.setMonth(currentDate.getMonth() + 1);
+        // For monthly, add one month preserving wall-clock time in tutor's timezone
+        const parts = getPartsInTimezone(currentDate, tutorTimezone);
+        // Normalize month overflow (e.g., month 13 → Jan next year) via Date.UTC
+        const resolved = new Date(Date.UTC(parts.year, parts.month, parts.day)); // month is already 1-based, so month+0 in 0-based = next month
+        currentDate = dateFromTimezone(resolved.getUTCFullYear(), resolved.getUTCMonth() + 1, resolved.getUTCDate(), parts.hour, parts.minute, parts.second, tutorTimezone);
       } else {
-        // For weekly/biweekly, add the interval days
-        currentDate = new Date(currentDate.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+        // For weekly/biweekly, use DST-safe day addition
+        currentDate = addDaysInTimezone(currentDate, intervalDays, tutorTimezone);
       }
 
       // Stop if we've passed the end date
@@ -396,11 +399,11 @@ export default function CalendarScreen() {
     const startDate = new Date(sessionData.scheduled_at);
     let datesToCreate: Date[] = [startDate];
 
-    // If recurrence is set, generate additional dates
+    // If recurrence is set, generate additional dates (timezone-aware for DST)
     if (sessionData.recurrence && sessionData.recurrence !== 'none') {
       const endDate = sessionData.recurrence_end_date
         ? new Date(sessionData.recurrence_end_date)
-        : new Date(startDate.getTime() + 365 * 24 * 60 * 60 * 1000); // Default 1 year
+        : addDaysInTimezone(startDate, 365, tutorTimezone); // Default 1 year
 
       let intervalDays: number;
       switch (sessionData.recurrence) {
@@ -421,10 +424,11 @@ export default function CalendarScreen() {
 
       while (true) {
         if (sessionData.recurrence === 'monthly') {
-          currentDate = new Date(currentDate);
-          currentDate.setMonth(currentDate.getMonth() + 1);
+          const parts = getPartsInTimezone(currentDate, tutorTimezone);
+          const resolved = new Date(Date.UTC(parts.year, parts.month, parts.day)); // month is 1-based, so this advances by 1 month in 0-based
+          currentDate = dateFromTimezone(resolved.getUTCFullYear(), resolved.getUTCMonth() + 1, resolved.getUTCDate(), parts.hour, parts.minute, parts.second, tutorTimezone);
         } else {
-          currentDate = new Date(currentDate.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+          currentDate = addDaysInTimezone(currentDate, intervalDays, tutorTimezone);
         }
 
         if (currentDate > endDate) break;
@@ -544,9 +548,9 @@ export default function CalendarScreen() {
   const handleUpdateLesson = async (data: LessonFormData) => {
     if (!selectedLesson) return;
 
-    // Extract the new time from the scheduled_at
+    // Extract the new time from the scheduled_at (in tutor's timezone)
     const newDate = new Date(data.scheduled_at);
-    const newTime = `${newDate.getHours().toString().padStart(2, '0')}:${newDate.getMinutes().toString().padStart(2, '0')}`;
+    const newTime = formatTimeInTimezone(newDate, tutorTimezone);
 
     // If editing entire series, update all lessons in the series
     if (isEditSeriesMode && seriesLessonIds.length > 1) {
@@ -790,29 +794,25 @@ export default function CalendarScreen() {
     // Could show a success toast here
   };
 
-  // Check if a date is today
+  // Check if a date is today (timezone-aware)
   const isToday = (date: Date): boolean => {
-    const today = new Date();
-    return (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    );
+    return isSameDayInTimezone(date, new Date(), tutorTimezone);
   };
 
-  // Format week range for header
+  // Format week range for header (timezone-aware)
   const weekRangeText = useMemo(() => {
-    const endDate = new Date(weekStart);
-    endDate.setDate(endDate.getDate() + 6);
-    const startMonth = weekStart.toLocaleDateString('en-US', { month: 'short' });
-    const endMonth = endDate.toLocaleDateString('en-US', { month: 'short' });
-    const year = weekStart.getFullYear();
+    const endDate = addDaysInTimezone(weekStart, 6, tutorTimezone);
+    const startParts = getPartsInTimezone(weekStart, tutorTimezone);
+    const endParts = getPartsInTimezone(endDate, tutorTimezone);
+    const monthNames = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const startMonth = monthNames[startParts.month];
+    const endMonth = monthNames[endParts.month];
 
     if (startMonth === endMonth) {
-      return `${startMonth} ${weekStart.getDate()} - ${endDate.getDate()}, ${year}`;
+      return `${startMonth} ${startParts.day} - ${endParts.day}, ${startParts.year}`;
     }
-    return `${startMonth} ${weekStart.getDate()} - ${endMonth} ${endDate.getDate()}, ${year}`;
-  }, [weekStart]);
+    return `${startMonth} ${startParts.day} - ${endMonth} ${endParts.day}, ${startParts.year}`;
+  }, [weekStart, tutorTimezone]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -942,7 +942,7 @@ export default function CalendarScreen() {
               ...dayLessons.map(lesson => ({
                 type: 'lesson' as const,
                 data: lesson,
-                sortTime: new Date(lesson.scheduled_at).toTimeString().slice(0, 5), // HH:MM
+                sortTime: formatTimeInTimezone(new Date(lesson.scheduled_at), tutorTimezone), // HH:MM in tutor timezone
               })),
               ...dayBreaks.map(breakSlot => ({
                 type: 'break' as const,
@@ -960,7 +960,7 @@ export default function CalendarScreen() {
                   </Text>
                   <View style={[styles.dayNumber, today && styles.dayNumberToday]}>
                     <Text style={[styles.dayNumberText, today && styles.dayNumberTextToday]}>
-                      {day.getDate()}
+                      {getDayInTimezone(day, tutorTimezone)}
                     </Text>
                   </View>
                 </View>
@@ -1007,18 +1007,20 @@ export default function CalendarScreen() {
                       const primarySubject = group.subjects[0];
                       const subjectColor = getSubjectColor(primarySubject);
 
-                      // Format time range
+                      // Format time range (in tutor's timezone for consistency)
                       const startTime = new Date(group.scheduled_at);
                       const endTime = new Date(group.end_time);
                       const startTimeString = startTime.toLocaleTimeString('en-US', {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true,
+                        timeZone: tutorTimezone,
                       });
                       const endTimeString = endTime.toLocaleTimeString('en-US', {
                         hour: 'numeric',
                         minute: '2-digit',
                         hour12: true,
+                        timeZone: tutorTimezone,
                       });
 
                       // Format student names (join with &)

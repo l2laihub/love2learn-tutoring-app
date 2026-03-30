@@ -6,97 +6,22 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "APP_ENV": "development"
-      },
-      "ios": {
-        "simulator": true,
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
-      },
-      "channel": "development"
-    },
-    "development-device": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "APP_ENV": "development"
-      },
-      "ios": {
-        "simulator": false,
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug"
-      },
-      "channel": "development"
+      "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "APP_ENV": "preview"
-      },
-      "ios": {
-        "simulator": false,
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "buildType": "apk"
-      },
-      "channel": "preview"
-    },
-    "preview-testflight": {
-      "distribution": "store",
-      "env": {
-        "APP_ENV": "preview"
-      },
-      "ios": {
-        "resourceClass": "m-medium"
-      },
-      "channel": "preview"
+      "distribution": "internal"
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "APP_ENV": "production"
-      },
-      "ios": {
-        "resourceClass": "m-medium"
-      },
-      "android": {
-        "buildType": "app-bundle"
-      },
       "channel": "production"
     }
   },
   "submit": {
     "production": {
       "ios": {
-        "appleId": "YOUR_APPLE_ID@email.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
-      },
-      "android": {
-        "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "production",
-        "releaseStatus": "completed"
-      }
-    },
-    "preview": {
-      "ios": {
-        "appleId": "YOUR_APPLE_ID@email.com",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
-      },
-      "android": {
-        "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal",
-        "releaseStatus": "completed"
+        "appleId": "dqh978@gmail.com",
+        "ascAppId": "6760299534",
+        "appleTeamId": "X6P6XG7GPP"
       }
     }
   }

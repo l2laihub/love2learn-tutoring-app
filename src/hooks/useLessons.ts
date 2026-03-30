@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { getWeekQueryRange } from '../utils/dateUtils';
+import { getWeekQueryRange, getDayOfWeekInTimezone, formatTimeInTimezone, getPartsInTimezone, dateFromTimezone } from '../utils/dateUtils';
 import {
   ScheduledLesson,
   ScheduledLessonWithStudent,
@@ -408,7 +408,7 @@ export function useUpdateLesson() {
  * Updates the time for each lesson while keeping the same day
  * @returns Mutation state with update function
  */
-export function useUpdateLessonSeries() {
+export function useUpdateLessonSeries(timezone: string = 'America/Los_Angeles') {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
@@ -421,7 +421,7 @@ export function useUpdateLessonSeries() {
   const mutate = useCallback(async (
     lessonIds: string[],
     updates: {
-      newTime?: string; // New time in HH:MM format
+      newTime?: string; // New time in HH:MM format (in tutor's timezone)
       duration_min?: number;
       notes?: string;
     },
@@ -452,11 +452,13 @@ export function useUpdateLessonSeries() {
         };
 
         // If new time is provided, update scheduled_at while keeping the same date
+        // Use timezone-aware arithmetic to handle DST correctly
         if (updates.newTime) {
           const currentDate = new Date(lesson.scheduled_at);
+          const parts = getPartsInTimezone(currentDate, timezone);
           const [hours, minutes] = updates.newTime.split(':').map(Number);
-          currentDate.setHours(hours, minutes, 0, 0);
-          updateData.scheduled_at = currentDate.toISOString();
+          const newDate = dateFromTimezone(parts.year, parts.month, parts.day, hours, minutes, 0, timezone);
+          updateData.scheduled_at = newDate.toISOString();
         }
 
         // Update duration if provided
@@ -874,13 +876,13 @@ export function useDeleteLesson() {
  * Finds lessons that match the same student, subject, time of day, and day of week
  * @returns Function to find series and count
  */
-export function useFindRecurringSeries() {
-  // Find recurring series for standalone lessons
+export function useFindRecurringSeries(timezone: string = 'America/Los_Angeles') {
+  // Find recurring series for standalone lessons (timezone-aware)
   const findSeries = useCallback(async (lesson: ScheduledLessonWithStudent): Promise<string[]> => {
     try {
       const lessonDate = new Date(lesson.scheduled_at);
-      const dayOfWeek = lessonDate.getDay();
-      const timeString = lessonDate.toTimeString().slice(0, 5); // HH:MM format
+      const dayOfWeek = getDayOfWeekInTimezone(lessonDate, timezone);
+      const timeString = formatTimeInTimezone(lessonDate, timezone); // HH:MM format
 
       // Get all lessons for this student with same subject
       const { data: allLessons, error: fetchError } = await supabase
@@ -896,11 +898,11 @@ export function useFindRecurringSeries() {
 
       if (!allLessons) return [lesson.id];
 
-      // Filter to lessons on same day of week and same time
+      // Filter to lessons on same day of week and same time (in tutor's timezone)
       const seriesLessons = allLessons.filter(l => {
         const d = new Date(l.scheduled_at);
-        const lDayOfWeek = d.getDay();
-        const lTimeString = d.toTimeString().slice(0, 5);
+        const lDayOfWeek = getDayOfWeekInTimezone(d, timezone);
+        const lTimeString = formatTimeInTimezone(d, timezone);
         return lDayOfWeek === dayOfWeek && lTimeString === timeString;
       });
 
@@ -909,7 +911,7 @@ export function useFindRecurringSeries() {
       console.error('useFindRecurringSeries error:', err);
       return [lesson.id];
     }
-  }, []);
+  }, [timezone]);
 
   // Find recurring series for grouped sessions (Combined Sessions)
   // Returns session IDs that match same students, subjects, time, and day of week
@@ -918,8 +920,8 @@ export function useFindRecurringSeries() {
       if (!groupedLesson.session_id) return [];
 
       const sessionDate = new Date(groupedLesson.scheduled_at);
-      const dayOfWeek = sessionDate.getDay();
-      const timeString = sessionDate.toTimeString().slice(0, 5); // HH:MM format
+      const dayOfWeek = getDayOfWeekInTimezone(sessionDate, timezone);
+      const timeString = formatTimeInTimezone(sessionDate, timezone); // HH:MM format
 
       // Get all lesson IDs in this session
       const lessonIds = groupedLesson.lessons.map(l => l.id);
@@ -962,8 +964,8 @@ export function useFindRecurringSeries() {
 
         const firstLesson = lessons[0];
         const d = new Date(firstLesson.scheduled_at);
-        const lDayOfWeek = d.getDay();
-        const lTimeString = d.toTimeString().slice(0, 5);
+        const lDayOfWeek = getDayOfWeekInTimezone(d, timezone);
+        const lTimeString = formatTimeInTimezone(d, timezone);
 
         // Check day and time match
         if (lDayOfWeek !== dayOfWeek || lTimeString !== timeString) continue;

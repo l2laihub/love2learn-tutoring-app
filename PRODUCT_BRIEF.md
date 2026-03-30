@@ -1,12 +1,21 @@
-# Love2Learn Tutoring App - Product Brief
+# DaLesson — Tutor Management Made Simple
+
+## Product Brief v2.0 | March 2026
+
+**Domain:** dalesson.app
+**Brand Family:** huybuilds (Dabingo, DaBraino, DaLesson)
+**App Store Name:** DaLesson — Tutor Manager
+**Formerly:** Love2Learn (rebranded to separate SaaS product from Love To Learn Academy)
+
+---
 
 ## Executive Summary
 
-**Love2Learn** is a cross-platform tutoring management application designed for solo tutors to manage lessons, students, parents, payments, and educational materials. Built with React Native/Expo for iOS, Android, and Web, with Supabase as the backend.
+**DaLesson** is a cross-platform tutoring management application designed for solo tutors to manage lessons, students, parents, payments, and educational materials. Built with React Native/Expo for iOS, Android, and Web, with Supabase as the backend.
 
-**Current Status**: MVP features complete; Phase 1 monetization in progress
-**Target Users**: Solo tutors, parents seeking tutoring services
-**Platforms**: iOS, Android, Web
+- **Status**: MVP features complete; Phase 1 monetization in progress
+- **Target Users**: Solo tutors, parents seeking tutoring services
+- **Platforms**: iOS, Android, Web
 
 ---
 
@@ -14,16 +23,12 @@
 
 ### 1.1 Problem Statement
 
-Solo tutors struggle to manage their tutoring business efficiently. They need to:
-- Schedule and track lessons across multiple students
-- Manage payments and invoicing
-- Communicate with parents
-- Create and assign educational materials
-- Handle rescheduling and availability
+Solo tutors struggle to manage their tutoring business efficiently. They need to schedule and track lessons across multiple students, manage payments and invoicing, communicate with parents, create and assign educational materials, and handle rescheduling and availability.
 
 ### 1.2 Solution
 
-Love2Learn provides an all-in-one platform where tutors can:
+DaLesson provides an all-in-one platform where tutors can:
+
 - Schedule lessons with calendar management
 - Track payments with invoice and prepaid billing options
 - Communicate with parents via messaging
@@ -45,14 +50,14 @@ Love2Learn provides an all-in-one platform where tutors can:
 
 - **Weekly calendar view** with navigation
 - **Color-coded lessons by subject**: Piano (#3D9CA8), Math (#7CB342), Reading (#9C27B0), Speech (#FF9800), English (#2196F3)
-- **Multi-student lessons** - Schedule combined sessions with multiple students
-- **Per-student subject selection** - Different subjects per student in combined sessions
-- **Lesson duration**: 30, 45, 60, 90 min or custom (15-240 min)
+- **Multi-student lessons** — Schedule combined sessions with multiple students
+- **Per-student subject selection** — Different subjects per student in combined sessions
+- **Lesson duration**: 30, 45, 60, 90 min or custom (15–240 min)
 - **Recurrence patterns**: Weekly, bi-weekly, monthly
 - **Lesson status**: Scheduled, Completed, Cancelled, Uncompleted
-- **Tutor availability** - Define weekly availability windows
-- **Tutor breaks** - Block out vacations/unavailable times
-- **Lesson requests** - Parents can request reschedules or drop-in sessions
+- **Tutor availability** — Define weekly availability windows
+- **Tutor breaks** — Block out vacations/unavailable times
+- **Lesson requests** — Parents can request reschedules or drop-in sessions
 
 ### 2.2 Student & Parent Management
 
@@ -73,6 +78,7 @@ Love2Learn provides an all-in-one platform where tutors can:
 2. **Prepaid sessions**: Pre-purchase session packages
 
 **Features:**
+
 - Auto-generate invoices from completed lessons
 - Calculate amounts based on student/subject rates
 - Track payment status (Paid, Partial, Unpaid)
@@ -83,6 +89,7 @@ Love2Learn provides an all-in-one platform where tutors can:
 ### 2.4 Worksheets & Assignments
 
 **Piano Worksheets:**
+
 - Note naming and note drawing exercises
 - Treble, bass, and grand staff clefs
 - Difficulty levels: Beginner to Advanced
@@ -91,12 +98,14 @@ Love2Learn provides an all-in-one platform where tutors can:
 - SVG-based music notation
 
 **Math Worksheets:**
-- Grade level selection (K-6)
+
+- Grade level selection (K–6)
 - Topics: Addition, Subtraction, Multiplication, Division, Fractions
 - Problem count customization
 - Word problems and visual aids options
 
 **Assignment System:**
+
 - Assign worksheets to students
 - Track status and due dates
 - PDF export capability
@@ -136,7 +145,7 @@ Love2Learn provides an all-in-one platform where tutors can:
 ```
 app/                    # Expo Router screens (file-based routing)
 ├── (tabs)/            # Tab navigation (main app screens)
-│   ├── index.tsx      # Home - role-aware dashboard
+│   ├── index.tsx      # Home — role-aware dashboard
 │   ├── calendar.tsx   # Lesson scheduling
 │   ├── students.tsx   # Student/parent management
 │   ├── payments.tsx   # Payment tracking
@@ -168,15 +177,7 @@ All data fetching uses custom hooks:
 const { data, loading, error, refetch, create, update, delete } = useStudents();
 ```
 
-**Key Hooks:**
-- `useStudents()` - Student CRUD
-- `useParents()` - Parent management
-- `useLessons()` - Lesson scheduling and management
-- `usePayments()` - Payment tracking
-- `useAssignments()` - Assignment tracking
-- `useTutorAvailability()` - Availability management
-- `useMessages()` - Thread-based messaging
-- `useNotifications()` - Notification management
+**Key Hooks:** useStudents(), useParents(), useLessons(), usePayments(), useAssignments(), useTutorAvailability(), useMessages(), useNotifications()
 
 ### 3.4 Database Schema (Key Tables)
 
@@ -244,7 +245,7 @@ import { supabase } from '@lib/supabase';
 
 ## 4. Business Model
 
-### 4.1 Pricing (Phase 1 - In Progress)
+### 4.1 Pricing (Phase 1 — In Progress)
 
 | Plan | Price | Features |
 |------|-------|----------|
@@ -257,18 +258,44 @@ import { supabase } from '@lib/supabase';
 
 ### 4.2 Monetization Status
 
-**In Progress:**
-- Multi-tutor authentication and RLS policies
-- Stripe subscription integration
-- Configurable tutor branding
+**In Progress:** Multi-tutor authentication and RLS policies, Stripe subscription integration, configurable tutor branding
 
-**Planned:**
-- App Store submission (iOS + Android)
-- Landing page and marketing site
+**Planned:** App Store submission (iOS + Android), landing page at dalesson.app
 
 ---
 
-## 5. Platform Considerations
+## 5. Brand Identity
+
+### 5.1 Name & Origin
+
+DaLesson is the rebranded version of Love2Learn. The rename separates the SaaS product from Love To Learn Academy (lovetolearn.site), positioning DaLesson as a neutral, white-label-ready platform that tutors can adopt as their own business tool without brand confusion.
+
+### 5.2 Brand Colors
+
+| Color | Hex | Usage |
+|-------|-----|-------|
+| Coral | #E85A71 | Primary brand, headings, CTAs |
+| Teal | #3D9CA8 | Secondary, accents, links, subject colors |
+| Amber | #FFB74D | Highlights, badges, warmth |
+| Dark Text | #2D2D2D | Body text, headings |
+
+> **Note:** The codebase currently uses Teal (#3D9CA8) as the primary color from the Love2Learn era. Migrating to Coral (#E85A71) as primary is part of the rebrand work.
+
+### 5.3 Logo
+
+Pencil + music note mashup icon representing the dual academic and music tutoring focus. Flat minimalist style with coral, teal, and amber colors. Optimized for app icon visibility at all sizes.
+
+### 5.4 Brand Family
+
+| App | Audience | Tagline |
+|-----|----------|---------|
+| Dabingo | Families | Family Bingo Night |
+| DaBraino | Kids | Kids Math Bingo |
+| **DaLesson** | Solo Tutors | Tutor Management Made Simple |
+
+---
+
+## 6. Platform Considerations
 
 | Platform | Notes |
 |----------|-------|
@@ -278,24 +305,86 @@ import { supabase } from '@lib/supabase';
 
 ---
 
-## 6. Environment Variables
+## 7. Feature Status
+
+### Complete
+
+- User authentication & authorization
+- Role-based access control
+- Calendar & lesson scheduling (including combined sessions)
+- Student & parent management
+- Payment tracking (invoice + prepaid)
+- Payment reminders
+- Piano worksheet generation
+- Assignment tracking
+- Messaging system
+- Availability management
+- Lesson requests (reschedule/drop-in)
+- Admin panel
+
+### In Progress
+
+- Multi-tutor RLS policies
+- Stripe subscription integration
+- Configurable branding
+- Math worksheet API integration
+- DaLesson rebrand (product brief updated; remaining: theme colors, app icons, splash screens, app.config.ts naming, store listings)
+
+### Planned
+
+- Push notifications
+- App Store submission (as "DaLesson — Tutor Manager")
+- Advanced analytics
+- Landing page at dalesson.app
+- SEO and ASO for "DaLesson" keyword
+
+---
+
+## 8. Key Implementation Details
+
+### Combined Lessons
+
+- Multiple students can be scheduled for the same time slot
+- `lesson_sessions` table groups lessons together
+- Calendar displays as single card with multiple avatars
+
+### Payment Flow
+
+1. Tutor marks lessons complete
+2. Tutor generates invoice for family/month
+3. System calculates amount from student rates
+4. Links payments to lessons via `payment_lessons`
+5. Parent receives notification
+6. Parent marks as paid
+
+### RLS Strategy
+
+- All tables filtered by `tutor_id`
+- Parents see only their own data
+- `get_current_user_parent()` RPC prevents circular RLS issues
+
+---
+
+## 9. Environment Variables
 
 **Required:**
+
 ```
 EXPO_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
 ```
 
 **Optional:**
+
 ```
 EXPO_PUBLIC_OPENAI_API_KEY=sk-proj-xxx  # AI worksheets
 RESEND_API_KEY=re_xxx                   # Email notifications
-STRIPE_SECRET_KEY=sk_xxx                # Payments (future)
+STRIPE_SECRET_KEY=sk_xxx                # Payments
 ```
 
 ---
 
-## 7. Common Commands
+## 10. Common Commands
 
 ```bash
 # Development
@@ -316,78 +405,4 @@ npx supabase migration new <name> # New migration
 
 ---
 
-## 8. Feature Status
-
-### Complete
-- User authentication & authorization
-- Role-based access control
-- Calendar & lesson scheduling (including combined sessions)
-- Student & parent management
-- Payment tracking (invoice + prepaid)
-- Payment reminders
-- Piano worksheet generation
-- Assignment tracking
-- Messaging system
-- Availability management
-- Lesson requests (reschedule/drop-in)
-- Admin panel
-
-### In Progress
-- Multi-tutor RLS policies
-- Stripe subscription integration
-- Configurable branding
-- Math worksheet API integration
-
-### Planned
-- Push notifications
-- App Store submission
-- Advanced analytics
-- Landing page
-
----
-
-## 9. Key Implementation Details
-
-### Lesson Color Coding
-```typescript
-const subjectColors = {
-  Piano: '#3D9CA8',
-  Math: '#7CB342',
-  Reading: '#9C27B0',
-  Speech: '#FF9800',
-  English: '#2196F3',
-};
-```
-
-### Combined Lessons
-- Multiple students can be scheduled for the same time slot
-- `lesson_sessions` table groups lessons together
-- Calendar displays as single card with multiple avatars
-
-### Payment Flow
-1. Tutor marks lessons complete
-2. Tutor generates invoice for family/month
-3. System calculates amount from student rates
-4. Links payments to lessons via `payment_lessons`
-5. Parent receives notification
-6. Parent marks as paid
-
-### RLS Strategy
-- All tables filtered by `tutor_id`
-- Parents see only their own data
-- `get_current_user_parent()` RPC prevents circular RLS issues
-
----
-
-## 10. Documentation
-
-Additional docs in `/docs/`:
-- `QUICKSTART.md` - 5-minute setup
-- `ARCHITECTURE.md` - Design patterns
-- `COMPONENTS.md` - UI component reference
-- `IMPLEMENTATION_STATUS.md` - MVP tracking
-- `roadmap/` - Monetization roadmap documents
-
----
-
-*Last updated: February 2026*
+*DaLesson — Tutor Management Made Simple • dalesson.app • huybuilds portfolio • Last updated March 9, 2026*

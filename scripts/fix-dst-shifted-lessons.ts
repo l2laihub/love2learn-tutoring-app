@@ -1,18 +1,17 @@
 /**
- * Fix DST-Shifted Lessons Script
+ * Fix DST-Shifted Lesson Timestamps
  *
- * When recurring lessons were generated using millisecond arithmetic (adding
- * exactly 7*24*60*60*1000ms), lessons after a DST transition have the wrong
- * UTC timestamp. The wall-clock time shifted by 1 hour.
+ * Due to a bug where recurring lessons were generated using naive millisecond
+ * arithmetic (24h * 60m * 60s * 1000ms per day), lessons created before DST
+ * spring-forward (March 8, 2026) for dates after DST have their timestamps
+ * shifted by 1 hour. This script identifies and corrects those timestamps.
  *
- * This script:
- * 1. Finds recurring lesson series
- * 2. Identifies the "reference" wall-clock time from pre-DST lessons
- * 3. Fixes post-DST lessons that shifted by 1 hour
+ * The bug: `new Date(d.getTime() + 7 * 86400000)` doesn't account for the
+ * 23-hour day during spring-forward, causing all subsequent times to shift.
  *
  * Usage:
  *   npx tsx scripts/fix-dst-shifted-lessons.ts --dry-run  # Preview changes
- *   npx tsx scripts/fix-dst-shifted-lessons.ts            # Execute changes
+ *   npx tsx scripts/fix-dst-shifted-lessons.ts             # Execute fixes
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -22,11 +21,11 @@ import * as path from 'path';
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const DRY_RUN = process.argv.includes('--dry-run');
-const TIMEZONE = 'America/Los_Angeles';
+const TUTOR_TIMEZONE = 'America/Los_Angeles';
 
-// DST spring forward: March 8, 2026 at 2:00 AM PST -> 3:00 AM PDT
-// After this date, PST (UTC-8) becomes PDT (UTC-7)
-const DST_DATE = new Date('2026-03-08T10:00:00Z'); // 2 AM PST = 10:00 UTC
+// DST spring-forward: March 8, 2026, 2:00 AM PST → 3:00 AM PDT
+// In UTC: March 8, 2026, 10:00 UTC
+const DST_TRANSITION_UTC = new Date('2026-03-08T10:00:00Z');
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SECRET_KEY ||
@@ -40,7 +39,8 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-function getPartsInTimezone(date: Date, timezone: string = TIMEZONE) {
+// Timezone-aware utilities (same as dateUtils.ts)
+function getPartsInTimezone(date: Date, timezone: string = TUTOR_TIMEZONE) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -50,16 +50,11 @@ function getPartsInTimezone(date: Date, timezone: string = TIMEZONE) {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-    weekday: 'short',
   });
   const parts = formatter.formatToParts(date);
   const get = (type: string) => {
     const part = parts.find(p => p.type === type);
     return part ? parseInt(part.value, 10) : 0;
-  };
-  const getStr = (type: string) => {
-    const part = parts.find(p => p.type === type);
-    return part?.value || '';
   };
   return {
     year: get('year'),
@@ -67,14 +62,14 @@ function getPartsInTimezone(date: Date, timezone: string = TIMEZONE) {
     day: get('day'),
     hour: get('hour') === 24 ? 0 : get('hour'),
     minute: get('minute'),
-    weekday: getStr('weekday'),
+    second: get('second'),
   };
 }
 
 function dateFromTimezone(
   year: number, month: number, day: number,
   hour: number, minute: number, second: number,
-  timezone: string = TIMEZONE
+  timezone: string = TUTOR_TIMEZONE
 ): Date {
   const rough = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
   const parts = getPartsInTimezone(rough, timezone);
@@ -93,27 +88,36 @@ function dateFromTimezone(
   return adjusted;
 }
 
-interface Lesson {
-  id: string;
-  student_id: string;
-  subject: string;
-  scheduled_at: string;
-  duration_min: number;
-  status: string;
-  session_id: string | null;
+function getDayOfWeek(date: Date): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: TUTOR_TIMEZONE,
+    weekday: 'short',
+  });
+  const dayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6,
+  };
+  return dayMap[formatter.format(date)] ?? date.getDay();
+}
+
+function getTimeString(date: Date): string {
+  const parts = getPartsInTimezone(date);
+  return `${parts.hour.toString().padStart(2, '0')}:${parts.minute.toString().padStart(2, '0')}`;
 }
 
 async function main() {
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`  Fix DST-Shifted Lessons${DRY_RUN ? ' (DRY RUN)' : ''}`);
-  console.log(`${'='.repeat(60)}\n`);
+  console.log('='.repeat(60));
+  console.log('Fix DST-Shifted Lesson Timestamps');
+  console.log('='.repeat(60));
+  console.log(`Mode: ${DRY_RUN ? 'DRY RUN (no changes will be made)' : 'EXECUTE'}`);
+  console.log(`Timezone: ${TUTOR_TIMEZONE}`);
+  console.log(`DST transition: March 8, 2026 at 2:00 AM PST`);
+  console.log('');
 
-  // Fetch all future scheduled lessons from March 8 onwards
+  // Fetch all lessons after DST transition
   const { data: lessons, error } = await supabase
     .from('scheduled_lessons')
-    .select('id, student_id, subject, scheduled_at, duration_min, status, session_id')
-    .gte('scheduled_at', DST_DATE.toISOString())
-    .eq('status', 'scheduled')
+    .select('id, student_id, subject, scheduled_at, duration_min, session_id, status, created_at')
+    .gte('scheduled_at', DST_TRANSITION_UTC.toISOString())
     .order('scheduled_at', { ascending: true });
 
   if (error) {
@@ -122,22 +126,18 @@ async function main() {
   }
 
   if (!lessons || lessons.length === 0) {
-    console.log('No lessons found after DST date.');
+    console.log('No lessons found after DST transition.');
     return;
   }
 
-  console.log(`Found ${lessons.length} lessons after DST transition date.`);
+  console.log(`Found ${lessons.length} lessons after DST transition`);
 
-  // Also fetch pre-DST lessons to find reference times
-  const preDstStart = new Date(DST_DATE);
-  preDstStart.setDate(preDstStart.getDate() - 60); // Look back 60 days
-
+  // Fetch lessons before DST to establish canonical wall-clock times
   const { data: preDstLessons, error: preDstError } = await supabase
     .from('scheduled_lessons')
-    .select('id, student_id, subject, scheduled_at, duration_min, status, session_id')
-    .gte('scheduled_at', preDstStart.toISOString())
-    .lt('scheduled_at', DST_DATE.toISOString())
-    .eq('status', 'scheduled')
+    .select('id, student_id, subject, scheduled_at, duration_min, session_id, status, created_at')
+    .lt('scheduled_at', DST_TRANSITION_UTC.toISOString())
+    .gte('scheduled_at', '2026-01-01T00:00:00Z')
     .order('scheduled_at', { ascending: true });
 
   if (preDstError) {
@@ -145,148 +145,177 @@ async function main() {
     process.exit(1);
   }
 
-  // Build reference time map: for each student+subject, what's their expected wall-clock time?
-  const referenceTimeMap = new Map<string, { hour: number; minute: number; weekday: string }>();
+  console.log(`Found ${preDstLessons?.length || 0} lessons before DST for reference`);
+  console.log('');
+
+  // Build canonical time map from pre-DST lessons
+  // Key: student_id|subject|dayOfWeek|duration
+  // Value: time string (HH:MM) in tutor timezone
+  const canonicalTimes = new Map<string, string>();
 
   for (const lesson of (preDstLessons || [])) {
     const date = new Date(lesson.scheduled_at);
-    const parts = getPartsInTimezone(date);
-    const key = `${lesson.student_id}|${lesson.subject}`;
-    // Use the most recent pre-DST lesson as reference
-    referenceTimeMap.set(key, {
-      hour: parts.hour,
-      minute: parts.minute,
-      weekday: parts.weekday,
-    });
+    const dow = getDayOfWeek(date);
+    const time = getTimeString(date);
+    const key = `${lesson.student_id}|${lesson.subject}|${dow}|${lesson.duration_min}`;
+    canonicalTimes.set(key, time);
   }
 
-  console.log(`Found ${referenceTimeMap.size} unique student+subject combinations with pre-DST reference times.\n`);
+  console.log(`Identified ${canonicalTimes.size} canonical time slots from pre-DST lessons`);
+  console.log('');
 
-  // Check each post-DST lesson against reference
-  const fixNeeded: Array<{ lesson: Lesson; expectedHour: number; expectedMinute: number; currentHour: number; currentMinute: number }> = [];
+  // Check each post-DST lesson against canonical times
+  let fixCount = 0;
+  let skipCount = 0;
+  const fixes: Array<{ id: string; oldTime: string; newTime: string; student: string; subject: string; date: string }> = [];
 
   for (const lesson of lessons) {
-    const key = `${lesson.student_id}|${lesson.subject}`;
-    const ref = referenceTimeMap.get(key);
-    if (!ref) continue; // No reference, skip
-
     const date = new Date(lesson.scheduled_at);
+    const dow = getDayOfWeek(date);
+    const currentTime = getTimeString(date);
     const parts = getPartsInTimezone(date);
 
-    // Check if the time shifted by exactly 1 hour (DST shift)
-    if (parts.minute === ref.minute && parts.hour === ref.hour + 1) {
-      fixNeeded.push({
-        lesson,
-        expectedHour: ref.hour,
-        expectedMinute: ref.minute,
-        currentHour: parts.hour,
-        currentMinute: parts.minute,
-      });
+    const key = `${lesson.student_id}|${lesson.subject}|${dow}|${lesson.duration_min}`;
+    const canonicalTime = canonicalTimes.get(key);
+
+    if (!canonicalTime) {
+      skipCount++;
+      continue;
     }
-  }
 
-  if (fixNeeded.length === 0) {
-    console.log('No DST-shifted lessons found. All times look correct.');
-    return;
-  }
+    // Check if the current time is exactly 1 hour later than canonical
+    const [canonHour, canonMin] = canonicalTime.split(':').map(Number);
+    const [currHour, currMin] = currentTime.split(':').map(Number);
 
-  console.log(`Found ${fixNeeded.length} lessons that need DST correction:\n`);
+    const canonMinutes = canonHour * 60 + canonMin;
+    const currMinutes = currHour * 60 + currMin;
+    const diff = currMinutes - canonMinutes;
 
-  // Group by student for readable output
-  const byStudent = new Map<string, typeof fixNeeded>();
-  for (const fix of fixNeeded) {
-    const key = `${fix.lesson.student_id}|${fix.lesson.subject}`;
-    const arr = byStudent.get(key) || [];
-    arr.push(fix);
-    byStudent.set(key, arr);
-  }
-
-  // Fetch student names for display
-  const studentIds = [...new Set(fixNeeded.map(f => f.lesson.student_id))];
-  const { data: students } = await supabase
-    .from('students')
-    .select('id, name')
-    .in('id', studentIds);
-
-  const studentNameMap = new Map(students?.map(s => [s.id, s.name]) || []);
-
-  for (const [key, fixes] of byStudent) {
-    const [studentId, subject] = key.split('|');
-    const name = studentNameMap.get(studentId) || studentId;
-    console.log(`  ${name} (${subject}):`);
-    console.log(`    ${fixes.length} lessons: ${fixes[0].currentHour}:${fixes[0].currentMinute.toString().padStart(2, '0')} -> ${fixes[0].expectedHour}:${fixes[0].expectedMinute.toString().padStart(2, '0')}`);
-    for (const fix of fixes) {
-      const date = new Date(fix.lesson.scheduled_at);
-      const parts = getPartsInTimezone(date);
-      console.log(`    - ${parts.year}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')} ${parts.weekday}`);
-    }
-    console.log();
-  }
-
-  if (DRY_RUN) {
-    console.log('DRY RUN - no changes made. Run without --dry-run to apply fixes.');
-    return;
-  }
-
-  // Apply fixes
-  console.log('Applying fixes...\n');
-  let fixed = 0;
-  let errors = 0;
-
-  for (const fix of fixNeeded) {
-    const date = new Date(fix.lesson.scheduled_at);
-    const parts = getPartsInTimezone(date);
-
-    // Reconstruct the correct UTC time with the expected wall-clock time
-    const corrected = dateFromTimezone(
-      parts.year, parts.month, parts.day,
-      fix.expectedHour, fix.expectedMinute, 0
-    );
-
-    const { error: updateError } = await supabase
-      .from('scheduled_lessons')
-      .update({ scheduled_at: corrected.toISOString() })
-      .eq('id', fix.lesson.id);
-
-    if (updateError) {
-      console.error(`  Error fixing lesson ${fix.lesson.id}:`, updateError);
-      errors++;
-    } else {
-      fixed++;
-    }
-  }
-
-  // Also fix lesson_sessions if they exist
-  const sessionIds = [...new Set(fixNeeded
-    .filter(f => f.lesson.session_id)
-    .map(f => f.lesson.session_id!))];
-
-  if (sessionIds.length > 0) {
-    console.log(`\nFixing ${sessionIds.length} associated lesson sessions...`);
-    for (const sessionId of sessionIds) {
-      // Get the first lesson in this session to determine correct time
-      const sessionFix = fixNeeded.find(f => f.lesson.session_id === sessionId);
-      if (!sessionFix) continue;
-
-      const date = new Date(sessionFix.lesson.scheduled_at);
-      const parts = getPartsInTimezone(date);
-      const corrected = dateFromTimezone(
+    if (diff === 60) {
+      // Off by exactly 1 hour — this is a DST-shifted lesson
+      const dateStr = `${parts.year}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
+      const correctedDate = dateFromTimezone(
         parts.year, parts.month, parts.day,
-        sessionFix.expectedHour, sessionFix.expectedMinute, 0
+        canonHour, canonMin, 0
       );
 
-      const { error: sessError } = await supabase
-        .from('lesson_sessions')
-        .update({ scheduled_at: corrected.toISOString() })
-        .eq('id', sessionId);
+      fixes.push({
+        id: lesson.id,
+        oldTime: `${dateStr} ${currentTime}`,
+        newTime: `${dateStr} ${canonicalTime}`,
+        student: lesson.student_id,
+        subject: lesson.subject,
+        date: dateStr,
+      });
 
-      if (sessError) {
-        console.error(`  Error fixing session ${sessionId}:`, sessError);
+      if (!DRY_RUN) {
+        const { error: updateError } = await supabase
+          .from('scheduled_lessons')
+          .update({
+            scheduled_at: correctedDate.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', lesson.id);
+
+        if (updateError) {
+          console.error(`Error updating lesson ${lesson.id}:`, updateError);
+          continue;
+        }
       }
+
+      fixCount++;
+    } else if (diff === 0) {
+      skipCount++;
+    } else {
+      skipCount++;
     }
   }
 
-  console.log(`\nDone! Fixed ${fixed} lessons, ${errors} errors.`);
+  // Also fix lesson_sessions that are DST-shifted
+  const { data: sessions, error: sessionError } = await supabase
+    .from('lesson_sessions')
+    .select('id, scheduled_at')
+    .gte('scheduled_at', DST_TRANSITION_UTC.toISOString());
+
+  if (!sessionError && sessions) {
+    console.log(`Checking ${sessions.length} lesson sessions...`);
+    let sessionFixCount = 0;
+
+    for (const session of sessions) {
+      const sessionDate = new Date(session.scheduled_at);
+      const sessionParts = getPartsInTimezone(sessionDate);
+      const sessionTime = getTimeString(sessionDate);
+      const sessionDateStr = `${sessionParts.year}-${sessionParts.month.toString().padStart(2, '0')}-${sessionParts.day.toString().padStart(2, '0')}`;
+
+      // Check if there's a corresponding fix for lessons at this time
+      const matchingFix = fixes.find(f => {
+        const fixOldTime = f.oldTime.split(' ')[1];
+        return f.date === sessionDateStr && fixOldTime === sessionTime;
+      });
+
+      if (matchingFix) {
+        const newTime = matchingFix.newTime.split(' ')[1];
+        const [h, m] = newTime.split(':').map(Number);
+        const correctedDate = dateFromTimezone(
+          sessionParts.year, sessionParts.month, sessionParts.day,
+          h, m, 0
+        );
+
+        if (!DRY_RUN) {
+          const { error: updateError } = await supabase
+            .from('lesson_sessions')
+            .update({ scheduled_at: correctedDate.toISOString() })
+            .eq('id', session.id);
+
+          if (updateError) {
+            console.error(`Error updating session ${session.id}:`, updateError);
+            continue;
+          }
+        }
+        sessionFixCount++;
+      }
+    }
+    console.log(`Sessions ${DRY_RUN ? 'to fix' : 'fixed'}: ${sessionFixCount}`);
+  }
+
+  // Get student names for display
+  if (fixes.length > 0) {
+    const studentIds = [...new Set(fixes.map(f => f.student))];
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, name')
+      .in('id', studentIds);
+
+    const nameMap = new Map<string, string>();
+    for (const s of students || []) {
+      nameMap.set(s.id, s.name);
+    }
+
+    console.log('\n' + '-'.repeat(60));
+    console.log('DST-SHIFTED LESSONS:');
+    console.log('-'.repeat(60));
+
+    for (const fix of fixes.slice(0, 50)) {
+      const name = nameMap.get(fix.student) || fix.student.slice(0, 8);
+      console.log(`  ${name} (${fix.subject}) ${fix.oldTime} → ${fix.newTime}`);
+    }
+    if (fixes.length > 50) {
+      console.log(`  ... and ${fixes.length - 50} more`);
+    }
+  }
+
+  console.log('\n' + '='.repeat(60));
+  console.log('SUMMARY');
+  console.log('='.repeat(60));
+  console.log(`Lessons ${DRY_RUN ? 'to fix' : 'fixed'}: ${fixCount}`);
+  console.log(`Lessons skipped (already correct or no reference): ${skipCount}`);
+
+  if (DRY_RUN) {
+    console.log('\nThis was a DRY RUN. No changes were made.');
+    console.log('Run without --dry-run to execute the fixes.');
+  } else {
+    console.log('\nAll DST-shifted lessons have been corrected!');
+  }
 }
 
 main().catch(console.error);

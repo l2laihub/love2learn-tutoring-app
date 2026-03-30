@@ -6,7 +6,7 @@
 /**
  * Extract date/time parts in a specific timezone using Intl.DateTimeFormat.
  */
-function getPartsInTimezone(date: Date, timezone: string) {
+export function getPartsInTimezone(date: Date, timezone: string) {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -39,33 +39,31 @@ function getPartsInTimezone(date: Date, timezone: string) {
  * E.g., dateFromTimezone(2026, 3, 9, 0, 0, 0, 'America/Los_Angeles')
  * returns the UTC instant for midnight PDT on March 9, 2026.
  */
-function dateFromTimezone(
+export function dateFromTimezone(
   year: number, month: number, day: number,
   hour: number, minute: number, second: number,
   timezone: string
 ): Date {
-  // Create a rough UTC estimate, then adjust by comparing what Intl reports
+  // Step 1: Create a rough UTC estimate (treat wall-clock values as if they were UTC)
   const rough = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
 
-  // Get what timezone thinks this UTC instant is
+  // Step 2: Find what the timezone thinks this UTC instant is
   const parts = getPartsInTimezone(rough, timezone);
-  const diffHours = hour - parts.hour;
-  const diffMinutes = minute - parts.minute;
-  const diffDays = day - parts.day;
 
-  // Adjust for day wraparound
-  let totalMinutesDiff = diffDays * 24 * 60 + diffHours * 60 + diffMinutes;
-  // Handle month boundary (e.g., day=1 vs parts.day=31)
-  if (diffDays > 15) totalMinutesDiff -= 28 * 24 * 60; // went back a month
-  if (diffDays < -15) totalMinutesDiff += 28 * 24 * 60; // went forward a month
+  // Step 3: Compute the UTC offset by comparing what we want vs what the timezone shows.
+  // Build a UTC date from the timezone parts to get the offset as a clean ms difference.
+  // This avoids the month-boundary day-diff issue entirely.
+  const roughInTz = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+  const offsetMs = rough.getTime() - roughInTz.getTime();
 
-  const adjusted = new Date(rough.getTime() + totalMinutesDiff * 60 * 1000);
+  // Step 4: Apply offset — this shifts rough by the timezone's UTC offset
+  const adjusted = new Date(rough.getTime() + offsetMs);
 
-  // Verify and do one more correction if needed (handles edge cases)
+  // Step 5: Verify and correct for DST edge cases (e.g., spring-forward gap)
   const verify = getPartsInTimezone(adjusted, timezone);
-  if (verify.hour !== hour || verify.minute !== minute || verify.day !== day) {
-    const finalDiff = (hour - verify.hour) * 60 + (minute - verify.minute);
-    return new Date(adjusted.getTime() + finalDiff * 60 * 1000);
+  if (verify.hour !== hour || verify.minute !== minute) {
+    const finalDiffMs = ((hour - verify.hour) * 60 + (minute - verify.minute)) * 60 * 1000;
+    return new Date(adjusted.getTime() + finalDiffMs);
   }
 
   return adjusted;
@@ -88,8 +86,12 @@ export function getWeekStartInTimezone(date: Date, timezone: string): Date {
   const daysFromMonday = dayMap[weekday] ?? 0;
 
   // Subtract days to get to Monday, then set to midnight in timezone
-  const mondayDay = parts.day - daysFromMonday;
-  return dateFromTimezone(parts.year, parts.month, mondayDay, 0, 0, 0, timezone);
+  // Normalize via Date.UTC to handle month boundary (e.g., day 1 - 3 = day -2)
+  const resolved = new Date(Date.UTC(parts.year, parts.month - 1, parts.day - daysFromMonday));
+  return dateFromTimezone(
+    resolved.getUTCFullYear(), resolved.getUTCMonth() + 1, resolved.getUTCDate(),
+    0, 0, 0, timezone
+  );
 }
 
 /**
@@ -98,8 +100,15 @@ export function getWeekStartInTimezone(date: Date, timezone: string): Date {
  */
 export function addDaysInTimezone(date: Date, days: number, timezone: string): Date {
   const parts = getPartsInTimezone(date, timezone);
+  // Use Date.UTC to resolve overflow days (e.g., March 33 → April 2),
+  // then extract the normalized year/month/day before calling dateFromTimezone.
+  // This prevents dateFromTimezone from getting confused by large day-diff values.
+  const resolved = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  const resolvedYear = resolved.getUTCFullYear();
+  const resolvedMonth = resolved.getUTCMonth() + 1;
+  const resolvedDay = resolved.getUTCDate();
   return dateFromTimezone(
-    parts.year, parts.month, parts.day + days,
+    resolvedYear, resolvedMonth, resolvedDay,
     parts.hour, parts.minute, parts.second, timezone
   );
 }
@@ -109,9 +118,10 @@ export function addDaysInTimezone(date: Date, days: number, timezone: string): D
  * weekStart should be the Monday at 00:00 in the timezone.
  */
 export function getWeekQueryRange(weekStart: Date, timezone: string): { startISO: string; endISO: string } {
-  const parts = getPartsInTimezone(weekStart, timezone);
-  const start = dateFromTimezone(parts.year, parts.month, parts.day, 0, 0, 0, timezone);
-  const end = dateFromTimezone(parts.year, parts.month, parts.day + 6, 23, 59, 59, timezone);
+  const start = weekStart;
+  const endDate = addDaysInTimezone(weekStart, 6, timezone);
+  const endParts = getPartsInTimezone(endDate, timezone);
+  const end = dateFromTimezone(endParts.year, endParts.month, endParts.day, 23, 59, 59, timezone);
   return {
     startISO: start.toISOString(),
     endISO: end.toISOString(),
@@ -127,4 +137,42 @@ export function getWeekDaysInTimezone(weekStart: Date, timezone: string): Date[]
     days.push(addDaysInTimezone(weekStart, i, timezone));
   }
   return days;
+}
+
+/**
+ * Get the day of the month for a Date in a specific timezone.
+ */
+export function getDayInTimezone(date: Date, timezone: string): number {
+  return getPartsInTimezone(date, timezone).day;
+}
+
+/**
+ * Get the day of week (0=Sun, 6=Sat) for a Date in a specific timezone.
+ */
+export function getDayOfWeekInTimezone(date: Date, timezone: string): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+  });
+  const dayMap: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6,
+  };
+  return dayMap[formatter.format(date)] ?? date.getDay();
+}
+
+/**
+ * Format a Date's time as "HH:MM" in a specific timezone.
+ */
+export function formatTimeInTimezone(date: Date, timezone: string): string {
+  const parts = getPartsInTimezone(date, timezone);
+  return `${parts.hour.toString().padStart(2, '0')}:${parts.minute.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Check if two Dates fall on the same calendar day in a specific timezone.
+ */
+export function isSameDayInTimezone(a: Date, b: Date, timezone: string): boolean {
+  const pa = getPartsInTimezone(a, timezone);
+  const pb = getPartsInTimezone(b, timezone);
+  return pa.year === pb.year && pa.month === pb.month && pa.day === pb.day;
 }
