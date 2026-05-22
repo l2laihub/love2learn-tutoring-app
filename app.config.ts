@@ -147,15 +147,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
     openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
     eas: {
-      // Replace with your actual EAS project ID from expo.dev
-      projectId: '',
+      projectId: '80057121-e849-408e-bd31-10d40bb4934f',
     },
   },
 
-  // EAS Update configuration
+  // EAS Update configuration (OTA). Channels are set per build profile in eas.json.
   updates: {
-    enabled: process.env.APP_ENV === 'production',
-    url: 'https://u.expo.dev/your-eas-project-id',
+    enabled: true,
+    url: 'https://u.expo.dev/80057121-e849-408e-bd31-10d40bb4934f',
     fallbackToCacheTimeout: 0,
   },
 
@@ -164,6 +163,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     policy: 'appVersion',
   },
 
-  // Owner for EAS (replace with your Expo username or organization)
-  owner: 'your-expo-username',
+  // Owner for EAS (Expo account/organization)
+  owner: 'huybuilds',
 });
