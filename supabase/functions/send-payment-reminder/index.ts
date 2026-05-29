@@ -186,7 +186,7 @@ serve(async (req: Request) => {
         amount_paid,
         status,
         notes,
-        parent:parents!inner(
+        parent:parents!payments_parent_id_fkey!inner(
           id,
           email,
           name,
