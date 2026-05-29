@@ -160,3 +160,17 @@ Detailed docs in `/docs/`:
 - ARCHITECTURE.md - Design patterns
 - COMPONENTS.md - UI component reference
 - IMPLEMENTATION_STATUS.md - MVP tracking
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues at `l2laihub/love2learn-tutoring-app`. Use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

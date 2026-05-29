@@ -56,7 +56,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
 
   // Get tutor branding for business name
   const { data: tutorBranding } = useTutorBranding();
-  const brandName = tutorBranding?.businessName || 'Love2Learn';
+  const brandName = tutorBranding?.businessName || 'DaLesson';
 
   const filteredNavItems = navItems.filter(item => {
     if (item.tutorOnly && !isTutor) return false;

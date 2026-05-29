@@ -29,7 +29,7 @@ function getPasswordResetRedirectUrl(): string {
     return 'http://localhost:8081/(auth)/reset-password';
   }
   // For native apps, use deep link
-  return 'love2learn://reset-password';
+  return 'dalesson://reset-password';
 }
 
 /**

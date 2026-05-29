@@ -120,7 +120,7 @@ export default function LoginScreen() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.title}>Love2Learn</Text>
+            <Text style={styles.title}>DaLesson</Text>
             <Text style={styles.subtitle}>Welcome back!</Text>
           </View>
 

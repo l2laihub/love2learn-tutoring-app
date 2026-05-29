@@ -41,7 +41,7 @@ export function AdminSidebar({ children }: AdminSidebarProps) {
 
   // Get tutor branding for business name
   const { data: tutorBranding } = useTutorBranding();
-  const brandName = tutorBranding?.businessName || 'Love2Learn';
+  const brandName = tutorBranding?.businessName || 'DaLesson';
 
   const isActive = (href: string) => {
     if (href === '/admin') {

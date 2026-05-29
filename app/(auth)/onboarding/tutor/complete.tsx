@@ -129,7 +129,7 @@ export default function OnboardingCompleteScreen() {
 
         {/* Welcome Message */}
         <Animated.View style={{ opacity: contentOpacity }}>
-          <Text style={styles.title}>Welcome to Love2Learn!</Text>
+          <Text style={styles.title}>Welcome to DaLesson!</Text>
           <Text style={styles.subtitle}>
             {businessName} is all set up and ready to go.
           </Text>

@@ -113,7 +113,7 @@ const testimonials = [
   {
     name: 'Sarah M.',
     role: 'Piano Teacher, 5 years',
-    quote: 'Love2Learn has completely transformed how I run my studio. I used to spend hours each week on admin work - now it takes minutes.',
+    quote: 'DaLesson has completely transformed how I run my studio. I used to spend hours each week on admin work - now it takes minutes.',
     avatar: 'S',
     accentColor: colors.primary.main,
   },
@@ -136,8 +136,8 @@ const testimonials = [
 // FAQs
 const faqs = [
   {
-    question: 'What platforms does Love2Learn work on?',
-    answer: 'Love2Learn works on iOS, Android, and web browsers. You can manage your tutoring business from any device.',
+    question: 'What platforms does DaLesson work on?',
+    answer: 'DaLesson works on iOS, Android, and web browsers. You can manage your tutoring business from any device.',
   },
   {
     question: 'Can my students\' parents use the app?',
@@ -219,7 +219,7 @@ export default function LandingPage() {
               <View style={styles.logoCircle}>
                 <Text style={styles.logoText}>L2L</Text>
               </View>
-              <Text style={styles.brandName}>Love2Learn</Text>
+              <Text style={styles.brandName}>DaLesson</Text>
             </View>
             <View style={styles.navLinks}>
               {isDesktop && (
@@ -552,7 +552,7 @@ export default function LandingPage() {
           <View style={[styles.sectionContent, { maxWidth: containerMaxWidth }]}>
             <Text style={styles.sectionTitle}>Loved by Tutors Everywhere</Text>
             <Text style={styles.sectionSubtitle}>
-              See what educators are saying about Love2Learn
+              See what educators are saying about DaLesson
             </Text>
 
             <View style={[styles.testimonialsGrid, isDesktop && styles.testimonialsGridDesktop]}>
@@ -637,7 +637,7 @@ export default function LandingPage() {
           <View style={[styles.sectionContent, { maxWidth: Math.min(600, containerMaxWidth) }]}>
             <Text style={styles.ctaTitle}>Ready to simplify your tutoring business?</Text>
             <Text style={styles.ctaSubtitle}>
-              Join hundreds of tutors who've reclaimed their time with Love2Learn
+              Join hundreds of tutors who've reclaimed their time with DaLesson
             </Text>
 
             <View style={[styles.emailCapture, isDesktop && styles.emailCaptureDesktop]}>
@@ -685,7 +685,7 @@ export default function LandingPage() {
                 <View style={styles.logoCircleSmall}>
                   <Text style={styles.logoTextSmall}>L2L</Text>
                 </View>
-                <Text style={styles.footerBrandName}>Love2Learn</Text>
+                <Text style={styles.footerBrandName}>DaLesson</Text>
               </View>
               <View style={styles.footerLinks}>
                 <Pressable style={styles.footerLink}>
@@ -701,7 +701,7 @@ export default function LandingPage() {
             </View>
             <View style={styles.footerDivider} />
             <Text style={styles.footerCopyright}>
-              {'\u00A9'} {new Date().getFullYear()} Love2Learn. All rights reserved.
+              {'\u00A9'} {new Date().getFullYear()} DaLesson. All rights reserved.
             </Text>
           </View>
         </View>

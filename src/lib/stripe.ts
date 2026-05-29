@@ -73,7 +73,7 @@ function getReturnUrl(): string {
     return 'http://localhost:8081/settings';
   }
   // For native apps, use deep link
-  return 'love2learn://settings';
+  return 'dalesson://settings';
 }
 
 /**

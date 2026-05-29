@@ -79,7 +79,7 @@ export default function SubscriptionSettingsScreen() {
           </View>
 
           <Text style={styles.planName}>
-            {subscription?.plan || 'Love2Learn Pro'}
+            {subscription?.plan || 'DaLesson Pro'}
           </Text>
 
           {isTrial && (

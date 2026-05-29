@@ -142,7 +142,7 @@ interface PaywallProps {
   featureName?: string;
 }
 
-function SubscriptionPaywall({ featureName = 'Love2Learn' }: PaywallProps) {
+function SubscriptionPaywall({ featureName = 'DaLesson' }: PaywallProps) {
   const { redirectToCheckout } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan>('solo');
   const [loading, setLoading] = useState(false);
@@ -175,7 +175,7 @@ function SubscriptionPaywall({ featureName = 'Love2Learn' }: PaywallProps) {
         <Text style={styles.title}>Subscribe to Access</Text>
 
         <Text style={styles.description}>
-          Get access to {featureName} and all premium features with a Love2Learn subscription.
+          Get access to {featureName} and all premium features with a DaLesson subscription.
         </Text>
 
         {/* Plan Selection */}

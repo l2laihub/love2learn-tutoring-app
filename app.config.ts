@@ -11,7 +11,7 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
  */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Love2Learn',
+  name: 'DaLesson',
   slug: 'love2learn',
   version: '1.0.0',
   orientation: 'portrait',
@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // iOS-specific configuration
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.love2learn.app',
+    bundleIdentifier: 'app.huybuilds.dalesson',
     buildNumber: '1',
     config: {
       usesNonExemptEncryption: false,
@@ -38,11 +38,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     infoPlist: {
       // Camera and Photo Library permissions for image picker
       NSCameraUsageDescription:
-        'Love2Learn needs camera access to take photos for student profiles and learning materials.',
+        'DaLesson needs camera access to take photos for student profiles and learning materials.',
       NSPhotoLibraryUsageDescription:
-        'Love2Learn needs photo library access to upload images for student profiles and learning materials.',
+        'DaLesson needs photo library access to upload images for student profiles and learning materials.',
       NSPhotoLibraryAddUsageDescription:
-        'Love2Learn needs permission to save images to your photo library.',
+        'DaLesson needs permission to save images to your photo library.',
       // Document picker permissions
       UISupportsDocumentBrowser: true,
       LSSupportsOpeningDocumentsInPlace: true,
@@ -64,7 +64,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#FFFFFF',
       monochromeImage: './assets/adaptive-icon.png',
     },
-    package: 'com.love2learn.app',
+    package: 'app.huybuilds.dalesson',
     versionCode: 1,
     permissions: [
       // Camera and storage for image picker
@@ -90,7 +90,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             pathPrefix: '/',
           },
           {
-            scheme: 'love2learn',
+            scheme: 'dalesson',
             host: '*',
           },
         ],
@@ -103,8 +103,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   web: {
     favicon: './assets/favicon.png',
     bundler: 'metro',
-    name: 'Love2Learn Tutoring',
-    shortName: 'Love2Learn',
+    name: 'DaLesson Tutoring',
+    shortName: 'DaLesson',
     description: 'All-in-one tutoring management for independent tutors',
     themeColor: '#3D9CA8',
     backgroundColor: '#FFFFFF',
@@ -119,9 +119,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-image-picker',
       {
         photosPermission:
-          'Love2Learn needs access to your photos to upload images for student profiles and materials.',
+          'DaLesson needs access to your photos to upload images for student profiles and materials.',
         cameraPermission:
-          'Love2Learn needs camera access to take photos for student profiles and materials.',
+          'DaLesson needs camera access to take photos for student profiles and materials.',
       },
     ],
     [
@@ -137,7 +137,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 
   // URL scheme for deep linking
-  scheme: 'love2learn',
+  scheme: 'dalesson',
 
   // Extra configuration accessible via Constants.expoConfig.extra
   extra: {
