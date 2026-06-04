@@ -35,12 +35,18 @@ begin
     raise exception 'not authenticated';
   end if;
 
+  -- Never transfer ownership of an existing token to a different user.
+  -- The WHERE guard means a conflict on a token owned by someone else is a
+  -- no-op (fail closed) rather than a hijack: a caller who merely knows another
+  -- user's token string cannot claim it. The legitimate shared-device case
+  -- (user A signs out, user B signs in) works because sign-out deletes A's row,
+  -- so B's registration inserts cleanly with no conflict.
   insert into push_tokens (user_id, token, platform, last_seen_at)
   values (auth.uid(), p_token, p_platform, now())
   on conflict (token) do update
-    set user_id = excluded.user_id,
-        platform = excluded.platform,
-        last_seen_at = now();
+    set platform = excluded.platform,
+        last_seen_at = now()
+    where push_tokens.user_id = auth.uid();
 end;
 $$;
 
