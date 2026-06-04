@@ -177,6 +177,14 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="settings/notifications"
+        options={{
+          headerShown: true,
+          headerTitle: 'Notifications',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
         name="admin"
         options={{
           headerShown: false,
