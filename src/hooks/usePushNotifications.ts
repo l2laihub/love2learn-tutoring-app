@@ -8,6 +8,13 @@ import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { registerForPushNotificationsAsync } from '../lib/push';
 
+// Only follow relative in-app paths from a notification's action_url. Push
+// `data` is not fully trusted (Expo tokens aren't secret), so a crafted push
+// must not be able to deep-link us to an absolute URL or custom scheme.
+function isInAppPath(url: string): boolean {
+  return url.startsWith('/') && !url.startsWith('//');
+}
+
 // Version-proof subscription type: infer it from the listener's return value
 // (expo-notifications has renamed this type across SDKs).
 type NotificationSubscription = ReturnType<
@@ -30,7 +37,7 @@ export function usePushNotifications(isAuthenticated: boolean): void {
         const url = response.notification.request.content.data?.action_url as
           | string
           | undefined;
-        if (url) {
+        if (url && isInAppPath(url)) {
           router.push(url as never);
         }
       });
