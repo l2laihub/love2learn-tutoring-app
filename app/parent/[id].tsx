@@ -118,7 +118,7 @@ export default function ParentDetailScreen() {
   // Loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.piano.primary} />
           <Text style={styles.loadingText}>Loading parent...</Text>
@@ -130,7 +130,7 @@ export default function ParentDetailScreen() {
   // Error state
   if (error || !parent) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle" size={48} color={colors.status.error} />
           <Text style={styles.errorText}>Failed to load parent</Text>
@@ -156,7 +156,7 @@ export default function ParentDetailScreen() {
   const students = parent.students || [];
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>

@@ -1,3 +1,7 @@
+// Side-effect import: installs a dev-only filter for the benign, self-healing
+// "Invalid Refresh Token: Refresh Token Not Found" log from @supabase/auth-js.
+// Must be first so the filter is in place before the async refresh fires.
+import '../src/lib/suppressBenignAuthError';
 import { useEffect } from 'react';
 import { Stack, router, useSegments, useRootNavigationState } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -116,17 +120,17 @@ function RootLayoutNav() {
       <Stack.Screen
         name="student/[id]"
         options={{
-          headerShown: true,
-          headerTitle: 'Student Details',
-          headerBackTitle: 'Back',
+          // Screen renders its own custom header; hide the native Stack header
+          // to avoid a duplicate header bar.
+          headerShown: false,
         }}
       />
       <Stack.Screen
         name="parent/[id]"
         options={{
-          headerShown: true,
-          headerTitle: 'Parent Details',
-          headerBackTitle: 'Back',
+          // Screen renders its own custom header; hide the native Stack header
+          // to avoid a duplicate header bar.
+          headerShown: false,
         }}
       />
       <Stack.Screen

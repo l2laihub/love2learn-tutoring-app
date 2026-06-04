@@ -180,7 +180,7 @@ export default function StudentDetailScreen() {
   // Loading state
   if (loading) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.piano.primary} />
           <Text style={styles.loadingText}>Loading student...</Text>
@@ -192,7 +192,7 @@ export default function StudentDetailScreen() {
   // Error state
   if (error || !student) {
     return (
-      <SafeAreaView style={styles.container} edges={['bottom']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <View style={styles.errorContainer}>
           <Ionicons name="alert-circle" size={48} color={colors.status.error} />
           <Text style={styles.errorText}>Failed to load student</Text>
@@ -224,7 +224,7 @@ export default function StudentDetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['bottom']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header with Back Button */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
