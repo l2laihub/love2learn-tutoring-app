@@ -1,6 +1,8 @@
 // Pure helpers for the send-push-notification edge function.
 // No I/O here so this module is unit-testable with `deno test`.
 
+// Mirrors the Postgres `notification_type` enum (base enum plus the values
+// added by later migrations: payment_reminder, enrollment_*, dropin_*).
 export type NotificationType =
   | 'announcement'
   | 'reschedule_request'
@@ -8,6 +10,11 @@ export type NotificationType =
   | 'lesson_reminder'
   | 'worksheet_assigned'
   | 'payment_due'
+  | 'payment_reminder'
+  | 'enrollment_request'
+  | 'enrollment_response'
+  | 'dropin_request'
+  | 'dropin_response'
   | 'general';
 
 export interface NotificationRecord {
@@ -33,6 +40,9 @@ export function preferenceKeyForType(
   type: NotificationType,
 ): keyof NotificationPrefs | null {
   switch (type) {
+    // Payment reminders are inserted as 'payment_reminder'; 'payment_due' is the
+    // matching preference key. (The base enum also has a 'payment_due' type.)
+    case 'payment_reminder':
     case 'payment_due':
       return 'payment_due';
     case 'lesson_reminder':

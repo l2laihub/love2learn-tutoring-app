@@ -5,6 +5,16 @@ Deno.test('payment_due maps to the payment_due preference', () => {
   assertEquals(preferenceKeyForType('payment_due'), 'payment_due');
 });
 
+// payment_reminder is the type the payment-reminder flow actually inserts; it
+// must gate on the same payment_due preference key the email path uses.
+Deno.test('payment_reminder maps to the payment_due preference', () => {
+  assertEquals(preferenceKeyForType('payment_reminder'), 'payment_due');
+});
+
+Deno.test('suppresses payment_reminder push when payment_due is off', () => {
+  assertEquals(shouldSendPush('payment_reminder', { payment_due: false }), false);
+});
+
 Deno.test('lesson_reminder maps to lesson_reminders preference', () => {
   assertEquals(preferenceKeyForType('lesson_reminder'), 'lesson_reminders');
 });
