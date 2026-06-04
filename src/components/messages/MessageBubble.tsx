@@ -16,6 +16,10 @@ import {
   StyleSheet,
   Text,
   GestureResponderEvent,
+  Linking,
+  Alert,
+  type StyleProp,
+  type TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing } from '../../theme';
@@ -57,6 +61,52 @@ const chatColors = {
     avatarText: '#FFFFFF',
   },
 };
+
+// Matches http(s):// and bare www. URLs. The capturing group keeps the URLs
+// as separate items when used with String.split().
+const URL_REGEX = /((?:https?:\/\/|www\.)[^\s]+)/gi;
+
+function isUrl(part: string): boolean {
+  return /^(?:https?:\/\/|www\.)/i.test(part);
+}
+
+function openUrl(raw: string) {
+  const url = /^www\./i.test(raw) ? `https://${raw}` : raw;
+  Linking.openURL(url).catch(() => {
+    Alert.alert('Unable to open link', raw);
+  });
+}
+
+/**
+ * Renders message text with tappable URLs. Trailing punctuation (e.g. a period
+ * or closing paren ending a sentence) is kept out of the link target.
+ */
+function renderMessageContent(
+  content: string,
+  linkStyle: StyleProp<TextStyle>,
+  linkable: boolean,
+): React.ReactNode {
+  return content.split(URL_REGEX).map((part, index) => {
+    if (!part) return null;
+    if (!isUrl(part)) return part;
+
+    const trailing = part.match(/[)\].,;:!?'"]+$/)?.[0] ?? '';
+    const url = trailing ? part.slice(0, -trailing.length) : part;
+
+    return (
+      <Text key={index}>
+        <Text
+          style={linkStyle}
+          onPress={linkable ? () => openUrl(url) : undefined}
+          suppressHighlighting
+        >
+          {url}
+        </Text>
+        {trailing}
+      </Text>
+    );
+  });
+}
 
 export function MessageBubble({
   message,
@@ -160,7 +210,11 @@ export function MessageBubble({
                 isOwnMessage ? styles.ownText : styles.otherText,
               ]}
             >
-              {message.content}
+              {renderMessageContent(
+                message.content,
+                isOwnMessage ? styles.ownLink : styles.otherLink,
+                !isSelectionMode,
+              )}
             </Text>
           )}
 
@@ -285,6 +339,18 @@ const styles = StyleSheet.create({
   },
   otherText: {
     color: chatColors.otherBubble.text,
+  },
+
+  // Tappable links - underlined, color-tuned per bubble for contrast
+  ownLink: {
+    color: '#EAF7F8',
+    textDecorationLine: 'underline' as const,
+    fontWeight: '600' as const,
+  },
+  otherLink: {
+    color: '#1E6FBF',
+    textDecorationLine: 'underline' as const,
+    fontWeight: '600' as const,
   },
 
   // Timestamp Styling - More visible but still subtle
