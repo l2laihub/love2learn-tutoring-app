@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../../src/contexts/AuthContext';
+import { requestPushPermission, registerForPushNotificationsAsync } from '../../../src/lib/push';
 import { useOnboarding } from '../../../src/hooks/useOnboarding';
 import { Button } from '../../../src/components/ui/Button';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
@@ -81,6 +82,16 @@ export default function NotificationsScreen() {
       ...prev,
       [key]: !prev[key],
     }));
+  };
+
+  const [pushEnabled, setPushEnabled] = useState(false);
+
+  const handleEnablePush = async () => {
+    const granted = await requestPushPermission();
+    setPushEnabled(granted);
+    if (granted) {
+      await registerForPushNotificationsAsync();
+    }
   };
 
   const handleBack = () => {
@@ -169,17 +180,27 @@ export default function NotificationsScreen() {
           ))}
         </View>
 
-        {/* Info Note */}
-        <View style={styles.infoNote}>
+        {/* Enable push */}
+        <Pressable
+          style={styles.enablePushButton}
+          onPress={handleEnablePush}
+          disabled={pushEnabled}
+        >
           <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color={colors.neutral.textSecondary}
+            name={pushEnabled ? 'notifications' : 'notifications-outline'}
+            size={20}
+            color={pushEnabled ? colors.secondary.main : colors.primary.main}
           />
-          <Text style={styles.infoText}>
-            Notifications will be sent to your email. Push notifications coming soon!
+          <Text style={styles.enablePushText}>
+            {pushEnabled
+              ? 'Push notifications enabled'
+              : 'Enable push notifications'}
           </Text>
-        </View>
+        </Pressable>
+        <Text style={styles.enablePushHint}>
+          Get reminded about payments, lessons, and messages on this device. You
+          can change this anytime in Settings.
+        </Text>
 
         {/* Spacer */}
         <View style={styles.spacer} />
@@ -295,6 +316,27 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
     lineHeight: 20,
+  },
+  enablePushButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary.subtle,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    marginTop: spacing.xl,
+  },
+  enablePushText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.primary.dark,
+  },
+  enablePushHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    lineHeight: 20,
+    marginTop: spacing.sm,
   },
   spacer: {
     flex: 1,
