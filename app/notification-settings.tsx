@@ -1,6 +1,9 @@
 /**
  * Notification Settings
  * Toggle device push notifications on/off for this device.
+ *
+ * Top-level route (NOT under the tutor-only `settings/` group) so both tutors
+ * and parents can manage their own push notifications.
  */
 
 import { useEffect, useState } from 'react';
@@ -12,8 +15,8 @@ import {
   requestPushPermission,
   registerForPushNotificationsAsync,
   unregisterPushToken,
-} from '../../src/lib/push';
-import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
+} from '../src/lib/push';
+import { colors, spacing, typography, borderRadius, shadows } from '../src/theme';
 
 export default function NotificationSettingsScreen() {
   const [enabled, setEnabled] = useState(false);

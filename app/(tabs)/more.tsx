@@ -85,7 +85,7 @@ const menuItems: MenuItem[] = [
     key: 'notifications-settings',
     label: 'Notifications',
     icon: 'notifications',
-    href: '/settings/notifications',
+    href: '/notification-settings',
     description: 'Manage push notifications',
   },
   {

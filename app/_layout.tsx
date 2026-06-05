@@ -177,11 +177,14 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
-        name="settings/notifications"
+        name="notification-settings"
         options={{
           headerShown: true,
           headerTitle: 'Notifications',
           headerBackTitle: 'Back',
+          headerStyle: { backgroundColor: colors.primary.main },
+          headerTintColor: colors.neutral.textInverse,
+          headerTitleStyle: { fontWeight: '600' },
         }}
       />
       <Stack.Screen
