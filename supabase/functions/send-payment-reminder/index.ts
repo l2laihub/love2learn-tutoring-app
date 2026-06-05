@@ -20,6 +20,10 @@ interface PaymentReminderRequest {
   reminder_type: ReminderType;
   custom_message?: string;
   lesson_ids?: string[]; // Optional: specific payment_lesson IDs to include
+  // True when sent by a scheduled/automated job. Automated reminders fully
+  // honor the parent's opt-out; manual (tutor-initiated) reminders are
+  // transactional and always email, only suppressing the in-app/push alert.
+  automated?: boolean;
 }
 
 interface ReminderConfig {
@@ -213,20 +217,29 @@ serve(async (req: Request) => {
       students: { id: string; name: string }[];
     };
 
-    // Check parent notification preferences
+    // Resolve the parent's notification preference and the send mode.
+    //
+    // A manual reminder (tutor clicked "Send Reminder") is a transactional
+    // billing message: the EMAIL is always sent. The parent's opt-out only
+    // suppresses the in-app notification + device push.
+    //
+    // An automated/scheduled reminder fully honors the opt-out and sends nothing.
     const paymentNotificationsEnabled = parent.preferences?.notifications?.payment_due !== false;
-    if (!paymentNotificationsEnabled) {
-      console.log('Parent has disabled payment notifications, skipping');
+    const isAutomated = requestData.automated === true;
+
+    if (isAutomated && !paymentNotificationsEnabled) {
+      console.log('Automated reminder skipped: parent opted out of payment notifications');
       return new Response(
-        JSON.stringify({ success: true, message: 'Parent has disabled payment notifications, skipped' }),
+        JSON.stringify({ success: true, skipped: true, message: 'Parent has disabled payment notifications, skipped' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (!parent.email) {
-      console.log('Parent has no email address, skipping email notification');
+    if (!parent.email && !paymentNotificationsEnabled) {
+      // Nothing deliverable: no email on file and in-app/push is opted out.
+      console.log('Parent has no email and disabled in-app payment reminders, skipping');
       return new Response(
-        JSON.stringify({ success: true, message: 'Parent has no email, skipped' }),
+        JSON.stringify({ success: true, skipped: true, message: 'Parent has no email and has disabled in-app payment reminders' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -332,7 +345,12 @@ serve(async (req: Request) => {
 
     const paymentsUrl = `${appUrl}/payments`;
 
-    // Send email via Resend
+    let emailId: string | null = null;
+    let emailSent = false;
+
+    // Send email via Resend. Transactional on a manual reminder — always sent
+    // when an address is on file, regardless of the in-app opt-out.
+    if (parent.email) {
     const emailResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -444,9 +462,6 @@ serve(async (req: Request) => {
       }),
     });
 
-    let emailId: string | null = null;
-    let emailSent = false;
-
     if (emailResponse.ok) {
       const emailResult = await emailResponse.json();
       emailId = emailResult.id;
@@ -457,37 +472,41 @@ serve(async (req: Request) => {
       console.error('Resend API error:', errorData);
       // Continue to log the reminder even if email fails
     }
+    }
 
-    // Create in-app notification
+    // Create in-app notification (this triggers the device push). Suppressed
+    // when the parent has opted out of payment reminders.
     let notificationId: string | null = null;
-    try {
-      const { data: notification, error: notificationError } = await supabase
-        .from('notifications')
-        .insert({
-          recipient_id: parent.id,
-          type: 'payment_reminder',
-          title: config.greeting.charAt(0).toUpperCase() + config.greeting.slice(1),
-          message: `Your invoice for ${monthDisplay} has a balance of $${balanceDue.toFixed(2)}.`,
-          priority: config.urgencyLevel === 'high' ? 'high' : 'normal',
-          data: {
-            payment_id: payment_id,
-            amount_due: paymentData.amount_due,
-            amount_paid: paymentData.amount_paid,
-            balance_due: balanceDue,
-            month: paymentData.month,
-            reminder_type: reminder_type,
-          },
-          action_url: '/payments',
-        })
-        .select('id')
-        .single();
+    if (paymentNotificationsEnabled) {
+      try {
+        const { data: notification, error: notificationError } = await supabase
+          .from('notifications')
+          .insert({
+            recipient_id: parent.id,
+            type: 'payment_reminder',
+            title: config.greeting.charAt(0).toUpperCase() + config.greeting.slice(1),
+            message: `Your invoice for ${monthDisplay} has a balance of $${balanceDue.toFixed(2)}.`,
+            priority: config.urgencyLevel === 'high' ? 'high' : 'normal',
+            data: {
+              payment_id: payment_id,
+              amount_due: paymentData.amount_due,
+              amount_paid: paymentData.amount_paid,
+              balance_due: balanceDue,
+              month: paymentData.month,
+              reminder_type: reminder_type,
+            },
+            action_url: '/payments',
+          })
+          .select('id')
+          .single();
 
-      if (!notificationError && notification) {
-        notificationId = notification.id;
+        if (!notificationError && notification) {
+          notificationId = notification.id;
+        }
+      } catch (notifError) {
+        console.error('Error creating notification:', notifError);
+        // Continue even if notification fails
       }
-    } catch (notifError) {
-      console.error('Error creating notification:', notifError);
-      // Continue even if notification fails
     }
 
     // Log reminder to payment_reminders table
@@ -510,14 +529,30 @@ serve(async (req: Request) => {
       // Don't fail the whole request if logging fails
     }
 
+    // The in-app notification + push were suppressed because the parent opted
+    // out of payment reminders — surface this so the tutor isn't misled.
+    const inAppSuppressed = !paymentNotificationsEnabled;
+
+    let message: string;
+    if (emailSent && inAppSuppressed) {
+      message = `Email sent to ${parent.email}. Note: this parent turned off in-app payment reminders, so no push alert was sent.`;
+    } else if (emailSent) {
+      message = `Reminder email sent to ${parent.email}`;
+    } else if (parent.email) {
+      message = 'Reminder logged, but the email failed to send. Please try again.';
+    } else {
+      message = inAppSuppressed
+        ? 'This parent has no email on file and turned off in-app reminders, so nothing was sent.'
+        : 'In-app reminder created (no email address on file).';
+    }
+
     return new Response(
       JSON.stringify({
-        success: true,
-        message: emailSent
-          ? `Reminder email sent to ${parent.email}`
-          : 'Reminder logged but email failed to send',
+        success: emailSent || !inAppSuppressed,
+        message,
         emailId: emailId,
         emailSent: emailSent,
+        inAppSuppressed: inAppSuppressed,
         notificationId: notificationId,
         reminderId: reminderRecord?.id,
       }),
@@ -527,7 +562,7 @@ serve(async (req: Request) => {
   } catch (error) {
     console.error('Error in send-payment-reminder:', error);
     return new Response(
-      JSON.stringify({ error: 'Internal server error', message: error.message }),
+      JSON.stringify({ error: 'Internal server error', message: error instanceof Error ? error.message : String(error) }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

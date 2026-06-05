@@ -14,6 +14,7 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
@@ -194,9 +195,15 @@ export function SendReminderModal({
     });
 
     if (result.success) {
-      // Show success message
+      // Surface the server message when the parent opted out of in-app reminders
+      // (the email still went out); otherwise a simple success confirmation.
+      const successMessage = result.inAppSuppressed
+        ? result.message || 'Reminder email sent.'
+        : 'Reminder sent successfully!';
       if (Platform.OS === 'web') {
-        window.alert('Reminder sent successfully!');
+        window.alert(successMessage);
+      } else {
+        Alert.alert('Reminder Sent', successMessage);
       }
       await refetchReminders();
       onSuccess?.();
@@ -208,6 +215,8 @@ export function SendReminderModal({
         : result.message || 'Failed to send reminder.';
       if (Platform.OS === 'web') {
         window.alert(message);
+      } else {
+        Alert.alert('Reminder Not Sent', message);
       }
     }
   };

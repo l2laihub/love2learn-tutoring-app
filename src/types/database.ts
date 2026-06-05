@@ -1310,9 +1310,13 @@ export interface SendPaymentReminderResponse {
   message: string;
   emailId?: string;
   emailSent?: boolean;
+  // True when the in-app notification + push were suppressed because the parent
+  // opted out of payment reminders (the email is still sent on a manual send).
+  inAppSuppressed?: boolean;
   notificationId?: string;
   reminderId?: string;
   duplicate?: boolean;
+  skipped?: boolean;
 }
 
 // Reminder history summary for display
