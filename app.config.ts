@@ -130,6 +130,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         iCloudContainerEnvironment: 'Production',
       },
     ],
+    [
+      'expo-notifications',
+      {
+        color: '#3D9CA8',
+      },
+    ],
   ],
 
   experiments: {

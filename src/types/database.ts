@@ -838,11 +838,57 @@ export type Database = {
           }
         ];
       };
+      push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          token: string;
+          platform: 'ios' | 'android' | 'web';
+          created_at: string;
+          last_seen_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          token: string;
+          platform: 'ios' | 'android' | 'web';
+          created_at?: string;
+          last_seen_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          token?: string;
+          platform?: 'ios' | 'android' | 'web';
+          created_at?: string;
+          last_seen_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'push_tokens_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'users';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      // Note: get_current_user_parent and get_admin_dashboard_stats are typed
+      // permissively to match this file's existing hand-maintained style.
+      // Without them, adding any new Table shifts supabase-js rpc inference and
+      // collapses their result to `never` at call sites.
+      get_current_user_parent: {
+        Args: Record<string, never>;
+        Returns: Record<string, any>[];
+      };
+      get_admin_dashboard_stats: {
+        Args: Record<string, never>;
+        Returns: Record<string, any>[];
+      };
       // Parent Invitation Functions
       generate_parent_invitation: {
         Args: { parent_id: string };
@@ -927,6 +973,10 @@ export type Database = {
           signed_by_name: string | null;
           expires_at: string | null;
         }[];
+      };
+      upsert_push_token: {
+        Args: { p_token: string; p_platform: string };
+        Returns: undefined;
       };
     };
     Enums: {

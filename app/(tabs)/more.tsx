@@ -82,6 +82,13 @@ const menuItems: MenuItem[] = [
     tutorOnly: true,
   },
   {
+    key: 'notifications-settings',
+    label: 'Notifications',
+    icon: 'notifications',
+    href: '/settings/notifications',
+    description: 'Manage push notifications',
+  },
+  {
     key: 'profile',
     label: 'Profile',
     icon: 'person',

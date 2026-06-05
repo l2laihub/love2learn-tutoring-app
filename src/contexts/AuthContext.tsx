@@ -17,6 +17,8 @@ import {
   resetPassword,
   AuthResponse,
 } from '../lib/auth';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import { unregisterPushToken } from '../lib/push';
 import { Parent, UserRole } from '../types/database';
 
 // Storage key for cached role
@@ -85,6 +87,7 @@ async function setCachedRole(userId: string, role: UserRole): Promise<void> {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const authState = useAuthHook();
+  usePushNotifications(authState.isAuthenticated);
   const [cachedRole, setCachedRoleState] = useState<UserRole | null>(null);
 
   // Load cached role when user changes
@@ -147,6 +150,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const tutorNeedsOnboarding = isTutor && needsOnboarding;
   const parentNeedsOnboarding = isParent && needsOnboarding;
 
+  const handleSignOut = async () => {
+    await unregisterPushToken();
+    return signOut();
+  };
+
   const value: AuthContextType = {
     ...authState,
     role,
@@ -157,7 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     parentNeedsOnboarding,
     signIn,
     signUp,
-    signOut,
+    signOut: handleSignOut,
     resetPassword,
   };
 
