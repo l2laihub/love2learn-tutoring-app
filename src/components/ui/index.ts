@@ -1,4 +1,5 @@
-// UI Component Library for Love2Learn
+// UI Component Library for DaLesson
+export { DaLessonMark, DaLessonWordmark, DaLessonLockup } from './DaLessonLogo';
 export { Card } from './Card';
 export { Button } from './Button';
 export { Badge, SubjectBadge, PaymentBadge } from './Badge';

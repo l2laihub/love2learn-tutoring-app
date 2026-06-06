@@ -9,13 +9,13 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { colors, typography, spacing, borderRadius, shadows } from '../../src/theme';
+import { DaLessonMark, DaLessonWordmark } from '../../src/components/ui';
 
 type MessageType = 'error' | 'success' | 'info';
 
@@ -113,14 +113,8 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Image
-                source={require('../../assets/icon.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.title}>DaLesson</Text>
+            <DaLessonMark variant="tile" size={88} style={styles.logoMark} />
+            <DaLessonWordmark size={typography.sizes['2xl']} style={styles.title} />
             <Text style={styles.subtitle}>Welcome back!</Text>
           </View>
 
@@ -262,24 +256,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing['2xl'],
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.primary.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoMark: {
     marginBottom: spacing.base,
     ...shadows.md,
   },
-  logo: {
-    width: 70,
-    height: 70,
-  },
   title: {
-    fontSize: typography.sizes['2xl'],
-    fontWeight: typography.weights.bold,
-    color: colors.neutral.text,
     marginBottom: spacing.sm,
   },
   subtitle: {

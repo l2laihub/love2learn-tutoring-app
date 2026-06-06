@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import { colors, spacing, typography, borderRadius, shadows } from '../../theme'
 import { useAuthContext } from '../../contexts/AuthContext';
 import { useUnreadMessageCount } from '../../hooks/useMessages';
 import { useTutorBranding } from '../../hooks/useTutorBranding';
+import { DaLessonMark } from '../ui';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -88,9 +89,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
       <View style={[styles.sidebar, { paddingTop: insets.top + spacing.md }]}>
         {/* Logo/Brand */}
         <View style={styles.brand}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="school" size={28} color={colors.primary.main} />
-          </View>
+          <DaLessonMark variant="tile" size={44} style={styles.logoMark} />
           <Text style={styles.brandText} numberOfLines={1}>{brandName}</Text>
         </View>
 
@@ -212,13 +211,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     marginBottom: spacing.md,
   },
-  logoContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary.subtle,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoMark: {
     marginRight: spacing.md,
   },
   brandText: {

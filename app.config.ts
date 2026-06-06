@@ -8,12 +8,19 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
  * - version: Semantic version (major.minor.patch) displayed to users
  * - iOS buildNumber: Incremented for each build (managed by EAS with autoIncrement)
  * - Android versionCode: Incremented for each build (managed by EAS with autoIncrement)
+ *
+ * runtimeVersion policy is `appVersion`, so the runtime is derived from `version`
+ * above. OTA updates (`eas update`) only reach installs whose runtime matches the
+ * published update's runtime. Bumping `version` 1.0.0 -> 1.1.0 means updates
+ * published after this bump target the 1.1.0 build; existing 1.0.0 installs only
+ * get the rebrand via the new store build (or a separate update published while
+ * the config still reads 1.0.0).
  */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'DaLesson',
   slug: 'love2learn',
-  version: '1.0.0',
+  version: '1.1.0',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
@@ -31,7 +38,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'app.huybuilds.dalesson',
-    buildNumber: '1',
+    buildNumber: '2',
     config: {
       usesNonExemptEncryption: false,
     },
@@ -60,12 +67,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // Android-specific configuration
   android: {
     adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#FFFFFF',
-      monochromeImage: './assets/adaptive-icon.png',
+      foregroundImage: './assets/adaptive-icon-foreground.png',
+      backgroundColor: '#FF6B6B',
+      monochromeImage: './assets/adaptive-icon-monochrome.png',
     },
     package: 'app.huybuilds.dalesson',
-    versionCode: 1,
+    versionCode: 2,
     permissions: [
       // Camera and storage for image picker
       'android.permission.CAMERA',
@@ -106,7 +113,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     name: 'DaLesson Tutoring',
     shortName: 'DaLesson',
     description: 'All-in-one tutoring management for independent tutors',
-    themeColor: '#3D9CA8',
+    themeColor: '#FF6B6B',
     backgroundColor: '#FFFFFF',
   },
 
@@ -133,7 +140,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        color: '#3D9CA8',
+        color: '#FF6B6B',
       },
     ],
   ],

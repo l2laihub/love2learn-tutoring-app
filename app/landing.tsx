@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, shadows } from '../src/theme';
 import { useResponsive } from '../src/hooks/useResponsive';
+import { DaLessonMark } from '../src/components/ui';
 
 // Quick benefits
 const quickBenefits = [
@@ -216,9 +217,7 @@ export default function LandingPage() {
         <View style={styles.navContainer}>
           <View style={[styles.nav, { maxWidth: containerMaxWidth }]}>
             <View style={styles.navBrand}>
-              <View style={styles.logoCircle}>
-                <Text style={styles.logoText}>L2L</Text>
-              </View>
+              <DaLessonMark variant="tile" size={44} style={styles.logoMark} />
               <Text style={styles.brandName}>DaLesson</Text>
             </View>
             <View style={styles.navLinks}>
@@ -682,9 +681,7 @@ export default function LandingPage() {
           <View style={[styles.footerContent, { maxWidth: containerMaxWidth }]}>
             <View style={styles.footerTop}>
               <View style={styles.footerBrand}>
-                <View style={styles.logoCircleSmall}>
-                  <Text style={styles.logoTextSmall}>L2L</Text>
-                </View>
+                <DaLessonMark variant="tile" size={36} />
                 <Text style={styles.footerBrandName}>DaLesson</Text>
               </View>
               <View style={styles.footerLinks}>
@@ -744,21 +741,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primary.main,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: colors.primary.light,
+  logoMark: {
     ...shadows.md,
-  },
-  logoText: {
-    fontSize: typography.sizes.sm,
-    fontWeight: typography.weights.bold,
-    color: colors.neutral.white,
   },
   brandName: {
     fontSize: typography.sizes.lg,
@@ -1729,21 +1713,6 @@ const styles = StyleSheet.create({
   footerBrand: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  logoCircleSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primary.main,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.primary.light,
-  },
-  logoTextSmall: {
-    fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.bold,
-    color: colors.neutral.white,
   },
   footerBrandName: {
     fontSize: typography.sizes.md,
