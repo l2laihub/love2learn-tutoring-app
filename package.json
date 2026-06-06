@@ -8,7 +8,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "update:production": "eas update --channel production",
+    "update:preview": "eas update --channel preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
