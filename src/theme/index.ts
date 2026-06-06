@@ -1,18 +1,25 @@
 /**
- * Love2Learn Design System
+ * DaLesson Design System
  *
  * Aesthetic: "Nurturing Growth" - A fresh, natural design inspired by the
- * Love2Learn Academy logo featuring growth, learning, and care themes.
- * The teal-green-coral palette creates visual hierarchy:
- * - Teal: Primary brand, headers, navigation
+ * Love To Learn Academy logo, rebranded for the DaLesson product.
+ * The coral-teal-green palette creates visual hierarchy:
+ * - Coral: Primary brand UI — navigation, primary buttons, focus, links
+ * - Teal: Supporting accent (and the Piano subject color)
  * - Green: Success, growth, math subject
- * - Coral: Warm accent for CTAs, urgency, highlights
+ * - Navy: Text/authority/trust
  *
- * Logo Colors Reference:
- * - Teal (#3D9CA8): Sky/nurturing environment
- * - Green (#7CB342): Growth/leaves/learning
+ * Rebrand note: coral (#FF6B6B) is now the UI primary; teal (#3D9CA8) moved to
+ * the supporting accent role but remains the Piano subject color; green stays
+ * secondary/Math. Subject colors are independent of the UI primary, so Piano
+ * stays teal and Math stays green throughout. To revert to the heritage
+ * Love2Learn era (teal primary), swap the `primary` and `accent` roles below.
+ *
+ * Brand Colors Reference:
+ * - Coral (#FF6B6B): Primary UI / warmth / engagement
+ * - Teal (#3D9CA8): Accent / sky / piano subject
+ * - Green (#7CB342): Growth / leaves / math subject
  * - Navy (#1B3A4B): Text/authority/trust
- * - Coral (#FF6B6B): Warm accent for engagement
  */
 
 export const colors = {
@@ -30,14 +37,14 @@ export const colors = {
     navy: '#1B3A4B',
   },
 
-  // Primary - Teal (main brand color from logo sky)
+  // Primary - Coral (DaLesson rebrand UI primary: nav, CTAs, focus, links)
   primary: {
-    main: '#3D9CA8',
-    primary: '#3D9CA8', // Alias for consistency
-    light: '#5FB3BC',
-    dark: '#2D7A84',
-    subtle: '#E8F5F7',
-    gradient: ['#3D9CA8', '#5FB3BC'] as const,
+    main: '#FF6B6B',
+    primary: '#FF6B6B', // Alias for consistency
+    light: '#FF9A9A',
+    dark: '#E85555',
+    subtle: '#FFF0F0',
+    gradient: ['#FF6B6B', '#FF9A9A'] as const,
   },
 
   // Secondary - Green (growth/leaves from logo)
@@ -50,14 +57,14 @@ export const colors = {
     gradient: ['#7CB342', '#A5D66B'] as const,
   },
 
-  // Accent - Coral (warm highlight for CTAs and urgency)
+  // Accent - Teal (supporting accent; also the Piano subject color)
   accent: {
-    main: '#FF6B6B',
-    primary: '#FF6B6B', // Alias for consistency
-    light: '#FF9A9A',
-    dark: '#E85555',
-    subtle: '#FFF0F0',
-    gradient: ['#FF6B6B', '#FF8E8E'] as const,
+    main: '#3D9CA8',
+    primary: '#3D9CA8', // Alias for consistency
+    light: '#5FB3BC',
+    dark: '#2D7A84',
+    subtle: '#E8F5F7',
+    gradient: ['#3D9CA8', '#5FB3BC'] as const,
   },
 
   // Subject-specific colors (mapped to brand)

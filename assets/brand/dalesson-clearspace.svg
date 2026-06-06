@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="DaLesson clear space spec">
+  
+  <rect x="0.5" y="0.5" width="239" height="239" fill="none" stroke="#E0E8EC"></rect>
+  
+  <rect x="44" y="44" width="152" height="152" fill="#FFF0F0"></rect>
+  
+  <rect x="76" y="76" width="88" height="88" rx="24.6" fill="#FF6B6B"></rect>
+  <g transform="translate(76 76) scale(0.88)">
+    <circle cx="46" cy="61" r="16" fill="#FFFFFF"></circle>
+    <rect x="60" y="21" width="8" height="44" rx="4" fill="#FFFFFF"></rect>
+  </g>
+  
+  <text x="120" y="36" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" fill="#8A9BA8">clear space = ½ mark (stem height)</text>
+</svg>

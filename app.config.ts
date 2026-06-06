@@ -60,9 +60,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // Android-specific configuration
   android: {
     adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#FFFFFF',
-      monochromeImage: './assets/adaptive-icon.png',
+      foregroundImage: './assets/adaptive-icon-foreground.png',
+      backgroundColor: '#FF6B6B',
+      monochromeImage: './assets/adaptive-icon-monochrome.png',
     },
     package: 'app.huybuilds.dalesson',
     versionCode: 1,
@@ -106,7 +106,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     name: 'DaLesson Tutoring',
     shortName: 'DaLesson',
     description: 'All-in-one tutoring management for independent tutors',
-    themeColor: '#3D9CA8',
+    themeColor: '#FF6B6B',
     backgroundColor: '#FFFFFF',
   },
 
@@ -133,7 +133,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        color: '#3D9CA8',
+        color: '#FF6B6B',
       },
     ],
   ],
