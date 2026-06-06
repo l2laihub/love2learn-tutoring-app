@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -824,6 +825,17 @@ export default function CalendarScreen() {
           </Text>
           {isTutor && (
             <View style={styles.headerButtons}>
+              {!isSelectMode && (
+                <Pressable
+                  style={styles.openingsButton}
+                  onPress={() => router.push('/openings' as any)}
+                  accessibilityRole="button"
+                  accessibilityLabel="View weekly openings"
+                >
+                  <Ionicons name="calendar-clear-outline" size={20} color={colors.primary.main} />
+                  <Text style={styles.openingsButtonText}>Openings</Text>
+                </Pressable>
+              )}
               <Pressable
                 style={[styles.selectButton, isSelectMode && styles.selectButtonActive]}
                 onPress={toggleSelectMode}
@@ -1704,6 +1716,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  openingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary.main,
+    backgroundColor: colors.primary.subtle,
+  },
+  openingsButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.primary.main,
   },
   selectButton: {
     flexDirection: 'row',

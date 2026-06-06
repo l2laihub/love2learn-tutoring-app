@@ -58,6 +58,14 @@ const menuItems: MenuItem[] = [
     tutorOnly: true,
   },
   {
+    key: 'openings',
+    label: 'Openings',
+    icon: 'calendar-clear',
+    href: '/openings',
+    description: 'See your open slots this week',
+    tutorOnly: true,
+  },
+  {
     key: 'requests',
     label: 'Lesson Requests',
     icon: 'git-pull-request',

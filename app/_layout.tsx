@@ -158,6 +158,14 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="openings"
+        options={{
+          headerShown: true,
+          headerTitle: 'Openings',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
         name="requests"
         options={{
           headerShown: true,
