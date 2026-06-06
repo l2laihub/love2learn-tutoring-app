@@ -4,7 +4,7 @@
  * Shows tutor availability and allows selecting a preferred new time slot
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,7 @@ import {
   DAY_NAMES,
   formatTimeDisplay,
 } from '../hooks/useTutorAvailability';
+import { generateSlotsForWindow } from '../lib/openSlots';
 import { useCreateLessonRequest } from '../hooks/useLessonRequests';
 import { useMyTutorId } from '../hooks/useParents';
 
@@ -71,6 +72,22 @@ function getNextTwoWeeks(): Date[] {
   }
 
   return dates;
+}
+
+// Normalize a busy-slot time into a local wall-clock "HH:MM" string.
+// The get_busy_slots_for_date RPC returns TIMESTAMPTZ values, which arrive as
+// ISO strings (e.g. "2026-06-05T16:30:00+00:00"); the pure slot math in
+// openSlots.ts only understands clock strings. Mirrors the prior inline
+// parser's local-time handling (Date#getHours), and passes through values that
+// are already "HH:MM"/"HH:MM:SS".
+function busySlotToClock(timeStr: string): string {
+  if (timeStr.includes('T') || (timeStr.includes('-') && timeStr.includes(':'))) {
+    const date = new Date(timeStr.replace(' ', 'T'));
+    const h = String(date.getHours()).padStart(2, '0');
+    const m = String(date.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  return timeStr;
 }
 
 export function RescheduleRequestModal({
@@ -129,70 +146,22 @@ export function RescheduleRequestModal({
     );
   }, [selectedDate, availability]);
 
-  // Helper function to parse time string (HH:MM, HH:MM:SS, or timestamp) to minutes from midnight in LOCAL timezone
-  const parseTimeToMinutes = useCallback((timeStr: string): number => {
-    // Check if it's a timestamp (contains 'T' for ISO or space for Postgres format like "2026-01-12 12:15:00+00")
-    if (timeStr.includes('T') || (timeStr.includes('-') && timeStr.includes(':'))) {
-      // Replace space with T for proper ISO parsing if needed
-      const isoStr = timeStr.replace(' ', 'T');
-      const date = new Date(isoStr);
-      // getHours() returns local time hours, which is what we want for display
-      return date.getHours() * 60 + date.getMinutes();
-    }
-    // Otherwise parse as HH:MM or HH:MM:SS (simple time string)
-    const parts = timeStr.split(':').map(Number);
-    return parts[0] * 60 + parts[1];
-  }, []);
-
-  // Helper function to check if a time slot conflicts with an existing lesson
-  const isTimeSlotBusy = useCallback((timeStr: string, durationMin: number = 30) => {
-    if (!selectedDate || busySlots.length === 0) return false;
-
-    // Parse the proposed time as minutes from midnight for comparison
-    const proposedStartMins = parseTimeToMinutes(timeStr);
-    const proposedEndMins = proposedStartMins + durationMin;
-
-    // Check against each busy slot
-    for (const busySlot of busySlots) {
-      // Parse the busy slot times (format: "HH:MM:SS" from database TIME type)
-      const slotStartMins = parseTimeToMinutes(busySlot.start_time);
-      const slotEndMins = parseTimeToMinutes(busySlot.end_time);
-
-      // Check for overlap: proposed overlaps with existing if:
-      // proposedStart < slotEnd AND proposedEnd > slotStart
-      if (proposedStartMins < slotEndMins && proposedEndMins > slotStartMins) {
-        return true;
-      }
-    }
-
-    return false;
-  }, [selectedDate, busySlots, parseTimeToMinutes]);
-
-  // Generate time options within a slot, filtering out busy times
+  // Generate 30-minute start times within the selected slot, flagging busy ones.
+  // Busy times come from the busy-slots RPC (all booked lessons, not just this
+  // parent's). Shared math lives in src/lib/openSlots.ts.
   const timeOptionsForSlot = useMemo(() => {
     if (!selectedSlot) return [];
-
-    const times: { time: string; isBusy: boolean }[] = [];
-    const [startHour, startMin] = selectedSlot.start_time.split(':').map(Number);
-    const [endHour, endMin] = selectedSlot.end_time.split(':').map(Number);
-
-    const startMinutes = startHour * 60 + startMin;
-    const endMinutes = endHour * 60 + endMin;
-
-    // Get the lesson duration to check for conflicts
     const lessonDuration = lesson?.duration_min || 30;
-
-    // Generate 30-minute intervals
-    for (let mins = startMinutes; mins < endMinutes; mins += 30) {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      const timeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-      const isBusy = isTimeSlotBusy(timeStr, lessonDuration);
-      times.push({ time: timeStr, isBusy });
-    }
-
-    return times;
-  }, [selectedSlot, isTimeSlotBusy, lesson?.duration_min]);
+    return generateSlotsForWindow({
+      window: { start: selectedSlot.start_time, end: selectedSlot.end_time },
+      blocked: busySlots.map((b) => ({
+        start: busySlotToClock(b.start_time),
+        end: busySlotToClock(b.end_time),
+      })),
+      slotDurationMin: lessonDuration,
+      granularityMin: 30,
+    });
+  }, [selectedSlot, busySlots, lesson?.duration_min]);
 
   // Reset state when modal opens
   useEffect(() => {

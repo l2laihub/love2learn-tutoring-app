@@ -116,3 +116,24 @@ Deno.test('computeOpenSlots: window not divisible by granularity drops the parti
   });
   assertEquals(open, ['09:00']);
 });
+
+Deno.test('regression: reschedule modal slot list (busy slots kept as disabled)', () => {
+  // Mirrors the modal: a 09:00-12:00 availability window, a 60-min lesson,
+  // busy 10:00-11:00 from the busy-slots RPC. The modal renders all six
+  // 30-min starts (granularity=30 bounds emission), marking those that
+  // conflict with the 60-min lesson busy.
+  const slots = generateSlotsForWindow({
+    window: { start: '09:00:00', end: '12:00:00' },
+    blocked: [{ start: '10:00:00', end: '11:00:00' }],
+    slotDurationMin: 60,
+    granularityMin: 30,
+  });
+  assertEquals(slots, [
+    { time: '09:00', isBusy: false },
+    { time: '09:30', isBusy: true },  // 09:30-10:30 overlaps 10:00-11:00
+    { time: '10:00', isBusy: true },
+    { time: '10:30', isBusy: true },  // 10:30-11:30 overlaps 10:00-11:00
+    { time: '11:00', isBusy: false },
+    { time: '11:30', isBusy: false }, // 11:30-12:30 does not overlap 10:00-11:00
+  ]);
+});
