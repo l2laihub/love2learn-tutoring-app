@@ -1,205 +1,219 @@
 # Auto-complete & auto-pay lessons — Design
 
 **Date:** 2026-06-07
-**Status:** Approved (design phase)
+**Status:** Approved (design phase, revised after code discovery)
 
 ## Problem
 
-Today a tutor must manually mark each scheduled lesson as **completed** and track its
-payment status. This is per-class busywork done at end of day or end of week. The tutor
-wants finished lessons to be marked **completed + paid automatically**, and to only step
-in for the exceptions — a class that was **unpaid** or **cancelled**. Everything else
-should default to completed + paid.
+Today a tutor must manually mark each scheduled lesson as **completed** and settle its
+payment. This is per-class busywork done at end of day or end of week. The tutor wants
+finished lessons to be marked **completed + paid automatically**, stepping in only for the
+exceptions — a class that was **unpaid** or **cancelled**. Everything else should default
+to completed + paid.
 
 ## Decisions (from brainstorming)
 
 1. **Paid is optimistic.** Lessons are marked paid by default; the tutor reverses the few
    that weren't actually paid.
-2. **Fires at end of day, tutor-local.** Batch the day's finished lessons late each
-   evening in the tutor's timezone (not immediately at lesson-end).
+2. **Fires at end of day, tutor-local.** Batch the day's finished lessons late each evening
+   in the tutor's timezone (not immediately at lesson-end).
 3. **Per-tutor toggle, default on.** Every tutor gets the automation immediately but can
    turn it off and return to manual marking.
 4. **Visibility folds into existing channels.** No new dedicated notification; auto-marked
    lessons surface through the in-app calendar and the existing Telegram weekly recap.
-5. **Per-class paid flag on the lesson.** For invoice families, "paid" becomes a flag
-   directly on the lesson (today it only exists at the monthly-invoice level and only
-   after an invoice is generated). A paid/unpaid pill shows on the lesson card; monthly
-   invoicing inherits the flag.
+5. **Reuse the existing "Complete & Mark as Paid" flow** (see Key discovery) rather than
+   inventing a parallel per-lesson paid notion.
 
-## Core principle
+## Key discovery (why this design was revised)
 
-The nightly job is **exactly equivalent to the tutor pressing "Complete" on each finished
-lesson, plus marking it paid.** Same prepaid bookkeeping, same side effects — just
-automated, with `paid = true` added optimistically. This parity is the spec: auto-completion
-must produce the same result as a manual completion, never a divergent one.
+The app **already** automates completion-time invoicing, and already has the exact behavior
+the tutor wants — just triggered manually. In `app/(tabs)/calendar.tsx`:
 
-## Background (current behavior)
+- **`handleCompleteLesson`** (`:602`) — on "Complete", for every lesson in the group it
+  calls `completeLesson.mutate()` (sets `status='completed'`, increments prepaid
+  `sessions_used` for prepaid subjects) **and** auto-generates/updates the monthly invoice
+  for invoice-billed subjects via `useQuickInvoice` (`:646`).
+- **`handleCompleteLessonAndPay`** (`:661`) — does all of the above **plus**
+  `markPaymentPaid.mutate(payment.id)` (`:703`), which sets the payment `status='paid'`;
+  the existing trigger `sync_payment_lessons_paid_status()` then flips every linked
+  `payment_lessons.paid = true`.
 
-- `scheduled_lessons.status` is the enum `scheduled | completed | cancelled`.
-  Lesson end time is computed as `scheduled_at + duration_min` (no stored end column).
-- **Completion** (`useCompleteLesson()`, `src/hooks/useLessons.ts`) flips status to
-  `completed` and, for prepaid families, increments `payments.sessions_used` for the
-  matching month/subject (respecting `parents.prepaid_subjects` for hybrid billing).
-- **Paid** for **prepaid** families is implicit: completion consumes a prepaid session.
-- **Paid** for **invoice** families lives in `payment_lessons.paid` + `payments.status`,
-  and `payment_lessons` rows **only exist after a monthly invoice is generated**
-  (`useGenerateInvoice()` in `src/hooks/usePayments.ts`) — typically days/weeks after the
-  lesson. So at lesson-end there is no per-class paid record for invoice families, and the
-  lesson card surfaces no paid status at all.
-- **Cancellation** (`useCancelLesson()`) sets `cancelled`, deletes linked `payment_lessons`
-  rows, and reduces `payments.amount_due`.
-- Existing automation: pg_cron job `telegram-weekly-recaps` runs hourly and gates on each
-  tutor's local time via `parents.timezone`, calling an edge function through Vault secrets
-  (`project_url`, `service_role_key`). Pure-DB jobs do **not** need this hop.
+So "paid" for invoice families is **already represented per lesson** in
+`payment_lessons.paid` (+ `payments.status`), and invoices are generated at completion, not
+in a separate monthly step. Adding a new `scheduled_lessons.paid` column (the earlier draft)
+would create a **second, divergent** source of truth and an incomplete copy of completion.
+
+**Therefore:** the automation is simply a server-side replay of `handleCompleteLessonAndPay`
+for each finished lesson, run nightly per tutor.
+
+### Faithful-port note
+
+`useQuickInvoice` prices lessons with `calculateLessonAmountFromSettings` →
+`calculateLessonAmountWithDetails` (`src/hooks/usePayments.ts:1320`). That function uses
+**duration-based subject rates for all lessons including combined sessions** — it ignores
+the `isCombinedSession` flag for the amount. The dependency-free
+`calculateLessonAmount` already shipped in `supabase/functions/send-telegram-recap/recap.ts`
+is value-identical to it (verified). The edge function reuses that helper (relocated to a
+shared module) so there is no fourth copy of the rate math.
+
+## Architecture
+
+A new **scheduled edge function** `auto-complete-lessons`, invoked hourly by `pg_cron` via
+`pg_net` — the **same pattern** as the existing `telegram-weekly-recaps` cron
+(`supabase/migrations/20260608005154_telegram_recap_schedule.sql`). A SQL dispatcher
+function iterates tutors, gates on tutor-local end-of-day + the per-tutor toggle, and POSTs
+`{ tutor_id }` to the edge function with the service-role key. The edge function does the
+actual work, reusing the real completion + invoice + mark-paid logic ported to Deno.
+
+Trade-off accepted: this depends on the Vault secrets `project_url` and `service_role_key`
+already used by the recap cron. (Memory note: the cron silently no-ops if those are unset —
+the dispatcher logs a notice and returns, same as the recap one.)
 
 ## Design
 
-### 1. Data model changes
+### 1. Data model changes (one migration)
 
-New migration adds:
-
-- `scheduled_lessons.paid BOOLEAN NOT NULL DEFAULT false` — per-class payment status; the
-  new source of truth for "this class was paid."
-  - **Backfill:** for historical lessons, set `paid = true` where a linked
-    `payment_lessons.paid = true` exists; otherwise `false`.
-- `scheduled_lessons.auto_completed_at TIMESTAMPTZ NULL` — set when the job auto-marks a
-  lesson. Distinguishes auto from manual (used by the recap), **not** used for idempotency.
 - `parents.auto_complete_lessons BOOLEAN NOT NULL DEFAULT true` — the per-tutor toggle.
-  Existing tutor rows are set to `true` by the migration.
+  Existing rows default to `true`. (Lives alongside `timezone`, `telegram_recap_enabled`.)
+- `scheduled_lessons.auto_completed_at TIMESTAMPTZ NULL` — stamped by the job when it
+  auto-marks a lesson. Powers the recap's "N auto-marked" count and distinguishes auto from
+  manual. **Not** used for idempotency (status does that).
 
-### 2. Single source of truth for completion effects
+No `scheduled_lessons.paid` column — paid stays in `payment_lessons.paid` / `payments.status`.
 
-Extract a `SECURITY DEFINER` DB function:
+### 2. SQL dispatcher + cron (same migration)
 
-```
-complete_lesson(p_lesson_id uuid, p_set_paid boolean) returns void
-```
+`auto_complete_due_lessons() returns integer`, `SECURITY DEFINER`, mirroring
+`send_weekly_tutor_recaps()`:
 
-It encapsulates the full completion effect: set `status='completed'`, apply the prepaid
-`sessions_used` increment (mirroring today's `useCompleteLesson` logic exactly, including
-`prepaid_subjects` hybrid handling), set `paid = p_set_paid`, and stamp `updated_at`.
+- Reads `project_url` / `service_role_key` from Vault; if missing, `raise notice` and return 0.
+- For each `parents` row where `role='tutor'` and `auto_complete_lessons = true`:
+  - Compute `v_local := now() at time zone coalesce(timezone,'America/Los_Angeles')`.
+  - If `extract(hour from v_local) = 23` (end of day, tutor-local), POST
+    `{ tutor_id }` to `…/functions/v1/auto-complete-lessons` with the service-role bearer.
+- Wrap each tutor in a `begin/exception` block so one failure doesn't abort the loop.
 
-- The cron job calls it with `p_set_paid = true` and additionally stamps
-  `auto_completed_at = now()`.
-- `useCompleteLesson()` is **refactored to call this function via RPC** instead of
-  duplicating the prepaid logic in TypeScript. One implementation, used by both paths.
-  (Manual completion passes `p_set_paid` per existing UI behavior — preserve whatever the
-  manual flow does today for paid; manual completion does not need to force paid.)
+Scheduled hourly (`0 * * * *`) under job name `auto-complete-lessons`; the function filters
+to the 23:00-local hour. **v1 end-of-day hour = 23, hardcoded** (per-tutor configurability
+is out of scope).
 
-### 3. The end-of-day job
+**No idempotency log needed.** The edge function only ever touches `status='scheduled'`
+lessons whose end time has passed, so a repeat invocation is a no-op. Missed runs self-heal:
+the next night's run still picks up any past-due `scheduled` lesson (the filter is "past-due
+and scheduled", not "today only"). Documented consequence: enabling the toggle when a
+backlog of old `scheduled` lessons exists will auto-complete+pay that backlog on the first
+run — consistent with the optimistic model.
 
-A `SECURITY DEFINER` function:
+### 3. Edge function `auto-complete-lessons`
 
-```
-auto_complete_due_lessons() returns void
-```
+Files under `supabase/functions/auto-complete-lessons/`:
 
-scheduled hourly via `pg_cron` (`0 * * * *`). This is **pure DB work** — no edge function,
-no Vault secrets (unlike the telegram recap). Schedule with:
+- `index.ts` — HTTP handler. Same auth shape as the recap function:
+  - **Internal** (cron, `Authorization: Bearer <service_role>`): trust body `tutor_id`.
+  - **Non-internal** (app, optional "run now" preview): resolve caller via JWT, force
+    `tutor_id` to the caller's own `parents.id`. (Lets the settings screen offer a manual
+    "Run now" without trusting client-supplied ids.)
+  - Service-role Supabase client for all data work (bypasses RLS).
+- `autocomplete.ts` — pure, unit-tested helpers: `dueLessons(rows, nowMs)` (filter to ended
+  lessons), `isSubjectPrepaid(billingMode, prepaidSubjects, subject)`.
+- `autocomplete.test.ts` — tests for the pure helpers.
 
-```
-select cron.schedule('auto-complete-lessons', '0 * * * *',
-  $$ select auto_complete_due_lessons() $$);
-```
+Per invocation, for the resolved tutor:
 
-Each tick, for every tutor where:
+1. Load tutor (`parents`: `id, user_id, timezone, auto_complete_lessons`); bail if toggle off.
+2. Load `tutor_settings` keyed by `tutor.user_id` (same keying quirk as the recap).
+3. Fetch candidate lessons: `scheduled_lessons` where `tutor_id = tutor.id`,
+   `status='scheduled'`, `scheduled_at < now()`, joined to
+   `student:students!inner(id, parent_id, parent:parents!parent_id(id, billing_mode, prepaid_subjects))`,
+   selecting `id, subject, scheduled_at, duration_min, session_id, override_amount`.
+4. `due = dueLessons(rows, Date.now())` — keep only lessons whose
+   `scheduled_at + duration_min*60_000 <= now`.
+5. **Complete each due lesson** (port of `useCompleteLesson`): set `status='completed'`,
+   `auto_completed_at=now()`, `updated_at=now()`; for prepaid-billed subjects, increment the
+   matching month/subject prepaid payment's `sessions_used` (subject-specific first, legacy
+   all-subjects fallback only when `prepaid_subjects` is empty — identical rules to the hook).
+6. **Per parent, generate + settle invoices** (port of `useQuickInvoice` +
+   `useMarkPaymentPaid`): for invoice-billed subjects, build/extend the month's
+   `payment_type='invoice'` payment, insert `payment_lessons` rows priced via the shared
+   `calculateLessonAmount`, then set the payment `amount_paid=amount_due`, `status='paid'`,
+   `paid_at=now()` so the existing trigger marks the lessons paid.
+7. Return a summary `{ completed, invoiced, paid, parents }` (logged; surfaced to "Run now").
 
-- `parents.auto_complete_lessons = true`, **and**
-- the tutor's **local hour is 23** (end of day), derived as
-  `extract(hour from now() at time zone parents.timezone) = 23`
+### 4. Shared rate helper (small refactor)
 
-it processes that tutor's lessons where:
+Relocate `calculateLessonAmount` (and the `SubjectRateConfig`/`TutorRateSettings` types) to
+`supabase/functions/_shared/lessonAmount.ts`. `recap.ts` re-exports them so
+`recap.test.ts` stays green unchanged; `auto-complete-lessons` imports from `_shared`. One
+implementation, two callers.
 
-- `status = 'scheduled'`, **and**
-- end time has passed: `scheduled_at + (duration_min * interval '1 minute') < now()`
+### 5. Fix the uncomplete cleanup gap (now in scope)
 
-For each such lesson it calls `complete_lesson(lesson_id, true)` and sets
-`auto_completed_at = now()`.
+Because auto-completed invoice lessons **will** have `payment_lessons` rows, reversing one
+must clean up. `useUncompleteLesson()` (`src/hooks/useLessons.ts:726`) currently reverts
+status + decrements prepaid but leaves `payment_lessons` (and inflated `payments.amount_due`)
+behind. Extend it to also: delete the lesson's `payment_lessons` rows and reduce the parent
+payment's `amount_due` (recomputing `status`), mirroring `useCancelLesson()`'s cleanup
+(`:534-566`).
 
-**Safety / idempotency:**
+### 6. Tutor adjusts the exceptions
 
-- Only ever touches `status = 'scheduled'` rows → never overrides a manual complete or
-  cancel, never double-processes.
-- Past-due stragglers (e.g. a late Friday-night lesson that hadn't ended at the 23:00 tick)
-  are caught on the next day's tick because the filter is "any past-due scheduled lesson,"
-  not "today only." Nothing is missed; at most a one-day delay for after-23:00 lessons.
-- Tutors with the toggle off are skipped entirely.
+- **Mark unpaid:** reuse the existing per-lesson `useToggleLessonPaid()`
+  (`payment_lessons.paid`) and/or `useMarkPaymentUnpaid()` — already wired in the payments
+  screens. A paid/unpaid pill is added to the lesson detail modal / cards (see §7) so this
+  is reachable from the calendar too.
+- **Cancel / didn't happen:** existing `useCancelLesson()` (clean) and the now-fixed
+  `useUncompleteLesson()`, already reachable from `LessonDetailModal` for completed lessons.
 
-**v1 default:** end-of-day hour is hardcoded to `23` local. Per-tutor configurability is a
-later enhancement (would add a `parents.auto_complete_hour` column).
+### 7. Per-class paid pill (derived, no new column)
 
-### 4. Invoice integration
+Show a paid/unpaid indicator on completed lessons in `LessonDetailModal` (and lesson cards),
+**derived from existing data**: a lesson is "paid" if its linked `payment_lessons.paid` is
+true, or it is a prepaid-covered completion. A lightweight read (e.g. extend the lesson
+fetch with the linked `payment_lessons(paid)`), no schema change.
 
-`useGenerateInvoice()` is updated so that newly created `payment_lessons` rows **inherit
-`paid` from `scheduled_lessons.paid`** (instead of always `false`), and the resulting
-`payments.status` is computed from the inherited values:
+### 8. Settings UI
 
-- all inherited `paid = true` → `paid`
-- some `true`, some `false` → `partial`
-- none `true` → `unpaid`
+Add an **"Automatically complete & mark paid at end of day"** toggle to the tutor business
+settings screen (`app/settings/business.tsx`, which already edits `timezone`), bound to
+`parents.auto_complete_lessons` via a small read/update hook. Optional "Run now" button that
+invokes the edge function for the caller.
 
-`amount_paid` / `paid_at` are set consistently with the computed status. The existing
-one-way trigger `sync_payment_lessons_paid_status()` (`payment.status='paid'` → all linked
-lessons `paid=true`) is left in place and does not conflict, since this change only sets
-initial values at insert time.
+### 9. Recap surfacing (fold into existing)
 
-### 5. Tutor adjusts the exceptions
+In `supabase/functions/send-telegram-recap/`:
 
-- **Mark unpaid:** a tappable paid/unpaid pill on the lesson card and in the lesson detail
-  modal flips `scheduled_lessons.paid`. New lightweight hook (e.g.
-  `useToggleScheduledLessonPaid`) — distinct from the existing `useToggleLessonPaid` which
-  operates on `payment_lessons`. If the lesson is already invoiced, the hook also syncs the
-  linked `payment_lessons.paid` so the books stay consistent.
-- **Cancel / didn't happen:** the existing `useCancelLesson()` and `useUncompleteLesson()`
-  paths are made reachable from an auto-completed lesson (the detail modal must offer these
-  actions when `status = 'completed'`).
-
-**Known pre-existing gap (flagged, out of scope):** `useUncompleteLesson()` does not clean
-up `payment_lessons` when reverting an *already-invoiced* lesson. This is acceptable for the
-auto-flow because auto-pay precedes invoicing; documented here so it isn't mistaken for new
-breakage.
-
-### 6. Visibility (folded into existing channels)
-
-- **In-app:** auto-marked lessons appear `completed` with a **paid** pill on the calendar.
-  No new notification.
-- **Telegram weekly recap** (`supabase/functions/send-telegram-recap`): add a paid
-  indicator (💵) to the class lines and a small "*N auto-marked this week*" count, computed
-  from `auto_completed_at` falling in the recap window. Reuses the existing recap delivery;
-  no new mechanism.
-
-### 7. Settings UI
-
-Add an **"Automatically complete & mark paid at end of day"** toggle to the tutor settings
-screen, bound to `parents.auto_complete_lessons`.
+- `index.ts`: extend the classes query select with `auto_completed_at`; count lessons whose
+  `auto_completed_at` falls in the window; pass `autoMarked` into the recap data.
+- `recap.ts`: `buildRecapMessage` shows a 💵 on paid/auto-marked class lines and a
+  "*N auto-marked this week*" line. Update `recap.test.ts` for the new field/line.
 
 ## Testing
 
-**DB (`auto_complete_due_lessons` / `complete_lesson`):**
+**Pure helpers (`autocomplete.test.ts`, Deno):**
+- `dueLessons` keeps only lessons whose end time ≤ now; excludes not-yet-ended.
+- `isSubjectPrepaid`: fully-prepaid (empty `prepaid_subjects`) → true for any subject;
+  hybrid → true only for listed subjects; invoice → false.
 
-- Due `scheduled` lesson for a toggle-on tutor at 23:00 local → becomes `completed` + `paid`
-  + `auto_completed_at` set.
-- Toggle off → lesson untouched.
-- `cancelled` lesson → untouched.
-- Lesson not yet ended → untouched.
-- Second run (idempotency) → no further changes.
-- Prepaid family → `sessions_used` increments identically to a manual completion (including
-  hybrid `prepaid_subjects`).
-- Timezone gating → a tutor is only processed when it is 23:00 in their `timezone`.
+**Shared rate helper (`_shared/lessonAmount.test.ts`):** existing recap value cases pass
+against the relocated function (combined-session amount == non-combined).
 
-**Invoice inheritance:**
+**Edge function (integration, against local Supabase):**
+- A toggle-on tutor with a past-due `scheduled` invoice lesson → becomes `completed`,
+  `auto_completed_at` set, a `payment_lessons` row exists with `paid=true`, the month's
+  invoice `payments.status='paid'`.
+- Toggle off → nothing changes.
+- `cancelled` and not-yet-ended lessons → untouched.
+- Re-invocation (idempotency) → no further changes (no duplicate `payment_lessons`).
+- Prepaid subject → `sessions_used` increments once; no invoice row created.
 
-- Generate an invoice after auto-pay → `payment_lessons.paid` reflects each lesson's
-  `paid`, and `payments.status` is `paid` / `partial` / `unpaid` accordingly.
+**Uncomplete fix:** uncompleting an auto-completed invoice lesson deletes its
+`payment_lessons` row and reduces `payments.amount_due` (status recomputed).
 
-**Reversal:**
+**Dispatcher:** unit-check the tutor-local hour gate (23:00) and toggle filter via a
+SQL-level test (or manual `select auto_complete_due_lessons()` with seeded data).
 
-- Toggling the lesson paid pill flips `scheduled_lessons.paid`; if invoiced, the linked
-  `payment_lessons.paid` is synced.
-
-## Out of scope (future enhancements)
+## Out of scope (future)
 
 - Per-tutor configurable end-of-day hour (`parents.auto_complete_hour`).
-- Cleaning up `payment_lessons` on uncomplete of an already-invoiced lesson.
-- A dedicated per-run notification (explicitly declined in favor of folding into existing
-  channels).
+- A dedicated per-run notification (declined in favor of existing channels).
+- Reworking the monthly invoice model itself.
