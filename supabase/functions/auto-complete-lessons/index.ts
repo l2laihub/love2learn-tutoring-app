@@ -330,9 +330,12 @@ async function markPaid(supabase: SupabaseClient, paymentId: string): Promise<bo
   return true;
 }
 
-// 'YYYY-MM-01' for the month containing the given timestamp (UTC, matching a
-// UTC-running getMonthStart). Month-boundary lessons in non-UTC tutor tz are an
-// accepted edge nuance, consistent with the existing client behavior.
+// 'YYYY-MM-01' for the month containing the given timestamp, computed in UTC.
+// NOTE: the source getMonthStart (usePayments.ts) uses LOCAL time, so on the
+// server this matches it only when the tutor's tz is UTC. For a lesson within a
+// few hours of a month boundary in a non-UTC tutor tz, the auto-complete job may
+// bucket it into a different invoice month than the manual flow would. Accepted
+// edge nuance (see spec: 2026-06-07-auto-complete-lessons-design.md).
 function monthStartOf(iso: string): string {
   const d = new Date(iso);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
