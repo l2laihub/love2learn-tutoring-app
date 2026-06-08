@@ -112,7 +112,7 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
   if (due.length === 0) return { completed: 0, invoiced: 0, paid: 0, parents: 0 };
 
   // 1. Complete each due lesson; collect (parent, month) pairs needing an invoice.
-  const invoiceTargets = new Map<string, { parentId: string; monthStart: string }>();
+  const invoiceTargets = new Map<string, { parentId: string; monthStart: string; lessonIds: string[] }>();
   let completed = 0;
   for (const l of due) {
     const parent = l.student?.parent;
@@ -136,18 +136,21 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
     if (subjectPrepaid) {
       await incrementPrepaid(supabase, parent.id, monthStart, l.subject, parent.prepaid_subjects ?? []);
     } else {
-      invoiceTargets.set(`${parent.id}|${monthStart}`, { parentId: parent.id, monthStart });
+      const key = `${parent.id}|${monthStart}`;
+      const target = invoiceTargets.get(key) ?? { parentId: parent.id, monthStart, lessonIds: [] };
+      target.lessonIds.push(l.id);
+      invoiceTargets.set(key, target);
     }
   }
 
   // 2. Generate + settle one invoice per (parent, month).
   let invoiced = 0;
   let paid = 0;
-  for (const { parentId, monthStart } of invoiceTargets.values()) {
+  for (const { parentId, monthStart, lessonIds } of invoiceTargets.values()) {
     const payment = await generateInvoice(supabase, tutor.id, parentId, monthStart, settings);
     if (payment) {
       invoiced++;
-      if (await markPaid(supabase, payment.id)) paid++;
+      if (await settleRunLessons(supabase, payment.id, lessonIds)) paid++;
     }
   }
 
@@ -315,18 +318,51 @@ async function generateInvoice(
   return payment;
 }
 
-// Port of useMarkPaymentPaid (usePayments.ts:390-429). The existing
-// sync_payment_lessons_paid_status() trigger flips payment_lessons.paid on this.
-async function markPaid(supabase: SupabaseClient, paymentId: string): Promise<boolean> {
-  const { data: cur, error: e1 } = await supabase
+// Per-lesson settle: mark ONLY the lessons this run completed as paid, then
+// recompute the invoice aggregate from the per-lesson paid flags. Unlike the
+// manual useMarkPaymentPaid (which settles the whole invoice), this never
+// resurrects a lesson the tutor previously marked unpaid — those lessons are
+// already 'completed' (not 'scheduled') so they're never in a run's lessonIds.
+async function settleRunLessons(
+  supabase: SupabaseClient,
+  paymentId: string,
+  lessonIds: string[],
+): Promise<boolean> {
+  if (lessonIds.length === 0) return false;
+  // Mark this run's lessons paid at the per-lesson level.
+  const { error: markErr } = await supabase
+    .from('payment_lessons')
+    .update({ paid: true })
+    .eq('payment_id', paymentId)
+    .in('lesson_id', lessonIds);
+  if (markErr) { console.error('settle mark failed', markErr.message); return false; }
+
+  // Recompute the invoice aggregate from per-lesson paid flags.
+  const { data: links, error: linksErr } = await supabase
+    .from('payment_lessons')
+    .select('amount, paid')
+    .eq('payment_id', paymentId);
+  if (linksErr || !links) { console.error('settle links fetch failed', linksErr?.message); return false; }
+
+  const amountPaid =
+    Math.round(
+      links.filter((l: { paid: boolean | null }) => l.paid).reduce(
+        (s: number, l: { amount: number | null }) => s + (Number(l.amount) || 0),
+        0,
+      ) * 100,
+    ) / 100;
+
+  const { data: pay, error: payErr } = await supabase
     .from('payments').select('amount_due').eq('id', paymentId).single();
-  if (e1 || !cur) { console.error('markPaid fetch failed', e1?.message); return false; }
+  if (payErr || !pay) { console.error('settle payment fetch failed', payErr?.message); return false; }
+
+  const status = amountPaid <= 0 ? 'unpaid' : amountPaid >= pay.amount_due ? 'paid' : 'partial';
   const now = new Date().toISOString();
-  const { error: e2 } = await supabase
+  const { error: updErr } = await supabase
     .from('payments')
-    .update({ amount_paid: cur.amount_due, status: 'paid', paid_at: now, updated_at: now })
+    .update({ amount_paid: amountPaid, status, paid_at: status === 'paid' ? now : null, updated_at: now })
     .eq('id', paymentId);
-  if (e2) { console.error('markPaid update failed', e2.message); return false; }
+  if (updErr) { console.error('settle payment update failed', updErr.message); return false; }
   return true;
 }
 
