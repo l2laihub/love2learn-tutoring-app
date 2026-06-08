@@ -51,6 +51,10 @@ export type Database = {
           agreement_signed_at: string | null;
           billing_mode: 'invoice' | 'prepaid';
           prepaid_subjects: string[];
+          telegram_chat_id: string | null;
+          telegram_username: string | null;
+          telegram_linked_at: string | null;
+          telegram_recap_enabled: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -72,6 +76,10 @@ export type Database = {
           agreement_signed_at?: string | null;
           billing_mode?: 'invoice' | 'prepaid';
           prepaid_subjects?: string[];
+          telegram_chat_id?: string | null;
+          telegram_username?: string | null;
+          telegram_linked_at?: string | null;
+          telegram_recap_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -93,6 +101,10 @@ export type Database = {
           agreement_signed_at?: string | null;
           billing_mode?: 'invoice' | 'prepaid';
           prepaid_subjects?: string[];
+          telegram_chat_id?: string | null;
+          telegram_username?: string | null;
+          telegram_linked_at?: string | null;
+          telegram_recap_enabled?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -888,6 +900,11 @@ export type Database = {
       get_admin_dashboard_stats: {
         Args: Record<string, never>;
         Returns: Record<string, any>[];
+      };
+      // Telegram Recap Functions
+      create_telegram_link_token: {
+        Args: Record<string, never>;
+        Returns: string;
       };
       // Parent Invitation Functions
       generate_parent_invitation: {
