@@ -55,6 +55,7 @@ export type Database = {
           telegram_username: string | null;
           telegram_linked_at: string | null;
           telegram_recap_enabled: boolean;
+          auto_complete_lessons: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -80,6 +81,7 @@ export type Database = {
           telegram_username?: string | null;
           telegram_linked_at?: string | null;
           telegram_recap_enabled?: boolean;
+          auto_complete_lessons?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -105,6 +107,7 @@ export type Database = {
           telegram_username?: string | null;
           telegram_linked_at?: string | null;
           telegram_recap_enabled?: boolean;
+          auto_complete_lessons?: boolean;
           created_at?: string;
           updated_at?: string;
         };
