@@ -12,7 +12,7 @@ declare
   v_url text;
   v_key text;
   v_tutor record;
-  v_local timestamptz;
+  v_local timestamp;        -- wall-clock time in the tutor's tz (no tz re-interpretation)
   v_week_start date;
   v_count integer := 0;
 begin
