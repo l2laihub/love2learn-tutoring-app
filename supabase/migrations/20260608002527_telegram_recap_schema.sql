@@ -32,7 +32,7 @@ create table if not exists telegram_recap_log (
   tutor_id uuid not null references parents(id) on delete cascade,
   week_start date not null,            -- the Sunday of the recapped week
   sent_at timestamptz not null default now(),
-  status text not null default 'sent', -- 'sent' | 'error'
+  status text not null default 'sent' check (status in ('sent','error')), -- 'sent' | 'error'
   error text,
   unique (tutor_id, week_start)
 );
@@ -43,11 +43,13 @@ create index if not exists idx_telegram_recap_log_tutor on telegram_recap_log(tu
 alter table telegram_link_tokens enable row level security;
 alter table telegram_recap_log enable row level security;
 
+drop policy if exists "tutor reads own link tokens" on telegram_link_tokens;
 create policy "tutor reads own link tokens" on telegram_link_tokens
-  for select using (tutor_id = (select id from public.get_current_user_parent() limit 1));
+  for select to authenticated using (tutor_id = (select id from public.get_current_user_parent() limit 1));
 
+drop policy if exists "tutor reads own recap log" on telegram_recap_log;
 create policy "tutor reads own recap log" on telegram_recap_log
-  for select using (tutor_id = (select id from public.get_current_user_parent() limit 1));
+  for select to authenticated using (tutor_id = (select id from public.get_current_user_parent() limit 1));
 
 -- 5. RPC the app calls to mint a deep-link token for the current tutor.
 create or replace function create_telegram_link_token()
