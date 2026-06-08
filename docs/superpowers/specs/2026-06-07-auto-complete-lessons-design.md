@@ -99,10 +99,13 @@ is out of scope).
 
 **No idempotency log needed.** The edge function only ever touches `status='scheduled'`
 lessons whose end time has passed, so a repeat invocation is a no-op. Missed runs self-heal:
-the next night's run still picks up any past-due `scheduled` lesson (the filter is "past-due
-and scheduled", not "today only"). Documented consequence: enabling the toggle when a
-backlog of old `scheduled` lessons exists will auto-complete+pay that backlog on the first
-run — consistent with the optimistic model.
+the next night's run still picks up any recently past-due `scheduled` lesson.
+
+**Bounded look-back window.** The function only sweeps lessons whose `scheduled_at` is
+within the last `MAX_LESSON_AGE_DAYS` (default **7**). This caps the "enabling the toggle
+sweeps a backlog of old uncancelled lessons" risk: stragglers older than the window are left
+`scheduled` for the tutor to handle manually. Self-heal still covers up to a week of missed
+cron runs.
 
 ### 3. Edge function `auto-complete-lessons`
 
@@ -123,11 +126,13 @@ Per invocation, for the resolved tutor:
 1. Load tutor (`parents`: `id, user_id, timezone, auto_complete_lessons`); bail if toggle off.
 2. Load `tutor_settings` keyed by `tutor.user_id` (same keying quirk as the recap).
 3. Fetch candidate lessons: `scheduled_lessons` where `tutor_id = tutor.id`,
-   `status='scheduled'`, `scheduled_at < now()`, joined to
+   `status='scheduled'`, `scheduled_at < now()` **and `scheduled_at >= now() -
+   MAX_LESSON_AGE_DAYS`**, joined to
    `student:students!inner(id, parent_id, parent:parents!parent_id(id, billing_mode, prepaid_subjects))`,
    selecting `id, subject, scheduled_at, duration_min, session_id, override_amount`.
-4. `due = dueLessons(rows, Date.now())` — keep only lessons whose
-   `scheduled_at + duration_min*60_000 <= now`.
+4. `due = dueLessons(rows, Date.now(), MAX_LESSON_AGE_DAYS)` — keep only lessons whose end
+   time has passed (`scheduled_at + duration_min*60_000 <= now`) **and that started within
+   the look-back window** (defense-in-depth alongside the query bound).
 5. **Complete each due lesson** (port of `useCompleteLesson`): set `status='completed'`,
    `auto_completed_at=now()`, `updated_at=now()`; for prepaid-billed subjects, increment the
    matching month/subject prepaid payment's `sessions_used` (subject-specific first, legacy

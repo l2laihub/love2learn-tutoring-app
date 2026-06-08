@@ -237,6 +237,7 @@ import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
 import { dueLessons, isSubjectPrepaid } from './autocomplete.ts';
 
 const NOW = Date.UTC(2026, 5, 7, 18, 0, 0); // 2026-06-07T18:00:00Z
+const MAX_AGE = 7;
 
 Deno.test('dueLessons keeps lessons whose end time has passed', () => {
   const rows = [
@@ -244,13 +245,22 @@ Deno.test('dueLessons keeps lessons whose end time has passed', () => {
     { id: 'b', scheduled_at: '2026-06-07T17:30:00Z', duration_min: 60 }, // ends 18:30 -> not due
     { id: 'c', scheduled_at: '2026-06-07T17:00:00Z', duration_min: 60 }, // ends 18:00 == now -> due
   ];
-  assertEquals(dueLessons(rows as any, NOW).map((l) => l.id), ['a', 'c']);
+  assertEquals(dueLessons(rows as any, NOW, MAX_AGE).map((l) => l.id), ['a', 'c']);
 });
 
 Deno.test('dueLessons handles empty/zero duration', () => {
-  assertEquals(dueLessons([] as any, NOW), []);
+  assertEquals(dueLessons([] as any, NOW, MAX_AGE), []);
   const rows = [{ id: 'z', scheduled_at: '2026-06-07T18:00:00Z', duration_min: 0 }]; // ends now -> due
-  assertEquals(dueLessons(rows as any, NOW).map((l) => l.id), ['z']);
+  assertEquals(dueLessons(rows as any, NOW, MAX_AGE).map((l) => l.id), ['z']);
+});
+
+Deno.test('dueLessons excludes lessons older than the look-back window', () => {
+  const rows = [
+    { id: 'old', scheduled_at: '2026-05-20T16:00:00Z', duration_min: 60 }, // ~18 days ago -> excluded
+    { id: 'edge', scheduled_at: '2026-05-31T18:00:00Z', duration_min: 60 }, // exactly 7 days before now -> kept
+    { id: 'recent', scheduled_at: '2026-06-06T16:00:00Z', duration_min: 60 }, // 1 day ago -> kept
+  ];
+  assertEquals(dueLessons(rows as any, NOW, MAX_AGE).map((l) => l.id), ['edge', 'recent']);
 });
 
 Deno.test('isSubjectPrepaid: fully-prepaid family (no subject list) -> any subject prepaid', () => {
@@ -303,12 +313,19 @@ export interface CandidateLesson {
   } | null;
 }
 
-// Keep only lessons whose end time (scheduled_at + duration) is at or before now.
-export function dueLessons(rows: CandidateLesson[], nowMs: number): CandidateLesson[] {
+// Keep only lessons whose end time (scheduled_at + duration) is at or before now,
+// AND that started within the look-back window (started no more than maxAgeDays
+// ago). The window bounds how far back the job will sweep stale scheduled lessons.
+export function dueLessons(
+  rows: CandidateLesson[],
+  nowMs: number,
+  maxAgeDays: number,
+): CandidateLesson[] {
+  const oldestMs = nowMs - maxAgeDays * 24 * 60 * 60 * 1000;
   return (rows ?? []).filter((l) => {
     const start = new Date(l.scheduled_at).getTime();
     const end = start + (Number(l.duration_min) || 0) * 60_000;
-    return end <= nowMs;
+    return end <= nowMs && start >= oldestMs;
   });
 }
 
@@ -331,13 +348,13 @@ Run:
 ```bash
 deno test supabase/functions/auto-complete-lessons/autocomplete.test.ts
 ```
-Expected: 5 passed.
+Expected: 6 passed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add supabase/functions/auto-complete-lessons/autocomplete.ts supabase/functions/auto-complete-lessons/autocomplete.test.ts
-git commit -m "feat(auto-complete): pure helpers dueLessons + isSubjectPrepaid"
+git commit -m "feat(auto-complete): pure helpers dueLessons + isSubjectPrepaid (with look-back window)"
 ```
 
 ---
@@ -377,6 +394,11 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-app-name',
 };
+
+// Only sweep lessons that started within this many days. Bounds the backlog the
+// job will auto-complete when the toggle is first enabled; self-heal for missed
+// cron runs still works for up to this many days.
+const MAX_LESSON_AGE_DAYS = 7;
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -440,9 +462,12 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
     .eq('tutor_id', tutor.user_id)
     .maybeSingle();
 
-  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const oldestIso = new Date(nowMs - MAX_LESSON_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  // Candidate lessons: this tutor's still-scheduled lessons that have already started.
+  // Candidate lessons: this tutor's still-scheduled lessons that have already
+  // started and are within the look-back window.
   const { data: rows, error: lessonsErr } = await supabase
     .from('scheduled_lessons')
     .select(
@@ -451,10 +476,11 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
     )
     .eq('tutor_id', tutorId)
     .eq('status', 'scheduled')
-    .lt('scheduled_at', nowIso);
+    .lt('scheduled_at', nowIso)
+    .gte('scheduled_at', oldestIso);
   if (lessonsErr) throw new Error(lessonsErr.message);
 
-  const due = dueLessons((rows ?? []) as CandidateLesson[], Date.now());
+  const due = dueLessons((rows ?? []) as CandidateLesson[], nowMs, MAX_LESSON_AGE_DAYS);
   if (due.length === 0) return { completed: 0, invoiced: 0, paid: 0, parents: 0 };
 
   // 1. Complete each due lesson; collect (parent, month) pairs needing an invoice.
@@ -1377,7 +1403,7 @@ gh pr create --fill --base main
 
 ## Notes for the implementer
 
-- **Optimistic-by-design:** enabling the toggle when old `scheduled` lessons are lying around will auto-complete + pay that backlog on the first run. That is intended (the tutor reverses exceptions). Mention it in the PR description.
+- **Optimistic-by-design + bounded:** the job only sweeps lessons that started within `MAX_LESSON_AGE_DAYS` (7). Lessons older than that stay `scheduled` for manual handling, so enabling the toggle won't sweep an ancient backlog. Mention the window in the PR description.
 - **One source of truth for "paid":** do NOT add a `scheduled_lessons.paid` column. Paid lives in `payment_lessons.paid` / `payments.status`. The pill (Task 8) only *reads* it.
 - **End-of-day hour is hardcoded to 23 (tutor-local).** Per-tutor configurability is intentionally out of scope.
 - **Keep the rate math single-sourced:** all amount calculations go through `_shared/lessonAmount.ts`. If invoice rates change in `src/hooks/usePayments.ts`, update the shared helper + its test too.
