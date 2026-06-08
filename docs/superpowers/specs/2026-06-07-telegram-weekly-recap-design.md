@@ -47,16 +47,19 @@ ad-hoc checks.
 [App settings] --Connect--> t.me/Bot?start=TOKEN --> [telegram-webhook fn] --links chat_id--> parents
 [pg_cron hourly] --> send_weekly_tutor_recaps() --per-tutor local Sat 8am, not-yet-sent--> pg_net
                                                                                           |
-[Preview button] --> RPC/edge invoke ------------------------------------------> [send-telegram-recap fn]
+[Preview button] --> functions.invoke --------------------------------------> [send-telegram-recap fn]
                                                                                           |
-                                                              get_tutor_weekly_recap() (SQL, shared logic)
+                                            gathers lessons + payments (supabase-js) + computes amounts (ported TS)
                                                                                           |
                                                               Telegram Bot API sendMessage --> tutor's chat
 ```
 
-**Core principle:** a single SQL function (`get_tutor_weekly_recap`) is the
-source of truth for recap contents, used identically by the scheduled send and
-the preview button. Edge functions only format and send.
+**Core principle:** a single edge function (`send-telegram-recap`) is the source
+of truth for recap contents, invoked identically by the scheduled send (via
+`pg_net`) and the preview button (via `functions.invoke`). It gathers data with
+supabase-js and computes the "expected" amount using the app's lesson-amount
+logic ported to TypeScript (see note in Component 2). SQL is limited to schema,
+scheduling, and idempotency.
 
 ## Components
 
@@ -76,16 +79,9 @@ the preview button. Edge functions only format and send.
 - `tutor_id` (FK), `week_start` DATE (the Sunday of the window), `sent_at`, `status`, `error`.
 - **UNIQUE `(tutor_id, week_start)`** → idempotency. The hourly cron can run repeatedly without double-sending.
 
-**`get_tutor_weekly_recap(p_tutor_id, p_week_start, p_week_end)` — SQL function:**
-- `SECURITY DEFINER`, returns JSON.
-- Classes scheduled in `[p_week_start, p_week_end]` (grouped, each with status).
-- Payments **received** in the window (paid_at in range).
-- **Outstanding/overdue** running total across the tutor's parents.
-- **Expected** amount from this week's classes (from rates).
-- Reuses the app's existing lesson-amount / rate computation
-  (`tutor_settings.default_rate`, `subject_rates`, `combined_session_rate`,
-  `scheduled_lessons.override_amount`). Exact existing logic to be traced during
-  planning so figures match the rest of the app.
+**`create_telegram_link_token()` — RPC (SECURITY DEFINER):**
+- Resolves the calling tutor from `auth.uid()`, inserts a `telegram_link_tokens`
+  row (expires in ~15 min), and returns the token for the deep link.
 
 **`send_weekly_tutor_recaps()` — SQL function (pg_cron-invoked):**
 - For each linked + enabled tutor, compute current local time from `parents.timezone`.
@@ -105,11 +101,22 @@ the preview button. Edge functions only format and send.
 - Secret: `TELEGRAM_BOT_TOKEN`.
 
 **`send-telegram-recap`** — input `{ tutor_id, week_start?, preview? }`.
-- Calls `get_tutor_weekly_recap`, formats the message (Telegram HTML/Markdown),
-  calls Bot API `sendMessage`.
-- On a scheduled send: writes `telegram_recap_log` on success.
+- Gathers data with supabase-js (service role): the tutor's `telegram_chat_id` /
+  `telegram_recap_enabled`, `scheduled_lessons` (joined to students) in the
+  window, `tutor_settings` rates, and `payments` (received-in-window +
+  outstanding total).
+- Computes the **expected** amount from this week's classes using
+  `calculateLessonAmount`, a TypeScript port of
+  `calculateLessonAmountWithDetails` from `src/hooks/usePayments.ts` (subject
+  rates → duration tiers → base-duration scaling → override). Duplicating this
+  small calc into the Deno function mirrors how `getSubjectInfo` is already
+  duplicated in `send-payment-reminder` — the app and edge functions don't share
+  a module. A unit test pins the port's output to the app's values to guard drift.
+- Formats the message (Telegram HTML) and calls Bot API `sendMessage`.
+- On a scheduled send: upserts `telegram_recap_log` on success.
 - On a **preview** send: skips the log so testing never suppresses the real
   Saturday send.
+- Skips silently if the tutor is unlinked or `telegram_recap_enabled = false`.
 
 ### 3. Telegram bot setup (documented in plan; user performs)
 
@@ -165,10 +172,13 @@ area confirmed during planning):
   send per tutor per week.
 - **Timezone:** verify a tutor in a non-default timezone receives at local Saturday ~8 AM.
 
-## Open items to resolve during planning
+## Resolved during planning
 
-- Trace and reuse the exact existing lesson-amount computation so recap figures
-  match the rest of the app.
-- Confirm the precise settings screen for the Telegram section.
-- Decide short-token format vs. raw UUID for the deep-link (Telegram `/start`
-  payload length limit is 64 chars — UUID fits).
+- **Lesson-amount computation:** lives in TypeScript
+  (`calculateLessonAmountWithDetails` in `src/hooks/usePayments.ts`), not SQL.
+  Decision: gather data and compute amounts inside the `send-telegram-recap`
+  edge function (TS port `calculateLessonAmount`), with a unit test pinning it to
+  the app's values. No heavy SQL recap function.
+- **Settings screen:** a new top-level route `app/telegram-recap.tsx` (tutor-only),
+  reached from the More menu — mirrors `app/notification-settings.tsx`.
+- **Token format:** raw UUID (fits Telegram's 64-char `/start` payload limit).
