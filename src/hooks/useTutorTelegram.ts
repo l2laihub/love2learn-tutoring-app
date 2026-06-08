@@ -61,12 +61,12 @@ export function useTutorTelegram() {
 
   // Mint a one-time token and return the t.me deep link.
   const getLinkUrl = useCallback(async (): Promise<string> => {
-    const { data, error: rpcErr } = await supabase.rpc('create_telegram_link_token');
-    if (rpcErr) throw rpcErr;
     if (!BOT_USERNAME) {
       throw new Error('EXPO_PUBLIC_TELEGRAM_BOT_USERNAME is not set');
     }
-    return `https://t.me/${BOT_USERNAME}?start=${data}`;
+    const { data, error: rpcErr } = await supabase.rpc('create_telegram_link_token');
+    if (rpcErr) throw rpcErr;
+    return `https://t.me/${BOT_USERNAME}?start=${encodeURIComponent(data)}`;
   }, []);
 
   const sendPreview = useCallback(async () => {
@@ -80,7 +80,7 @@ export function useTutorTelegram() {
 
   const setEnabled = useCallback(
     async (enabled: boolean) => {
-      if (!tutorId) return;
+      if (!tutorId) throw new Error('No tutor');
       const { error: upErr } = await supabase
         .from('parents')
         .update({ telegram_recap_enabled: enabled })
@@ -92,7 +92,7 @@ export function useTutorTelegram() {
   );
 
   const disconnect = useCallback(async () => {
-    if (!tutorId) return;
+    if (!tutorId) throw new Error('No tutor');
     const { error: upErr } = await supabase
       .from('parents')
       .update({
