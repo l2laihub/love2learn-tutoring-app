@@ -78,10 +78,10 @@ export function buildRecapMessage(d: RecapData): string {
     ? d.lessons
         .map((l) => {
           const mark = statusMark[l.status] ?? '•';
-          const money = l.status === 'completed' && l.paid ? ' 💵' : '';
+          const paidMark = l.status === 'completed' && l.paid ? ' 💵' : '';
           return `${mark} ${escapeHtml(l.date)} — ${escapeHtml(
             l.studentName,
-          )} · ${escapeHtml(l.subjectLabel)}${money}`;
+          )} · ${escapeHtml(l.subjectLabel)}${paidMark}`;
         })
         .join('\n')
     : '<i>No classes this week.</i>';
