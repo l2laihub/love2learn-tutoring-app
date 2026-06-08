@@ -3,16 +3,23 @@
  * Connect/disconnect Telegram, toggle the recap, and send a preview.
  */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, Switch, Linking, Alert, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTutorTelegram } from '../src/hooks/useTutorTelegram';
 import { colors, spacing, typography, borderRadius, shadows } from '../src/theme';
 
 export default function TelegramRecapScreen() {
-  const { status, loading, getLinkUrl, sendPreview, setEnabled, disconnect } = useTutorTelegram();
+  const { status, loading, refetch, getLinkUrl, sendPreview, setEnabled, disconnect } = useTutorTelegram();
   const [busy, setBusy] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch]),
+  );
 
   const handleConnect = async () => {
     setBusy(true);
@@ -126,7 +133,7 @@ export default function TelegramRecapScreen() {
             disabled={busy}
           >
             <Ionicons name="send" size={18} color={colors.primary.main} />
-            <Text style={styles.secondaryBtnText}>Send preview now</Text>
+            <Text style={styles.secondaryBtnText}>{busy ? 'Sending…' : 'Send preview now'}</Text>
           </Pressable>
 
           <Pressable onPress={handleDisconnect} disabled={busy} style={styles.disconnect}>
