@@ -1,0 +1,55 @@
+import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import {
+  calculateLessonAmount,
+  weekWindowForSaturday,
+  buildRecapMessage,
+} from './recap.ts';
+
+const settings = {
+  default_rate: 45,
+  default_base_duration: 60,
+  subject_rates: {
+    piano: { rate: 30, base_duration: 30, duration_prices: { '45': 50 } },
+    math: { rate: 60, base_duration: 60 },
+  },
+  combined_session_rate: 0,
+};
+
+Deno.test('override wins over rates', () => {
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, 99), 99);
+});
+
+Deno.test('explicit duration tier price', () => {
+  // piano has a 45-min tier priced at $50
+  assertEquals(calculateLessonAmount(settings, 'piano', 45, false, null), 50);
+});
+
+Deno.test('base-duration scaling', () => {
+  // piano 30/30min rate, 60min => 2 * 30 = 60
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null), 60);
+  // math 60/60min, 30min => 0.5 * 60 = 30
+  assertEquals(calculateLessonAmount(settings, 'math', 30, false, null), 30);
+});
+
+Deno.test('falls back to default rate for unknown subject', () => {
+  // english not in subject_rates => default 45/60min, 60min => 45
+  assertEquals(calculateLessonAmount(settings, 'english', 60, false, null), 45);
+});
+
+Deno.test('weekWindowForSaturday returns Sun..Fri for the ending week', () => {
+  // Saturday 2026-06-06 → window Sun 2026-05-31 .. Fri 2026-06-05
+  const w = weekWindowForSaturday(new Date('2026-06-06T08:00:00'));
+  assertEquals(w.weekStart, '2026-05-31');
+  assertEquals(w.weekEndExclusive, '2026-06-06'); // [Sun 00:00, Sat 00:00)
+});
+
+Deno.test('buildRecapMessage shows quiet-week note', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'May 31–Jun 5',
+    lessons: [],
+    received: 0,
+    outstanding: 0,
+    expected: 0,
+  });
+  assertEquals(msg.includes('No classes scheduled'), true);
+});
