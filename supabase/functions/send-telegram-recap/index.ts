@@ -48,16 +48,59 @@ serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
     if (!supabaseUrl || !serviceKey) throw new Error('Supabase env not configured');
     if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not configured');
 
     const { tutor_id, week_start, preview = false }: RecapRequest = await req.json();
-    if (!tutor_id) {
-      return json({ error: 'tutor_id is required' }, 400);
-    }
 
+    // Service-role client for all data queries (must bypass RLS to read across
+    // the tutor's students/payments).
     const supabase = createClient(supabaseUrl, serviceKey);
+
+    // Determine the caller and resolve the effective request parameters.
+    //  - Internal (cron via pg_net): Authorization is the service-role key. Trust
+    //    the body (tutor_id required, week_start + preview as provided).
+    //  - Non-internal (app preview): identify the caller via their JWT and force a
+    //    preview of their OWN current recap, ignoring any body tutor_id.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const isInternal = authHeader === `Bearer ${serviceKey}`;
+
+    let effectiveTutorId: string;
+    let effectiveWeekStart: string | undefined;
+    let effectivePreview: boolean;
+
+    if (isInternal) {
+      if (!tutor_id) {
+        return json({ error: 'tutor_id is required' }, 400);
+      }
+      effectiveTutorId = tutor_id;
+      effectiveWeekStart = week_start;
+      effectivePreview = preview;
+    } else {
+      if (!anonKey) throw new Error('SUPABASE_ANON_KEY not configured');
+      const authClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData, error: userErr } = await authClient.auth.getUser();
+      if (userErr || !userData?.user) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+      // Resolve this user's parents row (tutors live in parents).
+      const { data: ownRow, error: ownErr } = await supabase
+        .from('parents')
+        .select('id')
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+      if (ownErr || !ownRow) {
+        return json({ error: 'No tutor profile for caller' }, 403);
+      }
+      // A user may only preview their own current recap.
+      effectiveTutorId = ownRow.id;
+      effectivePreview = true;
+      effectiveWeekStart = undefined;
+    }
 
     // 1. Tutor + link status + rates.
     //    NOTE: tutor_id here is a parents.id. tutor_settings, however, is keyed
@@ -65,7 +108,7 @@ serve(async (req: Request) => {
     const { data: tutor, error: tutorErr } = await supabase
       .from('parents')
       .select('id, user_id, telegram_chat_id, telegram_recap_enabled, timezone')
-      .eq('id', tutor_id)
+      .eq('id', effectiveTutorId)
       .single();
     if (tutorErr || !tutor) return json({ error: 'Tutor not found' }, 404);
 
@@ -83,7 +126,7 @@ serve(async (req: Request) => {
     // 2. Resolve the Sun..Fri window.
     const tz = tutor.timezone || 'America/Los_Angeles';
     const { weekStartDate, weekEndExclusive, rangeLabel } = resolveWindow(
-      week_start,
+      effectiveWeekStart,
       tz,
     );
 
@@ -97,7 +140,7 @@ serve(async (req: Request) => {
     const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
       .select('id, subject, scheduled_at, duration_min, status, override_amount, student:students!inner(name)')
-      .eq('tutor_id', tutor_id)
+      .eq('tutor_id', effectiveTutorId)
       .gte('scheduled_at', startUtc)
       .lt('scheduled_at', endUtc)
       .order('scheduled_at', { ascending: true });
@@ -132,7 +175,7 @@ serve(async (req: Request) => {
     const { data: receivedRows, error: receivedErr } = await supabase
       .from('payments')
       .select('amount_paid, paid_at')
-      .eq('tutor_id', tutor_id)
+      .eq('tutor_id', effectiveTutorId)
       .gte('paid_at', startUtc)
       .lt('paid_at', endUtc);
     const received = (receivedRows ?? []).reduce(
@@ -144,7 +187,7 @@ serve(async (req: Request) => {
     const { data: outstandingRows, error: outstandingErr } = await supabase
       .from('payments')
       .select('amount_due, amount_paid, status')
-      .eq('tutor_id', tutor_id)
+      .eq('tutor_id', effectiveTutorId)
       .in('status', ['unpaid', 'partial']);
     const outstanding = (outstandingRows ?? []).reduce(
       (s: number, p: any) =>
@@ -184,12 +227,12 @@ serve(async (req: Request) => {
     const tgBody = await tgRes.json().catch(() => ({}));
 
     // 7. Log scheduled sends for idempotency (skip for previews).
-    if (!preview) {
+    if (!effectivePreview) {
       await supabase
         .from('telegram_recap_log')
         .upsert(
           {
-            tutor_id,
+            tutor_id: effectiveTutorId,
             week_start: weekStartDate,
             status: tgOk ? 'sent' : 'error',
             error: tgOk ? null : JSON.stringify(tgBody).slice(0, 500),
@@ -202,7 +245,7 @@ serve(async (req: Request) => {
     if (!tgOk) {
       return json({ error: 'Telegram send failed', details: tgBody }, 502);
     }
-    return json({ success: true, preview, week_start: weekStartDate }, 200);
+    return json({ success: true, preview: effectivePreview, week_start: weekStartDate }, 200);
   } catch (error) {
     console.error('send-telegram-recap error:', error);
     return json(
