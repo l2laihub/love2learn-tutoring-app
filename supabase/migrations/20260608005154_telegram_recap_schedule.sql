@@ -33,30 +33,38 @@ begin
       and telegram_recap_enabled = true
       and role = 'tutor'
   loop
-    -- Current wall-clock time in the tutor's timezone.
-    v_local := now() at time zone v_tutor.tz;
+    begin
+      -- Current wall-clock time in the tutor's timezone.
+      v_local := now() at time zone v_tutor.tz;
 
-    -- Saturday (DOW 6) and the 8 AM hour.
-    if extract(dow from v_local) = 6 and extract(hour from v_local) = 8 then
-      -- The Sunday that began this recap week = local date - 6 days.
-      v_week_start := (v_local::date) - 6;
+      -- Saturday, 8–10 AM local. The window (not a single hour) lets a missed 8 AM
+      -- cron tick self-heal at 9 or 10 AM; the telegram_recap_log idempotency check
+      -- below still guarantees at most one dispatch per tutor per week.
+      if extract(dow from v_local) = 6 and extract(hour from v_local) between 8 and 10 then
+        -- The Sunday that began this recap week = local date - 6 days.
+        v_week_start := (v_local::date) - 6;
 
-      -- Idempotency: skip if already sent for this week.
-      if not exists (
-        select 1 from telegram_recap_log
-        where tutor_id = v_tutor.id and week_start = v_week_start
-      ) then
-        perform net.http_post(
-          url := v_url || '/functions/v1/send-telegram-recap',
-          headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || v_key
-          ),
-          body := jsonb_build_object('tutor_id', v_tutor.id, 'week_start', v_week_start)
-        );
-        v_count := v_count + 1;
+        -- Idempotency: skip if a recap was already attempted for this week. The
+        -- check is status-agnostic — a logged 'error' also suppresses re-dispatch,
+        -- so a hard failure means no recap that week rather than repeated retries.
+        if not exists (
+          select 1 from telegram_recap_log
+          where tutor_id = v_tutor.id and week_start = v_week_start
+        ) then
+          perform net.http_post(
+            url := v_url || '/functions/v1/send-telegram-recap',
+            headers := jsonb_build_object(
+              'Content-Type', 'application/json',
+              'Authorization', 'Bearer ' || v_key
+            ),
+            body := jsonb_build_object('tutor_id', v_tutor.id, 'week_start', v_week_start)
+          );
+          v_count := v_count + 1;
+        end if;
       end if;
-    end if;
+    exception when others then
+      raise notice 'recap dispatch failed for tutor %: %', v_tutor.id, sqlerrm;
+    end;
   end loop;
 
   return v_count;
