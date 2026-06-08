@@ -90,6 +90,14 @@ const menuItems: MenuItem[] = [
     tutorOnly: true,
   },
   {
+    key: 'telegram-recap',
+    label: 'Weekly Telegram Recap',
+    icon: 'paper-plane',
+    href: '/telegram-recap',
+    description: 'Get your weekly class & payment summary on Telegram',
+    tutorOnly: true,
+  },
+  {
     key: 'notifications-settings',
     label: 'Notifications',
     icon: 'notifications',

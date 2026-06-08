@@ -196,6 +196,17 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="telegram-recap"
+        options={{
+          headerShown: true,
+          headerTitle: 'Weekly Recap',
+          headerBackTitle: 'Back',
+          headerStyle: { backgroundColor: colors.primary.main },
+          headerTintColor: colors.neutral.textInverse,
+          headerTitleStyle: { fontWeight: '600' },
+        }}
+      />
+      <Stack.Screen
         name="admin"
         options={{
           headerShown: false,
