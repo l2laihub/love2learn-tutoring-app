@@ -11,6 +11,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTutorTelegram } from '../src/hooks/useTutorTelegram';
 import { colors, spacing, typography, borderRadius, shadows } from '../src/theme';
 
+// Surface the real reason: Supabase errors are PostgrestError-like plain
+// objects (not Error instances), so `e instanceof Error` alone hides the message.
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object' && 'message' in e) {
+    return String((e as { message: unknown }).message);
+  }
+  return 'Try again.';
+}
+
 export default function TelegramRecapScreen() {
   const { status, loading, refetch, getLinkUrl, sendPreview, setEnabled, disconnect } = useTutorTelegram();
   const [busy, setBusy] = useState(false);
@@ -27,7 +37,7 @@ export default function TelegramRecapScreen() {
       const url = await getLinkUrl();
       await Linking.openURL(url);
     } catch (e) {
-      Alert.alert('Could not start linking', e instanceof Error ? e.message : 'Try again.');
+      Alert.alert('Could not start linking', errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -39,7 +49,7 @@ export default function TelegramRecapScreen() {
       await sendPreview();
       Alert.alert('Sent', 'A preview recap was sent to your Telegram.');
     } catch (e) {
-      Alert.alert('Could not send preview', e instanceof Error ? e.message : 'Try again.');
+      Alert.alert('Could not send preview', errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -50,7 +60,7 @@ export default function TelegramRecapScreen() {
     try {
       await setEnabled(next);
     } catch (e) {
-      Alert.alert('Could not update setting', e instanceof Error ? e.message : 'Try again.');
+      Alert.alert('Could not update setting', errMsg(e));
     } finally {
       setBusy(false);
     }
@@ -67,7 +77,7 @@ export default function TelegramRecapScreen() {
           try {
             await disconnect();
           } catch (e) {
-            Alert.alert('Could not disconnect', e instanceof Error ? e.message : 'Try again.');
+            Alert.alert('Could not disconnect', errMsg(e));
           } finally {
             setBusy(false);
           }
