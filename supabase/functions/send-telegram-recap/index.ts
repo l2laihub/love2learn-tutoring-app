@@ -86,7 +86,7 @@ serve(async (req: Request) => {
     );
 
     // 3. Classes in window (all statuses), joined to students.
-    const { data: lessonRows } = await supabase
+    const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
       .select('id, subject, scheduled_at, duration_min, status, override_amount, student:students!inner(name)')
       .eq('tutor_id', tutor_id)
@@ -111,35 +111,51 @@ serve(async (req: Request) => {
         calculateLessonAmount(
           settings ?? null,
           l.subject,
-          l.duration_min,
+          Number(l.duration_min) || 0,
           false,
-          l.override_amount,
+          l.override_amount == null ? null : Number(l.override_amount),
         ),
       0,
     );
 
     // 4. Payments received in window (paid_at in range).
-    const { data: receivedRows } = await supabase
+    const { data: receivedRows, error: receivedErr } = await supabase
       .from('payments')
       .select('amount_paid, paid_at')
       .eq('tutor_id', tutor_id)
       .gte('paid_at', `${weekStartDate}T00:00:00`)
       .lt('paid_at', `${weekEndExclusive}T00:00:00`);
     const received = (receivedRows ?? []).reduce(
-      (s: number, p: any) => s + Number(p.amount_paid ?? 0),
+      (s: number, p: any) => s + (Number(p.amount_paid ?? 0) || 0),
       0,
     );
 
     // 5. Outstanding / overdue across all the tutor's payments.
-    const { data: outstandingRows } = await supabase
+    const { data: outstandingRows, error: outstandingErr } = await supabase
       .from('payments')
       .select('amount_due, amount_paid, status')
       .eq('tutor_id', tutor_id)
       .in('status', ['unpaid', 'partial']);
     const outstanding = (outstandingRows ?? []).reduce(
-      (s: number, p: any) => s + (Number(p.amount_due ?? 0) - Number(p.amount_paid ?? 0)),
+      (s: number, p: any) =>
+        s + ((Number(p.amount_due ?? 0) || 0) - (Number(p.amount_paid ?? 0) || 0)),
       0,
     );
+
+    // A transient query error must NOT produce a misleading "$0 / quiet week"
+    // recap that then gets logged as 'sent' and suppresses the corrected
+    // resend. Fail loudly instead; the next hourly cron run will retry.
+    if (lessonsErr || receivedErr || outstandingErr) {
+      if (lessonsErr) console.error('recap lessons query failed:', lessonsErr);
+      if (receivedErr) console.error('recap received-payments query failed:', receivedErr);
+      if (outstandingErr) console.error('recap outstanding-payments query failed:', outstandingErr);
+      const failed = [
+        lessonsErr && 'lessons',
+        receivedErr && 'received_payments',
+        outstandingErr && 'outstanding_payments',
+      ].filter(Boolean);
+      return json({ error: 'Failed to gather recap data', details: failed }, 502);
+    }
 
     // 6. Build + send.
     const text = buildRecapMessage({ rangeLabel, lessons, received, outstanding, expected });
