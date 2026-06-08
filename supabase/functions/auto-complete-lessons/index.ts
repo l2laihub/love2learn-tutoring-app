@@ -259,16 +259,15 @@ async function generateInvoice(
 
   const lessonAmounts = uninvoiced.map((l: any) => ({
     lesson_id: l.id,
-    amount:
-      Math.round(
-        calculateLessonAmount(
-          (settings as any) ?? null,
-          l.subject,
-          Number(l.duration_min) || 0,
-          l.session_id !== null,
-          l.override_amount == null ? null : Number(l.override_amount),
-        ) * 100,
-      ) / 100,
+    // Raw, unrounded amount — matches useQuickInvoice (usePayments.ts:1902-1917).
+    // The total is rounded once below; per-link amounts are rounded at insert time.
+    amount: calculateLessonAmount(
+      (settings as any) ?? null,
+      l.subject,
+      Number(l.duration_min) || 0,
+      l.session_id !== null,
+      l.override_amount == null ? null : Number(l.override_amount),
+    ),
   }));
   const roundedTotal = Math.round(lessonAmounts.reduce((s: number, l: { amount: number }) => s + l.amount, 0) * 100) / 100;
 
@@ -306,7 +305,7 @@ async function generateInvoice(
   const links = lessonAmounts.map((la: { lesson_id: string; amount: number }) => ({
     payment_id: payment.id,
     lesson_id: la.lesson_id,
-    amount: la.amount,
+    amount: Math.round(la.amount * 100) / 100,
   }));
   const { error: linkError } = await supabase.from('payment_lessons').insert(links);
   if (linkError) {
