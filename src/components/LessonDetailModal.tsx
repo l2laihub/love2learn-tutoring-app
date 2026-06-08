@@ -60,6 +60,7 @@ interface LessonDetailModalProps {
   onRequestReschedule?: () => void; // For parents to request reschedule
   seriesCount?: number; // Number of lessons in the recurring series
   isTutor?: boolean; // Whether the current user is a tutor/admin
+  paid?: boolean | null; // true=paid, false=invoiced-unpaid, null=n/a
 }
 
 export function LessonDetailModal({
@@ -78,6 +79,7 @@ export function LessonDetailModal({
   onRequestReschedule,
   seriesCount = 0,
   isTutor = false,
+  paid,
 }: LessonDetailModalProps) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -644,6 +646,23 @@ export function LessonDetailModal({
                 {displayData.status.charAt(0).toUpperCase() + displayData.status.slice(1)}
               </Text>
             </View>
+            {displayData.status === 'completed' && paid != null && (
+              <View
+                style={[
+                  styles.paidPill,
+                  { backgroundColor: (paid ? colors.status.success : colors.status.warning) + '22' },
+                ]}
+              >
+                <Ionicons
+                  name={paid ? 'cash-outline' : 'alert-circle-outline'}
+                  size={14}
+                  color={paid ? colors.status.success : colors.status.warning}
+                />
+                <Text style={[styles.paidPillText, { color: paid ? colors.status.success : colors.status.warning }]}>
+                  {paid ? 'Paid' : 'Unpaid'}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Notes */}
@@ -1032,6 +1051,20 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.status.info,
+  },
+  paidPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    marginTop: 6,
+  },
+  paidPillText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   notesSection: {
     backgroundColor: colors.neutral.white,
