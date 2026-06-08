@@ -74,7 +74,20 @@ export function useTutorTelegram() {
     const { data, error: invErr } = await supabase.functions.invoke('send-telegram-recap', {
       body: { tutor_id: tutorId, preview: true },
     });
-    if (invErr) throw invErr;
+    if (invErr) {
+      // FunctionsHttpError carries the edge function's JSON body in `context`
+      // (a Response). Surface its { error }/{ message } so callers see the real
+      // reason instead of the generic "non-2xx status code".
+      const ctx = (invErr as { context?: Response }).context;
+      if (ctx && typeof ctx.json === 'function') {
+        const body = await ctx.json().catch(() => null);
+        const reason = body?.error ?? body?.message;
+        if (reason) {
+          throw new Error(typeof reason === 'string' ? reason : JSON.stringify(reason));
+        }
+      }
+      throw invErr;
+    }
     return data;
   }, [tutorId]);
 

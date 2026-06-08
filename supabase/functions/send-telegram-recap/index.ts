@@ -83,7 +83,11 @@ serve(async (req: Request) => {
       const authClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       });
-      const { data: userData, error: userErr } = await authClient.auth.getUser();
+      // getUser() must be given the JWT explicitly: with no argument it reads the
+      // token from the client's stored session, but this server-side client has
+      // none, so it would fail with AuthSessionMissingError and 401 every time.
+      const token = authHeader.replace(/^Bearer\s+/i, '');
+      const { data: userData, error: userErr } = await authClient.auth.getUser(token);
       if (userErr || !userData?.user) {
         return json({ error: 'Unauthorized' }, 401);
       }
