@@ -482,6 +482,14 @@ export function useMarkPaymentUnpaid() {
         throw new Error(updateError.message);
       }
 
+      // Also clear per-lesson paid flags so the auto-complete job's per-lesson
+      // settle respects this unpaid marking (stale paid=true links would
+      // otherwise let the invoice drift back toward paid).
+      await supabase
+        .from('payment_lessons')
+        .update({ paid: false })
+        .eq('payment_id', id);
+
       setData(payment);
       return payment;
     } catch (err) {

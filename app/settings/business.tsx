@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -28,6 +29,7 @@ import {
   TIMEZONE_OPTIONS,
 } from '../../src/hooks/useTutorProfile';
 import { useResponsive } from '../../src/hooks/useResponsive';
+import { useAutoCompleteSetting } from '../../src/hooks/useAutoCompleteSetting';
 
 // Phone number formatting
 function formatPhoneNumber(phone: string): string {
@@ -47,6 +49,7 @@ export default function BusinessSettingsScreen() {
   const updateBusinessInfo = useUpdateBusinessInfo();
   const logoUpload = useLogoUpload();
   const { isDesktop } = useResponsive();
+  const autoComplete = useAutoCompleteSetting();
 
   // Form state
   const [businessName, setBusinessName] = useState('');
@@ -365,6 +368,26 @@ export default function BusinessSettingsScreen() {
             </View>
           </View>
 
+          {/* Automation Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Automation</Text>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleText}>
+                <Text style={styles.label}>Auto-complete & mark paid at end of day</Text>
+                <Text style={styles.toggleHint}>
+                  Finished lessons are marked completed and paid automatically each night.
+                  Turn off to mark them yourself.
+                </Text>
+              </View>
+              <Switch
+                value={autoComplete.enabled}
+                onValueChange={(v) => { autoComplete.update(v); }}
+                disabled={autoComplete.loading || autoComplete.saving}
+                trackColor={{ true: colors.primary.main }}
+              />
+            </View>
+          </View>
+
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
             <Pressable
@@ -604,6 +627,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textSecondary,
     lineHeight: 20,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  toggleText: {
+    flex: 1,
+    paddingRight: spacing.md,
+  },
+  toggleHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    marginTop: spacing.xs,
   },
   actionButtons: {
     flexDirection: 'row',

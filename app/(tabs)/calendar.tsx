@@ -3,7 +3,7 @@
  * Week view calendar for scheduling and managing tutoring lessons
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -131,6 +131,7 @@ export default function CalendarScreen() {
   const [showGroupSessionsModal, setShowGroupSessionsModal] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<ScheduledLessonWithStudent | null>(null);
   const [selectedGroupedLesson, setSelectedGroupedLesson] = useState<GroupedLesson | null>(null);
+  const [selectedLessonPaid, setSelectedLessonPaid] = useState<boolean | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   // Multi-select mode state
@@ -815,6 +816,24 @@ export default function CalendarScreen() {
     return `${startMonth} ${startParts.day} - ${endMonth} ${endParts.day}, ${startParts.year}`;
   }, [weekStart, tutorTimezone]);
 
+  // Derive paid/unpaid for the selected completed lesson from payment_lessons.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const first = selectedGroupedLesson?.lessons?.[0];
+      if (!first || first.status !== 'completed') { setSelectedLessonPaid(null); return; }
+      const { data } = await supabase
+        .from('payment_lessons')
+        .select('paid')
+        .eq('lesson_id', first.id)
+        .maybeSingle();
+      if (!active) return;
+      // No invoice row -> prepaid-covered completion -> treat as paid.
+      setSelectedLessonPaid(data ? data.paid === true : true);
+    })();
+    return () => { active = false; };
+  }, [selectedGroupedLesson]);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {/* Header */}
@@ -1333,6 +1352,7 @@ export default function CalendarScreen() {
         onRequestReschedule={!isTutor ? handleRequestReschedule : undefined}
         seriesCount={isSessionSeries ? seriesSessionIds.length : seriesLessonIds.length}
         isTutor={isTutor}
+        paid={selectedLessonPaid}
       />
 
       {/* Reschedule Request Modal (for parents) */}
