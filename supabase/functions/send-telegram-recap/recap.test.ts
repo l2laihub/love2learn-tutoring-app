@@ -73,6 +73,25 @@ Deno.test('buildRecapMessage renders populated body', () => {
   assertEquals(msg.includes('Expected from this week'), true);
 });
 
+Deno.test('recap shows auto-marked count when present', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'Jun 1–Jun 6',
+    lessons: [{ date: 'Mon Jun 1', studentName: 'Amy', subjectLabel: '📐 Math', status: 'completed', paid: true }],
+    received: 0, outstanding: 0, expected: 45, autoMarked: 1,
+  });
+  if (!msg.includes('auto-marked')) throw new Error('expected auto-marked line');
+  if (!msg.includes('💵')) throw new Error('expected paid indicator on class line');
+});
+
+Deno.test('recap omits auto-marked line when zero', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'Jun 1–Jun 6',
+    lessons: [{ date: 'Mon Jun 1', studentName: 'Amy', subjectLabel: '📐 Math', status: 'completed', paid: false }],
+    received: 0, outstanding: 0, expected: 45, autoMarked: 0,
+  });
+  if (msg.includes('auto-marked')) throw new Error('did not expect auto-marked line');
+});
+
 Deno.test('localDateStartToUtcISO: America/Los_Angeles (PDT, UTC-7)', () => {
   assertEquals(localDateStartToUtcISO('2026-05-31', 'America/Los_Angeles'), '2026-05-31T07:00:00.000Z');
 });

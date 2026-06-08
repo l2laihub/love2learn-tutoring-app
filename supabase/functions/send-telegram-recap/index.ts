@@ -143,7 +143,7 @@ serve(async (req: Request) => {
     // 3. Classes in window (all statuses), joined to students.
     const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
-      .select('id, subject, scheduled_at, duration_min, status, override_amount, student:students!inner(name)')
+      .select('id, subject, scheduled_at, duration_min, status, override_amount, auto_completed_at, payment_lessons(paid), student:students!inner(name)')
       .eq('tutor_id', effectiveTutorId)
       .gte('scheduled_at', startUtc)
       .lt('scheduled_at', endUtc)
@@ -158,7 +158,12 @@ serve(async (req: Request) => {
       studentName: l.student?.name ?? 'Student',
       subjectLabel: subjectLabel(l.subject),
       status: l.status,
+      paid: Array.isArray((l as any).payment_lessons)
+        ? (l as any).payment_lessons.some((pl: any) => pl.paid === true)
+        : false,
     }));
+
+    const autoMarked = (lessonRows ?? []).filter((l: any) => l.auto_completed_at != null).length;
 
     const expected = (lessonRows ?? [])
       .filter((l: any) => l.status !== 'cancelled')
@@ -215,7 +220,7 @@ serve(async (req: Request) => {
     }
 
     // 6. Build + send.
-    const text = buildRecapMessage({ rangeLabel, lessons, received, outstanding, expected });
+    const text = buildRecapMessage({ rangeLabel, lessons, received, outstanding, expected, autoMarked });
 
     const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',

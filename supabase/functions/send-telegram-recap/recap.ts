@@ -46,6 +46,7 @@ export interface RecapLesson {
   studentName: string;
   subjectLabel: string;
   status: string;     // 'scheduled' | 'completed' | 'cancelled'
+  paid?: boolean;     // shown only for completed lessons
 }
 
 export interface RecapData {
@@ -54,6 +55,7 @@ export interface RecapData {
   received: number;
   outstanding: number;
   expected: number;
+  autoMarked?: number;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -74,12 +76,13 @@ export function buildRecapMessage(d: RecapData): string {
   };
   const lessonLines = d.lessons.length
     ? d.lessons
-        .map(
-          (l) =>
-            `${statusMark[l.status] ?? '•'} ${escapeHtml(l.date)} — ${escapeHtml(
-              l.studentName,
-            )} · ${escapeHtml(l.subjectLabel)}`,
-        )
+        .map((l) => {
+          const mark = statusMark[l.status] ?? '•';
+          const money = l.status === 'completed' && l.paid ? ' 💵' : '';
+          return `${mark} ${escapeHtml(l.date)} — ${escapeHtml(
+            l.studentName,
+          )} · ${escapeHtml(l.subjectLabel)}${money}`;
+        })
         .join('\n')
     : '<i>No classes this week.</i>';
 
@@ -88,6 +91,7 @@ export function buildRecapMessage(d: RecapData): string {
     '',
     `<b>Classes (${d.lessons.length})</b>`,
     lessonLines,
+    ...(d.autoMarked && d.autoMarked > 0 ? [`<i>${d.autoMarked} auto-marked this week</i>`] : []),
     '',
     '<b>Payments</b>',
     `💰 Received this week: ${money(d.received)}`,
