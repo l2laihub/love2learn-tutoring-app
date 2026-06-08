@@ -14,6 +14,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 import {
   calculateLessonAmount,
   buildRecapMessage,
+  localDateStartToUtcISO,
   type RecapLesson,
 } from './recap.ts';
 
@@ -80,18 +81,25 @@ serve(async (req: Request) => {
       .maybeSingle();
 
     // 2. Resolve the Sun..Fri window.
+    const tz = tutor.timezone || 'America/Los_Angeles';
     const { weekStartDate, weekEndExclusive, rangeLabel } = resolveWindow(
       week_start,
-      tutor.timezone || 'America/Los_Angeles',
+      tz,
     );
+
+    // scheduled_at / paid_at are TIMESTAMPTZ. PostgREST compares naive timestamps
+    // in the DB's UTC session tz, so convert the tutor-local date boundaries to
+    // absolute UTC instants before filtering, or the window shifts by the offset.
+    const startUtc = localDateStartToUtcISO(weekStartDate, tz);
+    const endUtc = localDateStartToUtcISO(weekEndExclusive, tz);
 
     // 3. Classes in window (all statuses), joined to students.
     const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
       .select('id, subject, scheduled_at, duration_min, status, override_amount, student:students!inner(name)')
       .eq('tutor_id', tutor_id)
-      .gte('scheduled_at', `${weekStartDate}T00:00:00`)
-      .lt('scheduled_at', `${weekEndExclusive}T00:00:00`)
+      .gte('scheduled_at', startUtc)
+      .lt('scheduled_at', endUtc)
       .order('scheduled_at', { ascending: true });
 
     const lessons: RecapLesson[] = (lessonRows ?? []).map((l: any) => ({
@@ -105,26 +113,28 @@ serve(async (req: Request) => {
       status: l.status,
     }));
 
-    const expected = (lessonRows ?? []).reduce(
-      (sum: number, l: any) =>
-        sum +
-        calculateLessonAmount(
-          settings ?? null,
-          l.subject,
-          Number(l.duration_min) || 0,
-          false,
-          l.override_amount == null ? null : Number(l.override_amount),
-        ),
-      0,
-    );
+    const expected = (lessonRows ?? [])
+      .filter((l: any) => l.status !== 'cancelled')
+      .reduce(
+        (sum: number, l: any) =>
+          sum +
+          calculateLessonAmount(
+            settings ?? null,
+            l.subject,
+            Number(l.duration_min) || 0,
+            false,
+            l.override_amount == null ? null : Number(l.override_amount),
+          ),
+        0,
+      );
 
     // 4. Payments received in window (paid_at in range).
     const { data: receivedRows, error: receivedErr } = await supabase
       .from('payments')
       .select('amount_paid, paid_at')
       .eq('tutor_id', tutor_id)
-      .gte('paid_at', `${weekStartDate}T00:00:00`)
-      .lt('paid_at', `${weekEndExclusive}T00:00:00`);
+      .gte('paid_at', startUtc)
+      .lt('paid_at', endUtc);
     const received = (receivedRows ?? []).reduce(
       (s: number, p: any) => s + (Number(p.amount_paid ?? 0) || 0),
       0,

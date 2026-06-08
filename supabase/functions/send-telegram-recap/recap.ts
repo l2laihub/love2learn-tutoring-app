@@ -71,6 +71,20 @@ export function weekWindowForSaturday(localSaturday: Date): {
   return { weekStart: fmt(sunday), weekEndExclusive: fmt(sat) };
 }
 
+// Convert a local calendar date's 00:00:00 in `timeZone` to the equivalent
+// absolute instant as a UTC ISO string. Used to filter TIMESTAMPTZ columns by a
+// tutor-local date window (PostgREST compares naive timestamps in the DB's UTC
+// session tz, which would otherwise shift the window by the tutor's offset).
+export function localDateStartToUtcISO(dateStr: string, timeZone: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const utcGuess = Date.UTC(y, m - 1, d, 0, 0, 0);
+  const asUtc = new Date(utcGuess);
+  const tzShown = new Date(asUtc.toLocaleString('en-US', { timeZone }));
+  const utcShown = new Date(asUtc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const offsetMs = tzShown.getTime() - utcShown.getTime();
+  return new Date(utcGuess - offsetMs).toISOString();
+}
+
 export interface RecapLesson {
   date: string;       // 'Mon Jun 1'
   studentName: string;

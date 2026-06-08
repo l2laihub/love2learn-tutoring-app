@@ -3,6 +3,7 @@ import {
   calculateLessonAmount,
   weekWindowForSaturday,
   buildRecapMessage,
+  localDateStartToUtcISO,
 } from './recap.ts';
 
 const settings = {
@@ -70,6 +71,16 @@ Deno.test('buildRecapMessage renders populated body', () => {
   assertEquals(msg.includes('❌'), true);
   assertEquals(msg.includes('$120.00'), true);
   assertEquals(msg.includes('Expected from this week'), true);
+});
+
+Deno.test('localDateStartToUtcISO: America/Los_Angeles (PDT, UTC-7)', () => {
+  assertEquals(localDateStartToUtcISO('2026-05-31', 'America/Los_Angeles'), '2026-05-31T07:00:00.000Z');
+});
+Deno.test('localDateStartToUtcISO: Asia/Singapore (UTC+8)', () => {
+  assertEquals(localDateStartToUtcISO('2026-05-31', 'Asia/Singapore'), '2026-05-30T16:00:00.000Z');
+});
+Deno.test('localDateStartToUtcISO: UTC', () => {
+  assertEquals(localDateStartToUtcISO('2026-05-31', 'UTC'), '2026-05-31T00:00:00.000Z');
 });
 
 Deno.test('buildRecapMessage escapes HTML in user text', () => {

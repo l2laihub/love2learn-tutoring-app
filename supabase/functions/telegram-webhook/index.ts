@@ -101,7 +101,7 @@ serve(async (req: Request) => {
     if (command === '/stop') {
       await supabase
         .from('parents')
-        .update({ telegram_chat_id: null, telegram_linked_at: null })
+        .update({ telegram_chat_id: null, telegram_username: null, telegram_linked_at: null })
         .eq('telegram_chat_id', String(chatId));
       await reply('🔕 Disconnected. You won\'t receive weekly recaps. Reconnect anytime from the app.');
       return new Response('ok');
