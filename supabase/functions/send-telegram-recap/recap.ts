@@ -93,7 +93,7 @@ const escapeHtml = (s: string) =>
 export function buildRecapMessage(d: RecapData): string {
   const header = `📚 <b>Your week, ${escapeHtml(d.rangeLabel)}</b>`;
 
-  if (d.lessons.length === 0 && d.received === 0 && d.outstanding === 0) {
+  if (d.lessons.length === 0 && d.received === 0 && d.outstanding === 0 && d.expected === 0) {
     return `${header}\n\nNo classes scheduled this week 🌿\nEnjoy the quiet — see you next week!`;
   }
 

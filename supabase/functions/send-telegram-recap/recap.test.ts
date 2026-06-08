@@ -53,3 +53,35 @@ Deno.test('buildRecapMessage shows quiet-week note', () => {
   });
   assertEquals(msg.includes('No classes scheduled'), true);
 });
+
+Deno.test('buildRecapMessage renders populated body', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'May 31–Jun 5',
+    lessons: [
+      { date: 'Mon Jun 1', studentName: 'Ava', subjectLabel: '🎹 Piano', status: 'completed' },
+      { date: 'Wed Jun 3', studentName: 'Ben', subjectLabel: '📐 Math', status: 'cancelled' },
+    ],
+    received: 120,
+    outstanding: 45.5,
+    expected: 200,
+  });
+  assertEquals(msg.includes('Classes (2)'), true);
+  assertEquals(msg.includes('✅'), true);
+  assertEquals(msg.includes('❌'), true);
+  assertEquals(msg.includes('$120.00'), true);
+  assertEquals(msg.includes('Expected from this week'), true);
+});
+
+Deno.test('buildRecapMessage escapes HTML in user text', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'May 31–Jun 5',
+    lessons: [
+      { date: 'Mon Jun 1', studentName: 'A & B <x>', subjectLabel: '🎹 Piano', status: 'completed' },
+    ],
+    received: 0,
+    outstanding: 0,
+    expected: 0,
+  });
+  assertEquals(msg.includes('A &amp; B &lt;x&gt;'), true);
+  assertEquals(msg.includes('<x>'), false);
+});
