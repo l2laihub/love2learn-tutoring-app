@@ -137,12 +137,21 @@ Per invocation, for the resolved tutor:
    `auto_completed_at=now()`, `updated_at=now()`; for prepaid-billed subjects, increment the
    matching month/subject prepaid payment's `sessions_used` (subject-specific first, legacy
    all-subjects fallback only when `prepaid_subjects` is empty — identical rules to the hook).
-6. **Per parent, generate + settle invoices** (port of `useQuickInvoice` +
-   `useMarkPaymentPaid`): for invoice-billed subjects, build/extend the month's
-   `payment_type='invoice'` payment, insert `payment_lessons` rows priced via the shared
-   `calculateLessonAmount`, then set the payment `amount_paid=amount_due`, `status='paid'`,
-   `paid_at=now()` so the existing trigger marks the lessons paid.
-7. Return a summary `{ completed, invoiced, paid, parents }` (logged; surfaced to "Run now").
+6. **Per parent+month, generate the invoice** (port of `useQuickInvoice`): for
+   invoice-billed subjects, build/extend the month's `payment_type='invoice'` payment and
+   insert `payment_lessons` rows (priced via the shared `calculateLessonAmount`).
+7. **Per-lesson settle (NOT whole-invoice).** Mark `paid=true` on **only the
+   `payment_lessons` rows for the lessons this run completed**, then recompute the payment
+   aggregate from the per-lesson flags: `amount_paid = sum(amount where paid)`,
+   `status = paid | partial | unpaid` accordingly, `paid_at` set only when fully paid. This
+   is the key divergence from the manual `useMarkPaymentPaid` (which settles the whole
+   invoice): the unattended nightly job must never resurrect a lesson the tutor marked
+   unpaid. Because a tutor-adjusted lesson is already `completed` (not `scheduled`), it is
+   never in a future run's candidate set, and the per-lesson settle only touches this run's
+   lessons — so adjustments stick. The existing `sync_payment_lessons_paid_status()` trigger
+   (status→paid sets all links paid) stays consistent: `status` only computes to `paid` when
+   every link is already paid.
+8. Return a summary `{ completed, invoiced, paid, parents }` (logged; surfaced to "Run now").
 
 ### 4. Shared rate helper (small refactor)
 
@@ -164,8 +173,11 @@ payment's `amount_due` (recomputing `status`), mirroring `useCancelLesson()`'s c
 
 - **Mark unpaid:** reuse the existing per-lesson `useToggleLessonPaid()`
   (`payment_lessons.paid`) and/or `useMarkPaymentUnpaid()` — already wired in the payments
-  screens. A paid/unpaid pill is added to the lesson detail modal / cards (see §7) so this
-  is reachable from the calendar too.
+  screens. **`useMarkPaymentUnpaid()` is extended to also reset every linked
+  `payment_lessons.paid = false`**, so the per-lesson flags stay consistent and the nightly
+  per-lesson recompute (§3.7) respects a payment the tutor marked unpaid (otherwise stale
+  `paid=true` flags would let it drift back toward paid). A paid/unpaid pill is added to the
+  lesson detail modal / cards (see §7).
 - **Cancel / didn't happen:** existing `useCancelLesson()` (clean) and the now-fixed
   `useUncompleteLesson()`, already reachable from `LessonDetailModal` for completed lessons.
 
