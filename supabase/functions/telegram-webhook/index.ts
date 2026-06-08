@@ -18,15 +18,13 @@ serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const webhookSecret = Deno.env.get('TELEGRAM_WEBHOOK_SECRET');
-    if (!botToken || !supabaseUrl || !serviceKey) {
+    if (!botToken || !supabaseUrl || !serviceKey || !webhookSecret) {
       return new Response('not configured', { status: 500 });
     }
 
-    // Reject forged calls.
-    if (
-      webhookSecret &&
-      req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== webhookSecret
-    ) {
+    // Reject forged calls. The secret header is the only gatekeeper since this
+    // function is deployed with --no-verify-jwt, so enforce it unconditionally.
+    if (req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== webhookSecret) {
       return new Response('forbidden', { status: 403 });
     }
 
@@ -41,44 +39,66 @@ serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, serviceKey);
     const reply = (t: string) => sendTelegram(botToken, chatId, t);
 
-    if (text.startsWith('/start')) {
-      const token = text.split(' ')[1]?.trim();
+    const parts = text.trim().split(/\s+/);
+    const command = (parts[0] ?? '').split('@')[0]; // strips @BotName suffix
+    const arg = parts[1]?.trim();
+
+    if (command === '/start') {
+      const token = arg;
       if (!token) {
         await reply('👋 To connect, open the "Connect Telegram" button in the app.');
         return new Response('ok');
       }
 
-      const { data: row } = await supabase
+      const nowIso = new Date().toISOString();
+      const { data: claimed, error: claimErr } = await supabase
         .from('telegram_link_tokens')
-        .select('tutor_id, used_at, expires_at')
+        .update({ used_at: nowIso })
         .eq('token', token)
+        .is('used_at', null)
+        .gt('expires_at', nowIso)
+        .select('tutor_id')
         .maybeSingle();
 
-      if (!row || row.used_at || new Date(row.expires_at) < new Date()) {
+      if (claimErr) {
+        console.error('token claim failed:', claimErr);
+        await reply('⚠️ Something went wrong. Please tap "Connect Telegram" in the app again.');
+        return new Response('ok');
+      }
+      if (!claimed) {
         await reply('⚠️ This link is invalid or expired. Please tap "Connect Telegram" in the app again.');
         return new Response('ok');
       }
 
+      // Ensure one Telegram chat never feeds two tutors: clear it from any other
+      // parents row that currently holds it before linking to the new tutor.
       await supabase
+        .from('parents')
+        .update({ telegram_chat_id: null, telegram_linked_at: null })
+        .eq('telegram_chat_id', String(chatId))
+        .neq('id', claimed.tutor_id);
+
+      const { error: linkErr } = await supabase
         .from('parents')
         .update({
           telegram_chat_id: String(chatId),
           telegram_username: username,
-          telegram_linked_at: new Date().toISOString(),
+          telegram_linked_at: nowIso,
           telegram_recap_enabled: true,
         })
-        .eq('id', row.tutor_id);
+        .eq('id', claimed.tutor_id);
 
-      await supabase
-        .from('telegram_link_tokens')
-        .update({ used_at: new Date().toISOString() })
-        .eq('token', token);
+      if (linkErr) {
+        console.error('parents link failed:', linkErr);
+        await reply('⚠️ Something went wrong connecting your account. Please try again from the app.');
+        return new Response('ok');
+      }
 
       await reply('✅ Connected! You\'ll get your weekly class & payment recap here every Saturday morning.');
       return new Response('ok');
     }
 
-    if (text.startsWith('/stop')) {
+    if (command === '/stop') {
       await supabase
         .from('parents')
         .update({ telegram_chat_id: null, telegram_linked_at: null })

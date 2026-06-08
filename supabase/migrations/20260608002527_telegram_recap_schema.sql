@@ -16,6 +16,11 @@ alter table parents
 comment on column parents.telegram_chat_id is 'Linked Telegram chat ID for weekly recap (null = not linked).';
 comment on column parents.telegram_recap_enabled is 'Tutor toggle to pause the weekly recap without disconnecting.';
 
+-- One Telegram chat maps to at most one tutor (safety net; the webhook also
+-- clears any prior owner before linking).
+create unique index if not exists idx_parents_telegram_chat
+  on parents(telegram_chat_id) where telegram_chat_id is not null;
+
 -- 2. One-time deep-link tokens for the /start linking flow.
 create table if not exists telegram_link_tokens (
   token uuid primary key default gen_random_uuid(),
