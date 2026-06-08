@@ -62,7 +62,12 @@ export function weekWindowForSaturday(localSaturday: Date): {
   sat.setHours(0, 0, 0, 0);
   const sunday = new Date(sat);
   sunday.setDate(sat.getDate() - 6); // Sat - 6 = Sunday
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
   return { weekStart: fmt(sunday), weekEndExclusive: fmt(sat) };
 }
 
