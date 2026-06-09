@@ -38,11 +38,19 @@ export function WaitingListCard({
   const next = nextStatus(entry.status);
   const isClosed = entry.status === 'converted' || entry.status === 'declined';
 
+  // parent_email/parent_phone originate from the public inquiry form, so they are
+  // untrusted. Guard the tel:/mailto: sinks against URI/header injection before dialing.
   const call = () => {
-    if (entry.parent_phone) Linking.openURL(`tel:${entry.parent_phone}`);
+    if (!entry.parent_phone) return;
+    const safe = entry.parent_phone.replace(/[^0-9+()\-\s]/g, '').trim();
+    if (safe) Linking.openURL(`tel:${encodeURIComponent(safe)}`);
   };
   const email = () => {
-    if (entry.parent_email) Linking.openURL(`mailto:${entry.parent_email}`);
+    if (!entry.parent_email) return;
+    const addr = entry.parent_email.split('?')[0].trim();
+    if (/^[^\s,?&<>"']+@[^\s,?&<>"']+$/.test(addr)) {
+      Linking.openURL(`mailto:${encodeURIComponent(addr)}`);
+    }
   };
 
   return (

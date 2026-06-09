@@ -35,6 +35,18 @@ function intOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Strict single-address email — forbids the chars used for mailto: header injection
+// (?, &, ,, whitespace, angle brackets, quotes).
+const EMAIL_RE = /^[^\s,?&<>"']+@[^\s,?&<>"']+\.[^\s,?&<>"']+$/;
+
+// Phone is stored as the caller typed it but stripped of anything outside the
+// dial-safe set, preventing tel: DTMF/query injection (,, ;, *, #, ? etc.).
+function sanitizePhone(v: string | null): string | null {
+  if (!v) return null;
+  const cleaned = v.replace(/[^0-9+()\-\s]/g, '').trim();
+  return cleaned || null;
+}
+
 export function validateInquiry(input: Record<string, unknown>): ValidationResult {
   // Honeypot: a hidden "company" field. Bots fill it; humans never see it.
   const honeypot = input.company;
@@ -52,8 +64,12 @@ export function validateInquiry(input: Record<string, unknown>): ValidationResul
     return { ok: false, error: 'parent_name is required' };
   }
 
-  const parent_email = str(input.parent_email, 320);
-  const parent_phone = str(input.parent_phone, 50);
+  const rawEmail = str(input.parent_email, 320);
+  if (rawEmail && !EMAIL_RE.test(rawEmail)) {
+    return { ok: false, error: 'invalid email' };
+  }
+  const parent_email = rawEmail;
+  const parent_phone = sanitizePhone(str(input.parent_phone, 50));
   if (!parent_email && !parent_phone) {
     return { ok: false, error: 'an email or phone is required' };
   }

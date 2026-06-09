@@ -36,6 +36,37 @@ Deno.test('rejects when tutor_id is not a uuid', () => {
   assertEquals(r.ok, false);
 });
 
+Deno.test('rejects an email with mailto header-injection characters', () => {
+  const r = validateInquiry({
+    tutor_id: '11111111-1111-1111-1111-111111111111',
+    parent_name: 'Jane',
+    parent_email: 'jane@example.com?cc=victim@evil.com&subject=hi',
+  });
+  assertEquals(r.ok, false);
+});
+
+Deno.test('strips tel injection chars from phone, keeping dial-safe text', () => {
+  const r = validateInquiry({
+    tutor_id: '11111111-1111-1111-1111-111111111111',
+    parent_name: 'Jane',
+    parent_phone: '+1 (555) 123-4567,,;666#9',
+  });
+  assertEquals(r.ok, true);
+  if (r.ok) {
+    assertEquals(r.value.parent_email, null);
+    assertEquals(r.value.parent_phone, '+1 (555) 123-45676669');
+  }
+});
+
+Deno.test('rejects when phone is only injection chars and no email', () => {
+  const r = validateInquiry({
+    tutor_id: '11111111-1111-1111-1111-111111111111',
+    parent_name: 'Jane',
+    parent_phone: ',,;#*',
+  });
+  assertEquals(r.ok, false);
+});
+
 Deno.test('accepts a valid submission and trims/sanitizes fields', () => {
   const r = validateInquiry({
     tutor_id: '11111111-1111-1111-1111-111111111111',
