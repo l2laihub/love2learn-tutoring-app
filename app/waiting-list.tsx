@@ -14,7 +14,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -55,6 +54,7 @@ export default function WaitingListScreen() {
   const [notesEntry, setNotesEntry] = useState<WaitingListEntry | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const shareUrl = parent?.id ? `${APP_HOST}/inquire/${parent.id}` : '';
 
@@ -67,10 +67,7 @@ export default function WaitingListScreen() {
   const copyLink = useCallback(async () => {
     if (!shareUrl) return;
     await Clipboard.setStringAsync(shareUrl);
-    if (Platform.OS === 'web') {
-      // Alert on web is unreliable; rely on the toast-free confirmation.
-      console.log('Inquiry link copied');
-    }
+    setCopied(true);
     Alert.alert('Copied', 'Your inquiry link was copied to the clipboard.');
   }, [shareUrl]);
 
@@ -124,8 +121,12 @@ export default function WaitingListScreen() {
           </Text>
         </View>
         <Pressable style={styles.copyBtn} onPress={copyLink} disabled={!shareUrl}>
-          <Ionicons name="copy-outline" size={18} color={colors.neutral.white} />
-          <Text style={styles.copyText}>Copy</Text>
+          <Ionicons
+            name={copied ? 'checkmark' : 'copy-outline'}
+            size={18}
+            color={colors.neutral.white}
+          />
+          <Text style={styles.copyText}>{copied ? 'Copied' : 'Copy'}</Text>
         </Pressable>
       </View>
 

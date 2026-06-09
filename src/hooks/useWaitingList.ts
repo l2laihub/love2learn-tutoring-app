@@ -71,47 +71,6 @@ export function useWaitingList(
 }
 
 /**
- * Count of 'new' (unreviewed) inquiries — for the tab badge.
- */
-export function useNewInquiriesCount(): {
-  count: number;
-  loading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-} {
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
-
-  const fetchCount = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const { count: c, error: countError } = await supabase
-        .from('waiting_list')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'new');
-      if (countError) {
-        throw new Error(countError.message);
-      }
-      setCount(c || 0);
-    } catch (err) {
-      const e = err instanceof Error ? err : new Error('Failed to count inquiries');
-      setError(e);
-      console.error('useNewInquiriesCount error:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchCount();
-  }, [fetchCount]);
-
-  return { count, loading, error, refetch: fetchCount };
-}
-
-/**
  * Update an entry's status and/or notes (tutor only; RLS-enforced).
  */
 export function useUpdateWaitingListEntry(): {

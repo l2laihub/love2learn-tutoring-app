@@ -35,6 +35,13 @@ function intOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Student age is untrusted public input; keep it to a sane human range or drop it.
+function ageOrNull(v: unknown): number | null {
+  const n = intOrNull(v);
+  if (n === null || n < 0 || n > 120) return null;
+  return n;
+}
+
 // Strict single-address email — forbids the chars used for mailto: header injection
 // (?, &, ,, whitespace, angle brackets, quotes).
 const EMAIL_RE = /^[^\s,?&<>"']+@[^\s,?&<>"']+\.[^\s,?&<>"']+$/;
@@ -89,7 +96,7 @@ export function validateInquiry(input: Record<string, unknown>): ValidationResul
       parent_email,
       parent_phone,
       student_name: str(input.student_name, 200),
-      student_age: intOrNull(input.student_age),
+      student_age: ageOrNull(input.student_age),
       student_grade: str(input.student_grade, 50),
       subjects,
       preferred_availability: str(input.preferred_availability, 500),
