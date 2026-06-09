@@ -74,6 +74,14 @@ const menuItems: MenuItem[] = [
     tutorOnly: true,
   },
   {
+    key: 'waiting-list',
+    label: 'Waiting List',
+    icon: 'hourglass',
+    href: '/waiting-list',
+    description: 'Track inquiries from new parents',
+    tutorOnly: true,
+  },
+  {
     key: 'admin',
     label: 'Admin',
     icon: 'briefcase',

@@ -59,14 +59,15 @@ function RootLayoutNav() {
     }
 
     const inLanding = segments[0] === 'landing';
+    const inInquire = segments[0] === 'inquire';
 
     // Helper to check if user needs onboarding
     const needsOnboarding = parent && !parent.onboarding_completed_at;
     const tutorNeedsOnboarding = isTutor && needsOnboarding;
     const parentNeedsOnboarding = isParent && needsOnboarding;
 
-    if (!isAuthenticated && !inAuthGroup && !inLanding) {
-      // Redirect to landing page if not authenticated and not already on auth/landing screens
+    if (!isAuthenticated && !inAuthGroup && !inLanding && !inInquire) {
+      // Redirect to landing page if not authenticated and not already on auth/landing/inquire screens
       router.replace('/landing');
     } else if (isAuthenticated && inAuthGroup && !inOnboarding) {
       // Check if user needs onboarding
@@ -171,6 +172,21 @@ function RootLayoutNav() {
           headerShown: true,
           headerTitle: 'Lesson Requests',
           headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
+        name="waiting-list"
+        options={{
+          headerShown: true,
+          headerTitle: 'Waiting List',
+          headerBackTitle: 'Back',
+        }}
+      />
+      <Stack.Screen
+        name="inquire/[tutorId]"
+        options={{
+          headerShown: true,
+          headerTitle: 'Tutoring Inquiry',
         }}
       />
       <Stack.Screen
