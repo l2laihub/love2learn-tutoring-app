@@ -1187,6 +1187,56 @@ export interface UpdateLessonRequestInput {
   scheduled_lesson_id?: string | null;
 }
 
+// ============================================================================
+// Waiting List (prospective-parent inquiries)
+// ============================================================================
+export type WaitingListStatus =
+  | 'new'
+  | 'contacted'
+  | 'waitlisted'
+  | 'converted'
+  | 'declined';
+
+export interface WaitingListEntry {
+  id: string;
+  tutor_id: string;
+  parent_name: string;
+  parent_email: string | null;
+  parent_phone: string | null;
+  student_name: string | null;
+  student_age: number | null;
+  student_grade: string | null;
+  subjects: string[];
+  preferred_availability: string | null;
+  message: string | null;
+  referral_source: string | null;
+  status: WaitingListStatus;
+  tutor_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Public form submission payload (sent to the submit-inquiry edge function).
+export interface CreateWaitingListInput {
+  tutor_id: string;
+  parent_name: string;
+  parent_email?: string | null;
+  parent_phone?: string | null;
+  student_name?: string | null;
+  student_age?: number | null;
+  student_grade?: string | null;
+  subjects?: string[];
+  preferred_availability?: string | null;
+  message?: string | null;
+  referral_source?: string | null;
+}
+
+// Tutor-side update (status and/or notes).
+export interface UpdateWaitingListInput {
+  status?: WaitingListStatus;
+  tutor_notes?: string | null;
+}
+
 // Piano levels
 export type PianoLevel = 'beginner' | 'intermediate' | 'advanced';
 
