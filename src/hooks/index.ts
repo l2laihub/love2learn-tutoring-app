@@ -88,6 +88,9 @@ export {
 } from './useResponsive';
 export type { ResponsiveInfo, Breakpoint } from './useResponsive';
 
+// OTA / EAS Update
+export { useOTAUpdate } from './useOTAUpdate';
+
 // Tutor Availability hooks
 export {
   useTutorAvailability,

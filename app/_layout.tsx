@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { AuthProvider, useAuthContext } from '../src/contexts/AuthContext';
 import { supabase } from '../src/lib/supabase';
+import { useOTAUpdate } from '../src/hooks/useOTAUpdate';
 import { colors } from '../src/theme';
 
 function LoadingScreen() {
@@ -23,6 +24,9 @@ function RootLayoutNav() {
   const { isAuthenticated, isLoading, isParent, isTutor, parent } = useAuthContext();
   const segments = useSegments();
   const navigationState = useRootNavigationState();
+
+  // Check for OTA (EAS) updates on launch and prompt to restart when ready.
+  useOTAUpdate();
 
   // Handle PASSWORD_RECOVERY event from Supabase auth
   useEffect(() => {
