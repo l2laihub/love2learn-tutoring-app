@@ -372,6 +372,18 @@ backend = "postgres"
 [functions.submit-inquiry]
 verify_jwt = false
 
+# Dispatched by pg_net with the new-style secret key as bearer. The gateway can't
+# JWT-validate a non-JWT secret key, so disable verify_jwt; each function
+# authenticates the internal call in-code against EDGE_DISPATCH_SECRET.
+[functions.auto-complete-lessons]
+verify_jwt = false
+
+[functions.send-telegram-recap]
+verify_jwt = false
+
+[functions.send-push-notification]
+verify_jwt = false
+
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)
 orioledb_version = ""
