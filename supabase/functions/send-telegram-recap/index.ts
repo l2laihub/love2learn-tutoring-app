@@ -47,17 +47,22 @@ serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // Prefer the new-style secret key (sb_secret_…) for the privileged client AND
+    // to authenticate internal pg_net dispatches; fall back to the legacy
+    // service-role JWT during migration. Deployed with verify_jwt=false, so the
+    // in-code bearer check below is the gatekeeper for internal (cron) calls.
+    const secretKey = Deno.env.get('EDGE_DISPATCH_SECRET') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const legacyKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
     const botToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-    if (!supabaseUrl || !serviceKey) throw new Error('Supabase env not configured');
+    if (!supabaseUrl || !secretKey) throw new Error('Supabase env not configured');
     if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not configured');
 
     const { tutor_id, week_start, preview = false }: RecapRequest = await req.json();
 
     // Service-role client for all data queries (must bypass RLS to read across
     // the tutor's students/payments).
-    const supabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createClient(supabaseUrl, secretKey);
 
     // Determine the caller and resolve the effective request parameters.
     //  - Internal (cron via pg_net): Authorization is the service-role key. Trust
@@ -65,7 +70,8 @@ serve(async (req: Request) => {
     //  - Non-internal (app preview): identify the caller via their JWT and force a
     //    preview of their OWN current recap, ignoring any body tutor_id.
     const authHeader = req.headers.get('Authorization') ?? '';
-    const isInternal = authHeader === `Bearer ${serviceKey}`;
+    const bearer = authHeader.replace(/^Bearer\s+/i, '');
+    const isInternal = bearer.length > 0 && (bearer === secretKey || bearer === legacyKey);
 
     let effectiveTutorId: string;
     let effectiveWeekStart: string | undefined;

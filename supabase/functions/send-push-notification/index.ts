@@ -35,6 +35,20 @@ serve(async (req) => {
   }
 
   try {
+    // Deployed with verify_jwt=false (the trigger's bearer is a non-JWT secret
+    // key the gateway can't validate), so authenticate the internal pg_net call
+    // here: the trigger sends the secret key as the bearer. This in-code check is
+    // the ONLY gatekeeper — reject anything that doesn't match.
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const secretKey = Deno.env.get('EDGE_DISPATCH_SECRET') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const legacyKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !secretKey) return json({ error: 'not configured' }, 500);
+
+    const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    if (!(bearer.length > 0 && (bearer === secretKey || bearer === legacyKey))) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+
     const payload = await req.json();
     // pg_net sends { record }; a dashboard webhook also nests under `record`.
     const record: NotificationRecord = payload.record ?? payload;
@@ -43,10 +57,7 @@ serve(async (req) => {
       return json({ skipped: 'no recipient (broadcast not pushed)' });
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    );
+    const supabase = createClient(supabaseUrl, secretKey);
 
     // recipient_id is parents.id → get the auth user_id and preferences.
     const { data: parent } = await supabase

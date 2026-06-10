@@ -33,15 +33,23 @@ serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // Privileged key for DB access AND the shared secret that authenticates internal
+    // pg_net dispatches. Prefer the new-style secret key (sb_secret_…); fall back to
+    // the legacy service-role JWT so either key keeps working during migration.
+    // This function is deployed with verify_jwt=false (the gateway can't validate the
+    // non-JWT secret key), so the in-code bearer check below is the ONLY gatekeeper
+    // for internal cron calls — keep it strict.
+    const secretKey = Deno.env.get('EDGE_DISPATCH_SECRET') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const legacyKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    if (!supabaseUrl || !serviceKey) throw new Error('Supabase env not configured');
+    if (!supabaseUrl || !secretKey) throw new Error('Supabase env not configured');
 
     const body = await req.json().catch(() => ({}));
-    const supabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createClient(supabaseUrl, secretKey);
 
     const authHeader = req.headers.get('Authorization') ?? '';
-    const isInternal = authHeader === `Bearer ${serviceKey}`;
+    const bearer = authHeader.replace(/^Bearer\s+/i, '');
+    const isInternal = bearer.length > 0 && (bearer === secretKey || bearer === legacyKey);
 
     let effectiveTutorId: string;
     if (isInternal) {
