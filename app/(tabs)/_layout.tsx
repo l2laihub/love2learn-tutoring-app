@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { ReactNode } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +10,8 @@ import { useUnreadMessageCount } from '../../src/hooks/useMessages';
 import { useTutorBranding } from '../../src/hooks/useTutorBranding';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
 import { NotificationBell } from '../../src/components/NotificationBell';
+import { SubscriptionGate } from '../../src/components/SubscriptionGate';
+import { PAYWALL_ENABLED } from '../../src/config/subscription';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -60,9 +63,19 @@ export default function TabLayout() {
   const businessName = tutorBranding?.businessName || 'Tutoring';
   const tutorHeaderTitle = `${businessName}${businessName.toLowerCase().includes('tutor') ? '' : ' Tutoring'}`;
 
+  // Paywall: when enforcement is enabled, tutors without an active subscription
+  // or trial see the paywall instead of the app. Parents are never gated.
+  // Disabled by default (EXPO_PUBLIC_ENABLE_PAYWALL) — see docs/PAYWALL_SETUP.md.
+  const withGate = (node: ReactNode): ReactNode =>
+    PAYWALL_ENABLED && isTutor ? (
+      <SubscriptionGate featureName="DaLesson">{node}</SubscriptionGate>
+    ) : (
+      node
+    );
+
   // On desktop, use sidebar layout instead of bottom tabs
   if (isDesktop) {
-    return (
+    return withGate(
       <DesktopSidebar>
         <Tabs
           screenOptions={{
@@ -172,7 +185,7 @@ export default function TabLayout() {
   }
 
   // Mobile/tablet: use bottom tabs
-  return (
+  return withGate(
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: colors.primary.main,

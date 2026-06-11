@@ -182,11 +182,11 @@ function SubscriptionPaywall({ featureName = 'DaLesson' }: PaywallProps) {
         <View style={styles.planContainer}>
           <PlanOption
             name="Solo"
-            price="$19"
+            price="$29"
             period="/month"
             description="Perfect for independent tutors"
             features={[
-              'Unlimited students',
+              'Up to 25 students',
               'Lesson scheduling',
               'Payment tracking',
               'Parent communication',
@@ -197,7 +197,7 @@ function SubscriptionPaywall({ featureName = 'DaLesson' }: PaywallProps) {
 
           <PlanOption
             name="Pro"
-            price="$39"
+            price="$49"
             period="/month"
             description="For growing tutoring businesses"
             features={[

@@ -13,6 +13,52 @@ import {
   ListQueryState,
   QueryState,
 } from '../types/database';
+import { PAYWALL_ENABLED, getStudentLimit } from '../config/subscription';
+import type { SubscriptionPlan } from '../lib/stripe';
+
+/**
+ * Enforce the current tutor's plan student cap.
+ * Returns an error message if the cap is reached, otherwise null.
+ *
+ * Fails OPEN: if the plan can't be positively determined (unknown/null/Pro) or
+ * any lookup errors, student creation is allowed. This is a client-side soft
+ * limit — harden with a DB trigger if hard enforcement is required.
+ */
+async function checkStudentLimit(): Promise<string | null> {
+  try {
+    const { data: parentData } = await supabase.rpc('get_current_user_parent');
+    const parent = Array.isArray(parentData) ? parentData[0] : parentData;
+
+    // Only tutors are capped; parents don't create students.
+    if (!parent || parent.role !== 'tutor') return null;
+
+    const { data: row } = await supabase
+      .from('parents')
+      .select('subscription_plan')
+      .eq('id', parent.id)
+      .single();
+
+    // `subscription_plan` isn't in the generated Database types yet (stale types);
+    // cast through unknown like the other subscription reads in this codebase.
+    const plan = (row as unknown as { subscription_plan?: SubscriptionPlan | null } | null)
+      ?.subscription_plan ?? null;
+
+    const limit = getStudentLimit(plan);
+    if (!Number.isFinite(limit)) return null; // Pro / unlimited
+
+    const { count } = await supabase
+      .from('students')
+      .select('id', { count: 'exact', head: true });
+
+    if ((count ?? 0) >= limit) {
+      return `Your Solo plan allows up to ${limit} students. Upgrade to Pro for unlimited students.`;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[useCreateStudent] student limit check failed, allowing:', err);
+    return null;
+  }
+}
 
 /**
  * Fetch all students with their parent information
@@ -134,6 +180,14 @@ export function useCreateStudent() {
     try {
       setLoading(true);
       setError(null);
+
+      // Enforce plan student cap when the paywall is active.
+      if (PAYWALL_ENABLED) {
+        const limitError = await checkStudentLimit();
+        if (limitError) {
+          throw new Error(limitError);
+        }
+      }
 
       const { data: student, error: createError } = await supabase
         .from('students')
