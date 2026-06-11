@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -56,7 +55,7 @@ import { AvailableSessionsModal } from '../../src/components/AvailableSessionsMo
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { useAvailableGroupSessions } from '../../src/hooks/useGroupSessions';
 import { TutorBreak } from '../../src/types/database';
-import { useQuickInvoice, useIncrementSessionUsage, useMarkPaymentPaid } from '../../src/hooks/usePayments';
+import { useQuickInvoice, useIncrementSessionUsage, useMarkPaymentPaid, useMarkLessonsPaid } from '../../src/hooks/usePayments';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
 import { StackedAvatars } from '../../src/components/AvatarUpload';
 
@@ -132,6 +131,7 @@ export default function CalendarScreen() {
   const [selectedLesson, setSelectedLesson] = useState<ScheduledLessonWithStudent | null>(null);
   const [selectedGroupedLesson, setSelectedGroupedLesson] = useState<GroupedLesson | null>(null);
   const [selectedLessonPaid, setSelectedLessonPaid] = useState<boolean | null>(null);
+  const [selectedPaymentLessonIds, setSelectedPaymentLessonIds] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Multi-select mode state
@@ -182,6 +182,7 @@ export default function CalendarScreen() {
   const quickInvoice = useQuickInvoice();
   const incrementSessionUsage = useIncrementSessionUsage();
   const markPaymentPaid = useMarkPaymentPaid();
+  const { markLessonsPaid } = useMarkLessonsPaid();
 
   // Series state for delete/edit series functionality
   const [seriesLessonIds, setSeriesLessonIds] = useState<string[]>([]);
@@ -820,19 +821,36 @@ export default function CalendarScreen() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const first = selectedGroupedLesson?.lessons?.[0];
-      if (!first || first.status !== 'completed') { setSelectedLessonPaid(null); return; }
+      const lessons = selectedGroupedLesson?.lessons ?? [];
+      const completed = lessons.filter(l => l.status === 'completed');
+      if (completed.length === 0) {
+        setSelectedLessonPaid(null);
+        setSelectedPaymentLessonIds([]);
+        return;
+      }
       const { data } = await supabase
         .from('payment_lessons')
-        .select('paid')
-        .eq('lesson_id', first.id)
-        .maybeSingle();
+        .select('id, paid')
+        .in('lesson_id', completed.map(l => l.id));
       if (!active) return;
-      // No invoice row -> prepaid-covered completion -> treat as paid.
-      setSelectedLessonPaid(data ? data.paid === true : true);
+      const rows = data ?? [];
+      setSelectedPaymentLessonIds(rows.map(r => r.id));
+      // No invoice rows -> prepaid-covered completion -> treat as paid.
+      setSelectedLessonPaid(rows.length === 0 ? true : rows.every(r => r.paid === true));
     })();
     return () => { active = false; };
   }, [selectedGroupedLesson]);
+
+  // Toggle invoiced lessons between paid/unpaid from the detail modal.
+  const handleSetLessonPaid = async (paid: boolean) => {
+    if (selectedPaymentLessonIds.length === 0) return;
+    const result = await markLessonsPaid(selectedPaymentLessonIds, paid);
+    if (result.success) {
+      setSelectedLessonPaid(paid);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to update payment status.');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -844,17 +862,6 @@ export default function CalendarScreen() {
           </Text>
           {isTutor && (
             <View style={styles.headerButtons}>
-              {!isSelectMode && (
-                <Pressable
-                  style={styles.openingsButton}
-                  onPress={() => router.push('/openings' as any)}
-                  accessibilityRole="button"
-                  accessibilityLabel="View weekly openings"
-                >
-                  <Ionicons name="calendar-clear-outline" size={20} color={colors.primary.main} />
-                  <Text style={styles.openingsButtonText}>Openings</Text>
-                </Pressable>
-              )}
               <Pressable
                 style={[styles.selectButton, isSelectMode && styles.selectButtonActive]}
                 onPress={toggleSelectMode}
@@ -1353,6 +1360,8 @@ export default function CalendarScreen() {
         seriesCount={isSessionSeries ? seriesSessionIds.length : seriesLessonIds.length}
         isTutor={isTutor}
         paid={selectedLessonPaid}
+        onMarkPaid={isTutor && selectedPaymentLessonIds.length > 0 ? () => handleSetLessonPaid(true) : undefined}
+        onMarkUnpaid={isTutor && selectedPaymentLessonIds.length > 0 ? () => handleSetLessonPaid(false) : undefined}
       />
 
       {/* Reschedule Request Modal (for parents) */}
@@ -1736,22 +1745,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-  },
-  openingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.primary.main,
-    backgroundColor: colors.primary.subtle,
-  },
-  openingsButtonText: {
-    fontSize: typography.sizes.sm,
-    fontWeight: typography.weights.medium,
-    color: colors.primary.main,
   },
   selectButton: {
     flexDirection: 'row',

@@ -46,7 +46,9 @@ export interface RecapLesson {
   studentName: string;
   subjectLabel: string;
   status: string;     // 'scheduled' | 'completed' | 'cancelled'
-  paid?: boolean;     // shown only for completed lessons
+  // Shown only for completed lessons: true → 💵 paid, false → ⚠️ invoiced
+  // but unpaid, undefined → no marker (prepaid-covered / not yet invoiced).
+  paid?: boolean;
 }
 
 export interface RecapData {
@@ -74,24 +76,34 @@ export function buildRecapMessage(d: RecapData): string {
     cancelled: '❌',
     scheduled: '•',
   };
-  const lessonLines = d.lessons.length
-    ? d.lessons
-        .map((l) => {
-          const mark = statusMark[l.status] ?? '•';
-          const paidMark = l.status === 'completed' && l.paid ? ' 💵' : '';
-          return `${mark} ${escapeHtml(l.date)} — ${escapeHtml(
-            l.studentName,
-          )} · ${escapeHtml(l.subjectLabel)}${paidMark}`;
-        })
-        .join('\n')
-    : '<i>No classes this week.</i>';
+
+  // Group lessons under one bold header per day (lessons arrive ordered by
+  // time) so each class line stays short enough to avoid awkward wrapping.
+  const lessonLines: string[] = [];
+  let currentDate = '';
+  for (const l of d.lessons) {
+    if (l.date !== currentDate) {
+      currentDate = l.date;
+      if (lessonLines.length > 0) lessonLines.push('');
+      lessonLines.push(`<b>${escapeHtml(l.date)}</b>`);
+    }
+    const mark = statusMark[l.status] ?? '•';
+    const paidMark =
+      l.status !== 'completed' ? '' : l.paid === true ? ' 💵' : l.paid === false ? ' ⚠️' : '';
+    lessonLines.push(
+      `${mark} ${escapeHtml(l.studentName)} · ${escapeHtml(l.subjectLabel)}${paidMark}`,
+    );
+  }
+  if (lessonLines.length === 0) lessonLines.push('<i>No classes this week.</i>');
 
   return [
     header,
     '',
     `<b>Classes (${d.lessons.length})</b>`,
-    lessonLines,
-    ...(d.autoMarked && d.autoMarked > 0 ? [`<i>${d.autoMarked} auto-marked this week</i>`] : []),
+    '<i>✅ done · ❌ cancelled · 💵 paid · ⚠️ unpaid</i>',
+    '',
+    ...lessonLines,
+    ...(d.autoMarked && d.autoMarked > 0 ? ['', `<i>${d.autoMarked} auto-marked this week</i>`] : []),
     '',
     '<b>Payments</b>',
     `💰 Received this week: ${money(d.received)}`,

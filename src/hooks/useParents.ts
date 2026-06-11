@@ -469,12 +469,20 @@ export function useUpdateBillingMode() {
       setLoading(true);
       setError(null);
 
+      const update: { billing_mode: BillingMode; updated_at: string; prepaid_subjects?: string[] } = {
+        billing_mode: billingMode,
+        updated_at: new Date().toISOString(),
+      };
+      // Switching to invoice must also clear per-subject prepaid config:
+      // a family with leftover prepaid_subjects stays on the Prepaid tab and
+      // those subjects are skipped when invoices are generated.
+      if (billingMode === 'invoice') {
+        update.prepaid_subjects = [];
+      }
+
       const { data: parent, error: updateError } = await supabase
         .from('parents')
-        .update({
-          billing_mode: billingMode,
-          updated_at: new Date().toISOString(),
-        })
+        .update(update)
         .eq('id', parentId)
         .select()
         .single();

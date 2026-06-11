@@ -80,7 +80,7 @@ Deno.test('recap shows auto-marked count when present', () => {
     received: 0, outstanding: 0, expected: 45, autoMarked: 1,
   });
   if (!msg.includes('auto-marked')) throw new Error('expected auto-marked line');
-  if (!msg.includes('💵')) throw new Error('expected paid indicator on class line');
+  if (!msg.includes('Amy · 📐 Math 💵')) throw new Error('expected paid indicator on class line');
 });
 
 Deno.test('recap omits auto-marked line when zero', () => {
@@ -90,6 +90,49 @@ Deno.test('recap omits auto-marked line when zero', () => {
     received: 0, outstanding: 0, expected: 45, autoMarked: 0,
   });
   if (msg.includes('auto-marked')) throw new Error('did not expect auto-marked line');
+});
+
+Deno.test('recap shows unpaid indicator for invoiced-but-unpaid completed lessons', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'Jun 1–Jun 6',
+    lessons: [{ date: 'Mon Jun 1', studentName: 'Amy', subjectLabel: '📐 Math', status: 'completed', paid: false }],
+    received: 0, outstanding: 45, expected: 45,
+  });
+  if (!msg.includes('Amy · 📐 Math ⚠️')) throw new Error('expected unpaid indicator on class line');
+  if (msg.includes('Amy · 📐 Math 💵')) throw new Error('did not expect paid indicator');
+});
+
+Deno.test('recap shows no paid/unpaid marker when paid status is unknown', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'Jun 1–Jun 6',
+    lessons: [
+      // paid undefined → prepaid-covered or not yet invoiced
+      { date: 'Mon Jun 1', studentName: 'Amy', subjectLabel: '📐 Math', status: 'completed' },
+      { date: 'Tue Jun 2', studentName: 'Ben', subjectLabel: '🎹 Piano', status: 'scheduled', paid: false },
+    ],
+    received: 0, outstanding: 0, expected: 90,
+  });
+  if (!msg.includes('✅ Amy · 📐 Math\n')) throw new Error('expected bare class line for unknown paid status');
+  if (!msg.includes('• Ben · 🎹 Piano\n')) throw new Error('expected no unpaid marker on non-completed lessons');
+});
+
+Deno.test('recap groups lessons under one bold header per day', () => {
+  const msg = buildRecapMessage({
+    rangeLabel: 'Jun 7–Jun 12',
+    lessons: [
+      { date: 'Tue, Jun 9', studentName: 'Audrey', subjectLabel: '🎹 Piano', status: 'completed', paid: false },
+      { date: 'Tue, Jun 9', studentName: 'Chloe', subjectLabel: '🎹 Piano', status: 'completed', paid: true },
+      { date: 'Wed, Jun 10', studentName: 'An', subjectLabel: '🗣️ Speech', status: 'scheduled' },
+    ],
+    received: 0, outstanding: 0, expected: 150,
+  });
+  // Each day appears exactly once, as a bold header; lesson lines omit the date.
+  assertEquals(msg.split('Tue, Jun 9').length - 1, 1);
+  assertEquals(msg.includes('<b>Tue, Jun 9</b>'), true);
+  assertEquals(msg.includes('<b>Wed, Jun 10</b>'), true);
+  assertEquals(msg.includes('✅ Audrey · 🎹 Piano ⚠️'), true);
+  assertEquals(msg.includes('✅ Chloe · 🎹 Piano 💵'), true);
+  assertEquals(msg.includes('• An · 🗣️ Speech'), true);
 });
 
 Deno.test('localDateStartToUtcISO: America/Los_Angeles (PDT, UTC-7)', () => {

@@ -156,17 +156,23 @@ serve(async (req: Request) => {
       .order('scheduled_at', { ascending: true });
 
     const lessons: RecapLesson[] = (lessonRows ?? []).map((l: any) => ({
+      // Format in the tutor's timezone: the function runs in UTC, so omitting
+      // timeZone would shift evening lessons onto the wrong day.
       date: new Date(l.scheduled_at).toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
+        timeZone: tz,
       }),
       studentName: l.student?.name ?? 'Student',
       subjectLabel: subjectLabel(l.subject),
       status: l.status,
-      paid: Array.isArray((l as any).payment_lessons)
-        ? (l as any).payment_lessons.some((pl: any) => pl.paid === true)
-        : false,
+      // No payment_lessons rows → prepaid-covered or not yet invoiced → no
+      // paid/unpaid marker. Rows present: any paid → 💵, none paid → ⚠️.
+      paid:
+        Array.isArray((l as any).payment_lessons) && (l as any).payment_lessons.length > 0
+          ? (l as any).payment_lessons.some((pl: any) => pl.paid === true)
+          : undefined,
     }));
 
     const autoMarked = (lessonRows ?? []).filter((l: any) => l.auto_completed_at != null).length;

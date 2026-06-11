@@ -61,6 +61,8 @@ interface LessonDetailModalProps {
   seriesCount?: number; // Number of lessons in the recurring series
   isTutor?: boolean; // Whether the current user is a tutor/admin
   paid?: boolean | null; // true=paid, false=invoiced-unpaid, null=n/a
+  onMarkPaid?: () => Promise<void>; // Mark invoiced lesson(s) as paid (tutor only)
+  onMarkUnpaid?: () => Promise<void>; // Mark invoiced lesson(s) as unpaid (tutor only)
 }
 
 export function LessonDetailModal({
@@ -80,6 +82,8 @@ export function LessonDetailModal({
   seriesCount = 0,
   isTutor = false,
   paid,
+  onMarkPaid,
+  onMarkUnpaid,
 }: LessonDetailModalProps) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -244,6 +248,19 @@ export function LessonDetailModal({
       onClose();
     } catch (err) {
       console.error('Failed to delete lesson series:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTogglePaid = async (markPaid: boolean) => {
+    const action = markPaid ? onMarkPaid : onMarkUnpaid;
+    if (!action) return;
+    setLoading(true);
+    try {
+      await action();
+    } catch (err) {
+      console.error('Failed to update paid status:', err);
     } finally {
       setLoading(false);
     }
@@ -825,16 +842,50 @@ export function LessonDetailModal({
           </View>
         )}
 
-        {/* Undo Complete action - only show for completed lessons (tutor/admin only) */}
-        {displayData.status === 'completed' && isTutor && onUncomplete && (
+        {/* Completed lesson actions (tutor/admin only): toggle paid status, undo complete */}
+        {displayData.status === 'completed' && isTutor && (onUncomplete || onMarkPaid || onMarkUnpaid) && (
           <View style={styles.actions}>
-            <Pressable
-              style={styles.uncompleteButton}
-              onPress={() => setShowUncompleteConfirm(true)}
-            >
-              <Ionicons name="arrow-undo-circle-outline" size={20} color={colors.status.warning} />
-              <Text style={styles.uncompleteButtonText}>Undo Complete</Text>
-            </Pressable>
+            {paid === true && onMarkUnpaid && (
+              <Pressable
+                style={styles.markUnpaidButton}
+                onPress={() => handleTogglePaid(false)}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.status.error} />
+                ) : (
+                  <>
+                    <Ionicons name="cash-outline" size={20} color={colors.status.error} />
+                    <Text style={styles.markUnpaidButtonText}>Mark as Unpaid</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+            {paid === false && onMarkPaid && (
+              <Pressable
+                style={styles.markPaidButton}
+                onPress={() => handleTogglePaid(true)}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.status.success} />
+                ) : (
+                  <>
+                    <Ionicons name="cash-outline" size={20} color={colors.status.success} />
+                    <Text style={styles.markPaidButtonText}>Mark as Paid</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+            {onUncomplete && (
+              <Pressable
+                style={styles.uncompleteButton}
+                onPress={() => setShowUncompleteConfirm(true)}
+              >
+                <Ionicons name="arrow-undo-circle-outline" size={20} color={colors.status.warning} />
+                <Text style={styles.uncompleteButtonText}>Undo Complete</Text>
+              </Pressable>
+            )}
           </View>
         )}
 
@@ -1140,6 +1191,40 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.white,
+  },
+  markUnpaidButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.status.error,
+    backgroundColor: colors.status.errorBg,
+  },
+  markUnpaidButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.status.error,
+  },
+  markPaidButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.status.success,
+    backgroundColor: colors.status.successBg,
+  },
+  markPaidButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.status.success,
   },
   uncompleteButton: {
     flex: 1,

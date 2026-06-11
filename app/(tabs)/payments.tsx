@@ -499,6 +499,37 @@ export default function PaymentsScreen() {
     setShowPreviewModal(true);
   };
 
+  // Explicit prepaid → invoice switch for the Prepaid tab. Unlike the toggle,
+  // this always targets 'invoice' so it also works for hybrid families whose
+  // billing_mode is already 'invoice' but who still have prepaid_subjects set.
+  const handleSwitchToInvoice = async (parentData: ParentWithStudents) => {
+    const message = `Switch ${parentData.name} to Invoice billing? Their lessons will be invoiced going forward.`;
+    const doSwitch = async () => {
+      const result = await updateBillingMode.mutate(parentData.id, 'invoice');
+      if (result) {
+        if (Platform.OS === 'web') {
+          window.alert(`${parentData.name} is now on Invoice billing.`);
+        } else {
+          Alert.alert('Success', `${parentData.name} is now on Invoice billing.`);
+        }
+        await handleRefresh();
+      } else if (Platform.OS === 'web') {
+        window.alert('Failed to update billing mode.');
+      } else {
+        Alert.alert('Error', 'Failed to update billing mode.');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) await doSwitch();
+    } else {
+      Alert.alert('Change Billing Mode', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm', onPress: doSwitch },
+      ]);
+    }
+  };
+
   const handleToggleBillingMode = async (parentData: ParentWithStudents) => {
     const newMode = parentData.billing_mode === 'prepaid' ? 'invoice' : 'prepaid';
     const modeName = newMode === 'prepaid' ? 'Prepaid' : 'Invoice';
@@ -1103,9 +1134,9 @@ export default function PaymentsScreen() {
                           subject={prepaidPayment.subject || undefined}
                           subjectLabel={cardTitle || undefined}
                           onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
-                          onPress={() => handleToggleBillingMode(parentData)}
                           onUpdateSessionsUsed={(newCount) => handleUpdateSessionsUsed(prepaidPayment.id, newCount)}
                           onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
+                          onSwitchToInvoice={() => handleSwitchToInvoice(parentData)}
                         />
                       );
                     });
@@ -1127,6 +1158,13 @@ export default function PaymentsScreen() {
                       >
                         <Ionicons name="add" size={18} color={colors.neutral.white} />
                         <Text style={styles.createPrepaidText}>Create Plan</Text>
+                      </Pressable>
+                      <Pressable
+                        style={styles.switchToInvoiceButton}
+                        onPress={() => handleSwitchToInvoice(parentData)}
+                      >
+                        <Ionicons name="swap-horizontal" size={18} color={colors.neutral.textSecondary} />
+                        <Text style={styles.switchToInvoiceText}>Switch to Invoice Billing</Text>
                       </Pressable>
                     </View>
                   );
@@ -1741,6 +1779,22 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.neutral.white,
+  },
+  switchToInvoiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    borderRadius: borderRadius.md,
+  },
+  switchToInvoiceText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
   },
 
   // Parent prepaid section styles

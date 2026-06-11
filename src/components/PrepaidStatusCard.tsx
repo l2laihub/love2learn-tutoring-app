@@ -31,6 +31,7 @@ interface PrepaidStatusCardProps {
   onCreatePrepaid?: () => void;
   onUpdateSessionsUsed?: (newCount: number) => void;
   onPreviewParentView?: () => void;
+  onSwitchToInvoice?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -56,6 +57,7 @@ export function PrepaidStatusCard({
   onMarkPaid,
   onUpdateSessionsUsed,
   onPreviewParentView,
+  onSwitchToInvoice,
 }: PrepaidStatusCardProps) {
   const usagePercent = sessionsTotal > 0 ? (sessionsUsed / sessionsTotal) * 100 : 0;
   const isOverLimit = sessionsUsed > sessionsTotal;
@@ -200,6 +202,14 @@ export function PrepaidStatusCard({
           <Pressable onPress={onPreviewParentView} style={styles.previewButton}>
             <Ionicons name="eye-outline" size={18} color={colors.piano.primary} />
             <Text style={styles.previewButtonText}>Preview Parent View</Text>
+          </Pressable>
+        )}
+
+        {/* Switch family back to invoice billing */}
+        {onSwitchToInvoice && (
+          <Pressable onPress={onSwitchToInvoice} style={styles.switchToInvoiceButton}>
+            <Ionicons name="swap-horizontal" size={18} color={colors.neutral.textSecondary} />
+            <Text style={styles.switchToInvoiceText}>Switch to Invoice Billing</Text>
           </Pressable>
         )}
       </View>
@@ -503,6 +513,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.piano.primary,
+  },
+  switchToInvoiceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    borderRadius: borderRadius.md,
+  },
+  switchToInvoiceText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
   },
 
   // Compact card
