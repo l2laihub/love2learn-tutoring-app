@@ -1,6 +1,6 @@
 /**
  * Business Setup Screen
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * First step of tutor onboarding - business information setup
  */

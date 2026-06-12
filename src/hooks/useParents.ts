@@ -1,6 +1,6 @@
 /**
  * useParents Hook
- * Data fetching hooks for parent management in Love2Learn tutoring app
+ * Data fetching hooks for parent management in DaLesson tutoring app
  */
 
 import { useState, useEffect, useCallback } from 'react';

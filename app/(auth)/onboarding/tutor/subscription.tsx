@@ -1,6 +1,6 @@
 /**
  * Subscription Selection Screen
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Third step of tutor onboarding - choose a subscription plan
  */

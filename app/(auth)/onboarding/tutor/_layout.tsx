@@ -1,6 +1,6 @@
 /**
  * Tutor Onboarding Layout
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Handles the tutor onboarding flow navigation
  */

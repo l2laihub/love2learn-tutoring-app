@@ -1,6 +1,6 @@
 # Terms of Service
 
-**Love2Learn Tutoring Management Platform**
+**DaLesson Tutoring Management Platform**
 
 **Last Updated: January 31, 2026**
 
@@ -10,7 +10,7 @@
 
 ## Introduction
 
-Welcome to Love2Learn. These Terms of Service ("Terms") govern your access to and use of the Love2Learn tutoring management platform, including our mobile applications for iOS and Android, our web application, and any related services (collectively, the "Service").
+Welcome to DaLesson. These Terms of Service ("Terms") govern your access to and use of the DaLesson tutoring management platform, including our mobile applications for iOS and Android, our web application, and any related services (collectively, the "Service").
 
 Please read these Terms carefully before using the Service. By accessing or using the Service, you agree to be bound by these Terms. If you do not agree to these Terms, you may not access or use the Service.
 
@@ -47,7 +47,7 @@ Your continued use of the Service after the effective date of any changes consti
 
 ### 2.1 Overview
 
-Love2Learn is a tutoring management platform designed for independent tutors to manage their tutoring business. The Service provides tools for:
+DaLesson is a tutoring management platform designed for independent tutors to manage their tutoring business. The Service provides tools for:
 
 - **Student Management:** Organize and track student information, progress, and learning history
 - **Scheduling:** Create, manage, and track lesson schedules and appointments
@@ -147,7 +147,7 @@ We may offer a free trial period for new subscribers. At the end of the free tri
 **Subscription Refunds:**
 - Monthly subscriptions: No refunds for partial months
 - Annual subscriptions: Pro-rated refunds available within the first 30 days of subscription
-- Refund requests must be submitted to support@love2learn.app
+- Refund requests must be submitted to support@dalesson.app
 
 **Exceptions:**
 - Refunds may be provided at our discretion in cases of technical issues that prevented use of the Service
@@ -260,7 +260,7 @@ We reserve the right to:
 
 ### 7.1 Our Intellectual Property
 
-The Service, including its design, features, content, and technology, is owned by Love2Learn and is protected by copyright, trademark, and other intellectual property laws.
+The Service, including its design, features, content, and technology, is owned by DaLesson and is protected by copyright, trademark, and other intellectual property laws.
 
 You may not:
 - Copy, modify, or distribute the Service or its content
@@ -343,7 +343,7 @@ Some jurisdictions do not allow the exclusion of certain warranties or the limit
 
 ## 10. Indemnification
 
-You agree to indemnify, defend, and hold harmless Love2Learn and its directors, officers, employees, agents, and affiliates from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees) arising from or related to:
+You agree to indemnify, defend, and hold harmless DaLesson and its directors, officers, employees, agents, and affiliates from and against any and all claims, damages, losses, liabilities, costs, and expenses (including reasonable attorneys' fees) arising from or related to:
 
 - Your use of the Service
 - Your violation of these Terms
@@ -389,11 +389,11 @@ If we terminate your account for violation of these Terms, you will not be entit
 
 ### 12.1 Informal Resolution
 
-Before initiating formal dispute resolution, you agree to contact us at support@love2learn.app to attempt to resolve any dispute informally. We will attempt to resolve the dispute within 60 days.
+Before initiating formal dispute resolution, you agree to contact us at support@dalesson.app to attempt to resolve any dispute informally. We will attempt to resolve the dispute within 60 days.
 
 ### 12.2 Binding Arbitration
 
-If we cannot resolve a dispute informally, you and Love2Learn agree to resolve any dispute arising from or relating to these Terms or the Service through binding arbitration, except as provided below.
+If we cannot resolve a dispute informally, you and DaLesson agree to resolve any dispute arising from or relating to these Terms or the Service through binding arbitration, except as provided below.
 
 **Arbitration Procedures:**
 - Arbitration will be conducted by JAMS under its Streamlined Arbitration Rules
@@ -430,7 +430,7 @@ Subject to the arbitration provisions above, any legal action or proceeding aris
 
 ### 14.1 Entire Agreement
 
-These Terms, together with the Privacy Policy and any other agreements expressly incorporated by reference, constitute the entire agreement between you and Love2Learn regarding the Service.
+These Terms, together with the Privacy Policy and any other agreements expressly incorporated by reference, constitute the entire agreement between you and DaLesson regarding the Service.
 
 ### 14.2 Severability
 
@@ -455,11 +455,11 @@ We may provide notices to you by:
 - In-app notifications
 - Posting on the Service
 
-You may provide notices to us by email at support@love2learn.app or by mail to our address below.
+You may provide notices to us by email at support@dalesson.app or by mail to our address below.
 
 ### 14.7 Relationship of the Parties
 
-Nothing in these Terms creates a partnership, joint venture, agency, or employment relationship between you and Love2Learn. You are an independent user of the Service.
+Nothing in these Terms creates a partnership, joint venture, agency, or employment relationship between you and DaLesson. You are an independent user of the Service.
 
 ---
 
@@ -479,16 +479,16 @@ Your continued use of the Service after the effective date of any changes consti
 If you have any questions, concerns, or feedback about these Terms or the Service, please contact us:
 
 **General Inquiries:**
-- Email: support@love2learn.app
+- Email: support@dalesson.app
 
 **Privacy Inquiries:**
-- Email: privacy@love2learn.app
+- Email: privacy@dalesson.app
 
 **Legal Inquiries:**
-- Email: legal@love2learn.app
+- Email: legal@dalesson.app
 
 **Mailing Address:**
-Love2Learn
+DaLesson
 [Address to be provided]
 
 ---

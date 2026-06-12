@@ -1,6 +1,6 @@
 /**
  * useSubscription Hook
- * Subscription management for Love2Learn tutors
+ * Subscription management for DaLesson tutors
  *
  * Provides subscription status, trial info, and actions for managing subscriptions
  */

@@ -1,4 +1,4 @@
-// Love2Learn Component Library
+// DaLesson Component Library
 
 // UI Components
 export * from './ui';

@@ -1,6 +1,6 @@
 /**
  * useStudents Hook
- * Data fetching hooks for student management in Love2Learn tutoring app
+ * Data fetching hooks for student management in DaLesson tutoring app
  */
 
 import { useState, useEffect, useCallback } from 'react';

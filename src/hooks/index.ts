@@ -1,5 +1,5 @@
 /**
- * Love2Learn Tutoring App - React Hooks
+ * DaLesson Tutoring App - React Hooks
  *
  * Centralized exports for all data fetching hooks
  */

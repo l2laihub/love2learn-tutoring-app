@@ -1,6 +1,6 @@
 /**
  * Tutor Registration Screen
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Registration screen specifically for tutors with business name field
  */
@@ -178,13 +178,11 @@ export default function RegisterTutorScreen() {
   };
 
   const openTermsOfService = () => {
-    // TODO: Replace with actual Terms of Service URL
-    Linking.openURL('https://love2learn.com/terms');
+    Linking.openURL('https://dalesson.app/terms');
   };
 
   const openPrivacyPolicy = () => {
-    // TODO: Replace with actual Privacy Policy URL
-    Linking.openURL('https://love2learn.com/privacy');
+    Linking.openURL('https://dalesson.app/privacy');
   };
 
   // Show success state after registration

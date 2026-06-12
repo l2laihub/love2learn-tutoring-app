@@ -1,6 +1,6 @@
 /**
  * Onboarding Complete Screen
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Final step of tutor onboarding - welcome message and getting started tips
  */

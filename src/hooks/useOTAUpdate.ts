@@ -40,7 +40,7 @@ export function useOTAUpdate() {
 
         Alert.alert(
           'Update Available',
-          'A new version of Love2Learn is ready. Restart now to get the latest improvements.',
+          'A new version of DaLesson is ready. Restart now to get the latest improvements.',
           [
             { text: 'Later', style: 'cancel' },
             {

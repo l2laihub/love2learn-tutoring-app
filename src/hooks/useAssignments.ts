@@ -1,6 +1,6 @@
 /**
  * useAssignments Hook
- * Data fetching hooks for worksheet assignments in Love2Learn tutoring app
+ * Data fetching hooks for worksheet assignments in DaLesson tutoring app
  */
 
 import { useState, useEffect, useCallback } from 'react';

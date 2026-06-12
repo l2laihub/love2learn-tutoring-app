@@ -1,6 +1,6 @@
 /**
  * Subject Configuration Screen
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Second step of tutor onboarding - configure subjects and rates
  */

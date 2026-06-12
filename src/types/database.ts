@@ -1,5 +1,5 @@
 /**
- * Database types for Love2Learn tutoring app
+ * Database types for DaLesson tutoring app
  * Generated from Supabase schema
  */
 

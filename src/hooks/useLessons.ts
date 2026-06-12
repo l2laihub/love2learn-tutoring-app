@@ -1,6 +1,6 @@
 /**
  * useLessons Hook
- * Data fetching hooks for scheduled tutoring lessons in Love2Learn app
+ * Data fetching hooks for scheduled tutoring lessons in DaLesson app
  *
  * Note: These hooks work with the 'scheduled_lessons' table for tutoring sessions,
  * which is distinct from the 'lessons' table that stores educational content.

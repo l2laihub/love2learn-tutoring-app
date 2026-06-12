@@ -1,6 +1,6 @@
 /**
  * Authentication Context
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Provides authentication state and methods throughout the app
  */

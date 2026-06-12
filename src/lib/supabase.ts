@@ -1,6 +1,6 @@
 /**
  * Supabase Client Configuration
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Initializes the Supabase client with Expo secure storage for auth persistence
  */

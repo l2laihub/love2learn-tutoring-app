@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Love2Learn Tutoring Management Platform**
+**DaLesson Tutoring Management Platform**
 
 **Last Updated: January 31, 2026**
 
@@ -10,7 +10,7 @@
 
 ## Introduction
 
-Love2Learn ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our tutoring management platform, available on iOS, Android, and web applications (collectively, the "Service").
+DaLesson ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our tutoring management platform, available on iOS, Android, and web applications (collectively, the "Service").
 
 Please read this Privacy Policy carefully. By accessing or using the Service, you acknowledge that you have read, understood, and agree to be bound by this Privacy Policy. If you do not agree with the terms of this Privacy Policy, please do not access the Service.
 
@@ -264,7 +264,7 @@ Where we process your personal information based on consent, you have the right 
 ### 6.8 Exercising Your Rights
 
 To exercise any of these rights, please contact us at:
-- Email: privacy@love2learn.app
+- Email: privacy@dalesson.app
 
 We will respond to your request within 30 days. We may request additional information to verify your identity before processing your request.
 
@@ -322,7 +322,7 @@ In the preceding 12 months, we have collected the following categories of person
 ### 7.8 Contact for California Residents
 
 California residents may contact us at:
-- Email: privacy@love2learn.app
+- Email: privacy@dalesson.app
 - Include "California Privacy Request" in the subject line
 
 ---
@@ -331,7 +331,7 @@ California residents may contact us at:
 
 ### 8.1 Children's Information
 
-Love2Learn is a tutoring management platform designed for tutors to manage their tutoring business. While the Service stores information about students, including children under the age of 13, this information is provided by tutors and parents, not directly by children.
+DaLesson is a tutoring management platform designed for tutors to manage their tutoring business. While the Service stores information about students, including children under the age of 13, this information is provided by tutors and parents, not directly by children.
 
 ### 8.2 Parental Consent
 
@@ -352,7 +352,7 @@ Parents have the right to:
 - Request deletion of their child's information
 - Refuse further collection of their child's information
 
-To exercise these rights, parents should contact their tutor directly or email us at privacy@love2learn.app.
+To exercise these rights, parents should contact their tutor directly or email us at privacy@dalesson.app.
 
 ### 8.5 Student Data Protection
 
@@ -403,10 +403,10 @@ Some web browsers have a "Do Not Track" feature that signals to websites that yo
 
 If you have questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:
 
-**Email:** privacy@love2learn.app
+**Email:** privacy@dalesson.app
 
 **Mailing Address:**
-Love2Learn
+DaLesson
 Privacy Inquiries
 [Address to be provided]
 

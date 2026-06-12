@@ -1,6 +1,6 @@
 /**
  * useTutorAvailability Hook
- * Data fetching hooks for tutor availability management in Love2Learn tutoring app
+ * Data fetching hooks for tutor availability management in DaLesson tutoring app
  *
  * Tutors can manage their available time slots, and parents can view them
  * when requesting to reschedule lessons.

@@ -1,5 +1,5 @@
 /**
- * Notification types for Love2Learn tutoring app
+ * Notification types for DaLesson tutoring app
  */
 
 import { Json, Parent } from './database';

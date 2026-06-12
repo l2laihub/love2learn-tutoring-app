@@ -1,6 +1,6 @@
 /**
  * Stripe Client Configuration
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Client-side Stripe utilities for subscription management
  */

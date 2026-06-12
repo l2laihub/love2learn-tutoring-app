@@ -1,6 +1,6 @@
 /**
  * Authentication Helpers
- * Love2Learn Tutoring App
+ * DaLesson Tutoring App
  *
  * Provides authentication functions and hooks for managing user sessions
  */

@@ -1,6 +1,6 @@
 /**
  * usePayments Hook
- * Data fetching hooks for payment tracking in Love2Learn tutoring app
+ * Data fetching hooks for payment tracking in DaLesson tutoring app
  */
 
 import { useState, useEffect, useCallback } from 'react';

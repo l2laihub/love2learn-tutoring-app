@@ -1,5 +1,5 @@
 /**
- * Message types for Love2Learn tutoring app
+ * Message types for DaLesson tutoring app
  * Supports group chats, announcements, images, and emoji reactions
  */
 

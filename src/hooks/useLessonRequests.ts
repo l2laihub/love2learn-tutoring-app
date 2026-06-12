@@ -1,6 +1,6 @@
 /**
  * useLessonRequests Hook
- * Data fetching hooks for lesson request management in Love2Learn tutoring app
+ * Data fetching hooks for lesson request management in DaLesson tutoring app
  *
  * Parents can request reschedules or new lessons, and tutors/admin can approve/reject them.
  */

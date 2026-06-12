@@ -1,6 +1,6 @@
 /**
  * useTutorBreaks Hook
- * Data fetching hooks for tutor break management in Love2Learn tutoring app
+ * Data fetching hooks for tutor break management in DaLesson tutoring app
  *
  * Tutors can manage break time slots within their availability windows.
  * Breaks are hidden from parents (shown as "unavailable") and block scheduling.
