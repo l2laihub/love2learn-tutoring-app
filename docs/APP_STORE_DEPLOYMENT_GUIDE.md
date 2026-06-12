@@ -1,5 +1,10 @@
 # App Store & Google Play Deployment Guide
 
+> ⚠️ **OUTDATED — use [`STORE_SUBMISSION.md`](./STORE_SUBMISSION.md) instead.** This guide predates the
+> DaLesson rebrand: it shows the wrong bundle ID (`com.love2learn.app` — the real one is
+> `app.huybuilds.dalesson`), v1.0.0, and an old eas.json. Kept for the general EAS/account walkthrough
+> only; the current submission pack is `STORE_SUBMISSION.md`.
+
 ## Love2Learn Tutoring App - Mobile Deployment Documentation
 
 This guide walks you through deploying the Love2Learn app to the Apple App Store and Google Play Store.

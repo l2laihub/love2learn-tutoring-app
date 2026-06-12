@@ -1,5 +1,9 @@
 # App Store Assets Guide
 
+> ⚠️ **OUTDATED — use [`STORE_SUBMISSION.md`](./STORE_SUBMISSION.md) instead.** This file predates the
+> DaLesson rebrand and references the old "Love2Learn" name and wrong bundle ID. Kept for asset
+> size/ASO reference only; the current copy‑paste listing values live in `STORE_SUBMISSION.md`.
+
 ## Love2Learn Tutoring App - Asset Requirements & Marketing Materials
 
 This guide provides a comprehensive checklist of all assets needed for App Store and Google Play Store submissions, along with ASO (App Store Optimization) guidelines specifically tailored for solo tutors.
