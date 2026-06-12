@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,14 +35,20 @@ const navItems: NavItem[] = [
   { name: 'Students', href: '/(tabs)/students', icon: 'people-outline', iconActive: 'people', tutorOnly: true },
   { name: 'Worksheets', href: '/(tabs)/worksheets', icon: 'document-text-outline', iconActive: 'document-text' },
   { name: 'Resources', href: '/(tabs)/resources', icon: 'folder-open-outline', iconActive: 'folder-open', parentOnly: true },
-  { name: 'Payments', href: '/(tabs)/payments', icon: 'card-outline', iconActive: 'card', tutorOnly: true },
+  { name: 'Payments', href: '/(tabs)/payments', icon: 'card-outline', iconActive: 'card' },
 ];
 
+// Keep in sync with the mobile More menu (app/(tabs)/more.tsx)
 const secondaryNavItems: NavItem[] = [
-  { name: 'Profile', href: '/profile', icon: 'person-outline', iconActive: 'person' },
   { name: 'My Availability', href: '/availability', icon: 'time-outline', iconActive: 'time', tutorOnly: true },
+  { name: 'Openings', href: '/openings', icon: 'calendar-clear-outline', iconActive: 'calendar-clear', tutorOnly: true },
   { name: 'Lesson Requests', href: '/requests', icon: 'git-pull-request-outline', iconActive: 'git-pull-request', tutorOnly: true },
-  { name: 'Admin', href: '/admin', icon: 'settings-outline', iconActive: 'settings', tutorOnly: true },
+  { name: 'Waiting List', href: '/waiting-list', icon: 'hourglass-outline', iconActive: 'hourglass', tutorOnly: true },
+  { name: 'Admin', href: '/admin', icon: 'briefcase-outline', iconActive: 'briefcase', tutorOnly: true },
+  { name: 'Settings', href: '/settings', icon: 'cog-outline', iconActive: 'cog', tutorOnly: true },
+  { name: 'Telegram Recap', href: '/telegram-recap', icon: 'paper-plane-outline', iconActive: 'paper-plane', tutorOnly: true },
+  { name: 'Notifications', href: '/notification-settings', icon: 'notifications-outline', iconActive: 'notifications' },
+  { name: 'Profile', href: '/profile', icon: 'person-outline', iconActive: 'person' },
 ];
 
 interface DesktopSidebarProps {
@@ -93,6 +99,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
           <Text style={styles.brandText} numberOfLines={1}>{brandName}</Text>
         </View>
 
+        <ScrollView style={styles.navScroll} showsVerticalScrollIndicator={false}>
         {/* Primary Navigation */}
         <View style={styles.navSection}>
           {filteredNavItems.map((item) => {
@@ -151,9 +158,7 @@ export function DesktopSidebar({ children }: DesktopSidebarProps) {
             );
           })}
         </View>
-
-        {/* Spacer */}
-        <View style={styles.spacer} />
+        </ScrollView>
 
         {/* User Section */}
         <View style={[styles.userSection, { paddingBottom: insets.bottom + spacing.md }]}>
@@ -272,7 +277,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral.border,
     marginVertical: spacing.lg,
   },
-  spacer: {
+  navScroll: {
     flex: 1,
   },
   userSection: {
