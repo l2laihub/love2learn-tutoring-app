@@ -50,7 +50,7 @@ interface LessonDetailModalProps {
   groupedLesson?: GroupedLesson | null;
   onClose: () => void;
   onEdit: () => void;
-  onEditSeries?: () => void; // Edit all lessons in the recurring series
+  onEditSeries?: () => void; // Edit this and all future lessons in the recurring series
   onComplete: (notes?: string) => Promise<void>;
   onCompleteAndPay?: (notes?: string) => Promise<void>; // Complete and mark as paid
   onCancel: (reason?: string) => Promise<void>;
@@ -438,9 +438,9 @@ export function LessonDetailModal({
         <View style={styles.overlay}>
           <View style={styles.confirmDialog}>
             <Ionicons name="trash" size={48} color={colors.status.error} />
-            <Text style={styles.confirmTitle}>Delete Entire Series?</Text>
+            <Text style={styles.confirmTitle}>Delete Series?</Text>
             <Text style={styles.confirmSubtitle}>
-              This will permanently delete {seriesCount} lessons in this recurring series. This action cannot be undone.
+              This will permanently delete {seriesCount} upcoming lessons in this recurring series (past lessons are kept). This action cannot be undone.
             </Text>
             <View style={styles.confirmActions}>
               <Pressable
@@ -905,7 +905,7 @@ export function LessonDetailModal({
                 onPress={() => setShowDeleteSeriesConfirm(true)}
               >
                 <Ionicons name="albums-outline" size={18} color={colors.status.error} />
-                <Text style={styles.deleteButtonText}>Delete Entire Series ({seriesCount} lessons)</Text>
+                <Text style={styles.deleteButtonText}>Delete Series ({seriesCount} upcoming lessons)</Text>
               </Pressable>
             )}
           </View>

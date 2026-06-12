@@ -173,6 +173,7 @@ export function LessonFormModal({
         }
         setRecurrence('none');
         setRecurrenceEndDate(null);
+        setCreateAsSession(false);
       } else {
         // Create mode - reset form
         const now = new Date();
@@ -385,6 +386,22 @@ export function LessonFormModal({
       return;
     }
 
+    // In edit mode, multiple students/subjects can only be saved as a combined session
+    if (mode === 'edit' && getTotalLessonsCount() > 1) {
+      if (initialData?.session_id) {
+        setError('This lesson is already part of a combined session. To change who attends, delete the session and create a new one.');
+        return;
+      }
+      if (!onSubmitSession) {
+        setError('Series edits support a single student. To create a group lesson, edit a single occurrence instead.');
+        return;
+      }
+      if (!createAsSession) {
+        setError('Enable "Convert to Combined Session" to save this lesson with multiple students or subjects.');
+        return;
+      }
+    }
+
     // Check for scheduling conflicts (overlapping sessions)
     const [hours, minutes] = selectedTime.split(':').map(Number);
 
@@ -455,19 +472,40 @@ export function LessonFormModal({
       // For edit mode or single student+subject, submit directly
       // For multiple students/subjects/dates in create mode, submit each combination
       if (mode === 'edit') {
-        // Edit mode - single submission with first date
+        // Edit mode - single date
         const scheduledAt = new Date(selectedDates[0]);
         scheduledAt.setHours(hours, minutes, 0, 0);
-        const selection = selectedStudents[0];
-        await onSubmit({
-          student_id: selection.studentId,
-          subject: selection.subjects[0],
-          scheduled_at: scheduledAt.toISOString(),
-          duration_min: duration,
-          notes: notes.trim() || undefined,
-          recurrence: recurrence !== 'none' ? recurrence : undefined,
-          recurrence_end_date: recurrenceEndDate ? recurrenceEndDate.toISOString() : undefined,
-        });
+
+        if (createAsSession && onSubmitSession && getTotalLessonsCount() > 1) {
+          // Convert to a combined session with all selected students/subjects
+          const lessons: Array<{ student_id: string; subject: TutoringSubject }> = [];
+          for (const selection of selectedStudents) {
+            for (const subject of selection.subjects) {
+              lessons.push({
+                student_id: selection.studentId,
+                subject,
+              });
+            }
+          }
+
+          await onSubmitSession({
+            scheduled_at: scheduledAt.toISOString(),
+            duration_min: duration,
+            notes: notes.trim() || undefined,
+            lessons,
+          });
+        } else {
+          const selection = selectedStudents[0];
+          await onSubmit({
+            student_id: selection.studentId,
+            subject: selection.subjects[0],
+            scheduled_at: scheduledAt.toISOString(),
+            duration_min: duration,
+            notes: notes.trim() || undefined,
+            recurrence: recurrence !== 'none' ? recurrence : undefined,
+            recurrence_end_date: recurrenceEndDate ? recurrenceEndDate.toISOString() : undefined,
+          });
+        }
       } else if (createAsSession && onSubmitSession) {
         // Create mode with session - create grouped lesson
         // Build array of all student+subject combinations
@@ -572,30 +610,28 @@ export function LessonFormModal({
           {/* Student Selection with Search */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>
-              {mode === 'create' ? 'Students' : 'Student'}
+              Students
               {selectedStudents.length > 0 && (
                 <Text style={styles.selectedCount}> ({selectedStudents.length} selected)</Text>
               )}
             </Text>
 
             {/* Search Input */}
-            {mode === 'create' && (
-              <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color={colors.neutral.textMuted} />
-                <TextInput
-                  style={styles.searchInput}
-                  value={studentSearch}
-                  onChangeText={setStudentSearch}
-                  placeholder="Search students by name..."
-                  placeholderTextColor={colors.neutral.textMuted}
-                />
-                {studentSearch.length > 0 && (
-                  <Pressable onPress={() => setStudentSearch('')}>
-                    <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
-                  </Pressable>
-                )}
-              </View>
-            )}
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color={colors.neutral.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                value={studentSearch}
+                onChangeText={setStudentSearch}
+                placeholder="Search students by name..."
+                placeholderTextColor={colors.neutral.textMuted}
+              />
+              {studentSearch.length > 0 && (
+                <Pressable onPress={() => setStudentSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={colors.neutral.textMuted} />
+                </Pressable>
+              )}
+            </View>
 
             {/* Student List */}
             {studentsLoading ? (
@@ -687,7 +723,7 @@ export function LessonFormModal({
           </View>
 
           {/* Group Session Toggle - Show when multiple students or subjects selected */}
-          {mode === 'create' && onSubmitSession && getTotalLessonsCount() > 1 && (
+          {onSubmitSession && getTotalLessonsCount() > 1 && (
             <View style={styles.section}>
               <Pressable
                 style={[
@@ -707,12 +743,14 @@ export function LessonFormModal({
                       styles.sessionToggleTitle,
                       createAsSession && { color: primaryColor }
                     ]}>
-                      Create as Combined Session
+                      {mode === 'create' ? 'Create as Combined Session' : 'Convert to Combined Session'}
                     </Text>
                     <Text style={styles.sessionToggleDesc}>
                       {createAsSession
                         ? 'All students will share one time slot on calendar'
-                        : 'Each lesson will be displayed separately'}
+                        : mode === 'create'
+                          ? 'Each lesson will be displayed separately'
+                          : 'Required to save this lesson with multiple students'}
                     </Text>
                   </View>
                 </View>

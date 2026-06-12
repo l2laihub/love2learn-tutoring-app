@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { filterSeriesLessonIds } from '../lib/lessonSeries';
 import { getWeekQueryRange, getDayOfWeekInTimezone, formatTimeInTimezone, getPartsInTimezone, dateFromTimezone } from '../utils/dateUtils';
 import {
   ScheduledLesson,
@@ -903,24 +904,23 @@ export function useDeleteLesson() {
 
 /**
  * Hook to find recurring series lessons
- * Finds lessons that match the same student, subject, time of day, and day of week
+ * Finds lessons that match the same student, subject, time of day, and day of week,
+ * from the clicked lesson onward ("this and following") — past occurrences are
+ * never included, so series edits/deletes don't touch past lessons.
  * @returns Function to find series and count
  */
 export function useFindRecurringSeries(timezone: string = 'America/Los_Angeles') {
   // Find recurring series for standalone lessons (timezone-aware)
   const findSeries = useCallback(async (lesson: ScheduledLessonWithStudent): Promise<string[]> => {
     try {
-      const lessonDate = new Date(lesson.scheduled_at);
-      const dayOfWeek = getDayOfWeekInTimezone(lessonDate, timezone);
-      const timeString = formatTimeInTimezone(lessonDate, timezone); // HH:MM format
-
-      // Get all lessons for this student with same subject
+      // Get this student's lessons with same subject, from the clicked lesson onward
       const { data: allLessons, error: fetchError } = await supabase
         .from('scheduled_lessons')
         .select('id, scheduled_at')
         .eq('student_id', lesson.student_id)
         .eq('subject', lesson.subject)
-        .eq('duration_min', lesson.duration_min);
+        .eq('duration_min', lesson.duration_min)
+        .gte('scheduled_at', lesson.scheduled_at);
 
       if (fetchError) {
         throw new Error(fetchError.message);
@@ -929,14 +929,7 @@ export function useFindRecurringSeries(timezone: string = 'America/Los_Angeles')
       if (!allLessons) return [lesson.id];
 
       // Filter to lessons on same day of week and same time (in tutor's timezone)
-      const seriesLessons = allLessons.filter(l => {
-        const d = new Date(l.scheduled_at);
-        const lDayOfWeek = getDayOfWeekInTimezone(d, timezone);
-        const lTimeString = formatTimeInTimezone(d, timezone);
-        return lDayOfWeek === dayOfWeek && lTimeString === timeString;
-      });
-
-      return seriesLessons.map(l => l.id);
+      return filterSeriesLessonIds(allLessons, lesson, timezone);
     } catch (err) {
       console.error('useFindRecurringSeries error:', err);
       return [lesson.id];
@@ -957,11 +950,15 @@ export function useFindRecurringSeries(timezone: string = 'America/Los_Angeles')
       const lessonIds = groupedLesson.lessons.map(l => l.id);
 
       // Get all sessions that have similar characteristics
-      // We'll find sessions with same time, day of week, and matching student/subject combinations
+      // We'll find sessions with same time, day of week, and matching student/subject combinations.
+      // Only consider sessions from the clicked one onward — series edits/deletes
+      // must not touch past occurrences.
       const { data: allLessons, error: fetchError } = await supabase
         .from('scheduled_lessons')
         .select('id, session_id, scheduled_at, student_id, subject')
-        .not('session_id', 'is', null);
+        .not('session_id', 'is', null)
+        .gte('scheduled_at', groupedLesson.scheduled_at)
+        .order('scheduled_at', { ascending: true });
 
       if (fetchError) {
         throw new Error(fetchError.message);
@@ -1026,7 +1023,7 @@ export function useFindRecurringSeries(timezone: string = 'America/Los_Angeles')
       console.error('useFindRecurringSeries findSessionSeries error:', err);
       return groupedLesson.session_id ? [groupedLesson.session_id] : [];
     }
-  }, []);
+  }, [timezone]);
 
   return { findSeries, findSessionSeries };
 }
@@ -1452,4 +1449,124 @@ export function useCreateGroupedLesson() {
   }, []);
 
   return { data, loading, error, mutate, reset };
+}
+
+/**
+ * Hook for converting a standalone lesson into a Combined Session.
+ * Creates a lesson_sessions row, attaches the existing lesson to it (preserving
+ * the lesson's id/history), and inserts new lessons for the added students.
+ * @returns Mutation state with convert function
+ */
+export function useConvertLessonToSession() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const mutate = useCallback(async (
+    existingLesson: Pick<ScheduledLesson, 'id' | 'student_id' | 'subject' | 'scheduled_at' | 'duration_min' | 'session_id'>,
+    sessionInput: CreateLessonSessionInput,
+    lessonInputs: Omit<CreateScheduledLessonInput, 'session_id'>[]
+  ): Promise<boolean> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (lessonInputs.length === 0) {
+        throw new Error('A combined session needs at least one lesson');
+      }
+
+      if (existingLesson.session_id) {
+        throw new Error('This lesson is already part of a combined session');
+      }
+
+      // Create the session first
+      const { data: session, error: sessionError } = await supabase
+        .from('lesson_sessions')
+        .insert(sessionInput)
+        .select()
+        .single();
+
+      if (sessionError) {
+        throw new Error(sessionError.message);
+      }
+
+      // Repurpose the existing lesson row for the input matching its current
+      // student+subject (falling back to same student, then to the first input)
+      // so the original lesson's id and history are preserved.
+      let keepIndex = lessonInputs.findIndex(
+        l => l.student_id === existingLesson.student_id && l.subject === existingLesson.subject
+      );
+      if (keepIndex === -1) {
+        keepIndex = lessonInputs.findIndex(l => l.student_id === existingLesson.student_id);
+      }
+      if (keepIndex === -1) {
+        keepIndex = 0;
+      }
+      const keepInput = lessonInputs[keepIndex];
+
+      const { error: updateError } = await supabase
+        .from('scheduled_lessons')
+        .update({
+          student_id: keepInput.student_id,
+          subject: keepInput.subject,
+          scheduled_at: keepInput.scheduled_at,
+          duration_min: keepInput.duration_min,
+          session_id: session.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingLesson.id);
+
+      if (updateError) {
+        await supabase.from('lesson_sessions').delete().eq('id', session.id);
+        throw new Error(updateError.message);
+      }
+
+      // Insert the remaining lessons with the shared session_id
+      const siblingInputs = lessonInputs
+        .filter((_, index) => index !== keepIndex)
+        .map(input => ({
+          ...input,
+          session_id: session.id,
+          status: 'scheduled' as const,
+        }));
+
+      if (siblingInputs.length > 0) {
+        const { error: insertError } = await supabase
+          .from('scheduled_lessons')
+          .insert(siblingInputs);
+
+        if (insertError) {
+          // Roll back: restore the original lesson row and remove the session
+          await supabase
+            .from('scheduled_lessons')
+            .update({
+              student_id: existingLesson.student_id,
+              subject: existingLesson.subject,
+              scheduled_at: existingLesson.scheduled_at,
+              duration_min: existingLesson.duration_min,
+              session_id: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingLesson.id);
+          await supabase.from('lesson_sessions').delete().eq('id', session.id);
+          throw new Error(insertError.message);
+        }
+      }
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err : new Error('Failed to convert lesson to session');
+      setError(errorMessage);
+      console.error('useConvertLessonToSession error:', errorMessage);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return { loading, error, mutate, reset };
 }

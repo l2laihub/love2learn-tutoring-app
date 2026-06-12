@@ -33,10 +33,12 @@ import {
   useUncompleteLesson,
   useDeleteLesson,
   useCreateGroupedLesson,
+  useConvertLessonToSession,
   useDeleteLessonSession,
   useFindRecurringSeries,
   useDeleteLessonSeries,
 } from '../../src/hooks/useLessons';
+import { buildSessionLessonPlan } from '../../src/lib/sessionPlan';
 import { useStudents, useStudentsByParent } from '../../src/hooks/useStudents';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useTutorSettings, getSubjectRateConfig } from '../../src/hooks/useTutorSettings';
@@ -170,6 +172,7 @@ export default function CalendarScreen() {
   } = useWeeklyBreaks(isTutor ? parent?.id : undefined);
   const createLesson = useCreateLesson();
   const createGroupedLesson = useCreateGroupedLesson();
+  const convertLessonToSession = useConvertLessonToSession();
   const updateLesson = useUpdateLesson();
   const updateLessonSeries = useUpdateLessonSeries(tutorTimezone);
   const completeLesson = useCompleteLesson();
@@ -439,113 +442,79 @@ export default function CalendarScreen() {
       }
     }
 
-    // Determine how to calculate per-lesson duration:
-    //
-    // Scenario A1: GROUP LESSON - Multiple students, SAME subject
-    //   - Ella Luong (Math) + Another student (Math) in 60min group session
-    //   - Each student gets FULL session duration (they learn together)
-    //   - 60min session → each student gets 60min
-    //
-    // Scenario A2: SEQUENTIAL LESSONS - Multiple students, DIFFERENT subjects
-    //   - Long Bui (Piano) + An Bui (Speech) in 60min session
-    //   - Tutor teaches one subject, then the other
-    //   - Divide total session time by number of lessons
-    //   - 60min session / 2 students = 30min each
-    //
-    // Scenario B: Same student takes MULTIPLE subjects
-    //   - Lauren Vu (Piano + Reading) in one session
-    //   - Use each subject's base duration from tutor settings
-    //   - Piano=30min, Reading=60min → Lauren gets 30min Piano + 60min Reading
-    //
-    // Check if any student has multiple subjects (Scenario B)
-    const studentSubjectCounts = new Map<string, number>();
-    sessionData.lessons.forEach(lesson => {
-      const count = studentSubjectCounts.get(lesson.student_id) || 0;
-      studentSubjectCounts.set(lesson.student_id, count + 1);
-    });
-    const hasStudentWithMultipleSubjects = Array.from(studentSubjectCounts.values()).some(count => count > 1);
-
-    // Check if all students have the same subject (Group Lesson - Scenario A1)
-    const uniqueSubjects = new Set(sessionData.lessons.map(l => l.subject));
-    const isGroupLesson = uniqueSubjects.size === 1 && sessionData.lessons.length > 1;
-
-    // Debug logging
-    console.log('=== Combined Session Creation Debug ===');
-    console.log('Session duration_min:', sessionData.duration_min);
-    console.log('Number of lessons:', sessionData.lessons.length);
-    console.log('Lessons:', sessionData.lessons.map(l => ({ student_id: l.student_id, subject: l.subject })));
-    console.log('Student subject counts:', Object.fromEntries(studentSubjectCounts));
-    console.log('Has student with multiple subjects (Scenario B):', hasStudentWithMultipleSubjects);
-    console.log('Is group lesson (same subject, Scenario A1):', isGroupLesson);
-    console.log('Per-lesson duration (Scenario A2):', Math.floor(sessionData.duration_min / sessionData.lessons.length));
+    // Per-lesson durations (group lesson / sequential / multi-subject scenarios)
+    // are computed by buildSessionLessonPlan — see src/lib/sessionPlan.ts
+    const plan = buildSessionLessonPlan(
+      sessionData.lessons,
+      sessionData.duration_min,
+      (subject) => getSubjectRateConfig(tutorSettings, subject).base_duration
+    );
 
     // Create a session for each date
     for (const date of datesToCreate) {
-      let lessonInputs;
-      let calculatedTotalDuration: number;
-
-      if (hasStudentWithMultipleSubjects) {
-        // Scenario B: Student(s) taking multiple subjects
-        // Use each subject's base duration from tutor settings
-        // (e.g., Piano=30min, Reading=60min → each subject gets its standard duration)
-        lessonInputs = sessionData.lessons.map(lesson => {
-          const rateConfig = getSubjectRateConfig(tutorSettings, lesson.subject);
-          return {
-            student_id: lesson.student_id,
-            subject: lesson.subject,
-            scheduled_at: date.toISOString(),
-            duration_min: rateConfig.base_duration,
-          };
-        });
-
-        // Calculate total session duration as sum of all individual lesson durations
-        calculatedTotalDuration = lessonInputs.reduce((sum, l) => sum + l.duration_min, 0);
-      } else if (isGroupLesson) {
-        // Scenario A1: GROUP LESSON - Multiple students learning the SAME subject together
-        // Each student gets the FULL session duration (they all attend the same class)
-        // E.g., 60min Math group lesson → each student gets 60min
-        calculatedTotalDuration = sessionData.duration_min;
-
-        lessonInputs = sessionData.lessons.map(lesson => ({
-          student_id: lesson.student_id,
-          subject: lesson.subject,
-          scheduled_at: date.toISOString(),
-          duration_min: sessionData.duration_min, // Full session duration for each student
-        }));
-      } else {
-        // Scenario A2: SEQUENTIAL LESSONS - Students have DIFFERENT subjects
-        // Divide total session time equally among all lessons
-        // (e.g., 60min session / 2 students = 30min each, tutor teaches one then the other)
-        const perLessonDuration = Math.floor(sessionData.duration_min / sessionData.lessons.length);
-        calculatedTotalDuration = sessionData.duration_min;
-
-        lessonInputs = sessionData.lessons.map(lesson => ({
-          student_id: lesson.student_id,
-          subject: lesson.subject,
-          scheduled_at: date.toISOString(),
-          duration_min: perLessonDuration,
-        }));
-      }
-
       const sessionInput = {
         scheduled_at: date.toISOString(),
-        duration_min: calculatedTotalDuration,
+        duration_min: plan.totalDuration,
         notes: sessionData.notes,
       };
-
-      // Debug: Log what we're about to create
-      console.log('=== Creating Session ===');
-      console.log('Session input:', sessionInput);
-      console.log('Lesson inputs:', lessonInputs.map(l => ({
-        student_id: l.student_id,
-        subject: l.subject,
-        duration_min: l.duration_min
-      })));
+      const lessonInputs = plan.lessons.map(lesson => ({
+        ...lesson,
+        scheduled_at: date.toISOString(),
+      }));
 
       await createGroupedLesson.mutate(sessionInput, lessonInputs);
     }
 
     await refetch();
+  };
+
+  // Convert a standalone lesson into a Combined Session (edit mode with
+  // multiple students/subjects selected)
+  const handleConvertToSession = async (sessionData: SessionFormData) => {
+    if (!selectedLesson) return;
+    if (selectedLesson.session_id) {
+      throw new Error('This lesson is already part of a combined session');
+    }
+
+    const plan = buildSessionLessonPlan(
+      sessionData.lessons,
+      sessionData.duration_min,
+      (subject) => getSubjectRateConfig(tutorSettings, subject).base_duration
+    );
+
+    const success = await convertLessonToSession.mutate(
+      {
+        id: selectedLesson.id,
+        student_id: selectedLesson.student_id,
+        subject: selectedLesson.subject,
+        scheduled_at: selectedLesson.scheduled_at,
+        duration_min: selectedLesson.duration_min,
+        session_id: selectedLesson.session_id,
+      },
+      {
+        scheduled_at: sessionData.scheduled_at,
+        duration_min: plan.totalDuration,
+        notes: sessionData.notes,
+      },
+      plan.lessons.map(lesson => ({
+        ...lesson,
+        scheduled_at: sessionData.scheduled_at,
+      }))
+    );
+
+    if (!success) {
+      // Hook state updates aren't visible synchronously; surface a generic
+      // message and let the form modal display it
+      throw new Error('Failed to convert lesson to a combined session');
+    }
+
+    await refetch();
+    setShowEditModal(false);
+    setSelectedLesson(null);
+    setSelectedGroupedLesson(null);
+    setSeriesLessonIds([]);
+    setSeriesSessionIds([]);
+    setIsEditSeriesMode(false);
   };
 
   const handleUpdateLesson = async (data: LessonFormData) => {
@@ -1320,6 +1289,11 @@ export default function CalendarScreen() {
           setIsEditSeriesMode(false);
         }}
         onSubmit={handleUpdateLesson}
+        onSubmitSession={
+          // Conversion to a combined session is only offered when editing a
+          // single standalone lesson (not a series, not an existing session)
+          !isEditSeriesMode && !selectedLesson?.session_id ? handleConvertToSession : undefined
+        }
         students={students}
         studentsLoading={studentsLoading}
         initialData={selectedLesson}

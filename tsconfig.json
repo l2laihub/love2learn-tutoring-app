@@ -20,6 +20,8 @@
   ],
   "exclude": [
     "supabase/functions",
-    "src/lib/openSlots.test.ts"
+    "src/lib/openSlots.test.ts",
+    "src/lib/lessonSeries.test.ts",
+    "src/lib/sessionPlan.test.ts"
   ]
 }
