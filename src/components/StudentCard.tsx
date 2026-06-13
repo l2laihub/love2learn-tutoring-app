@@ -5,6 +5,7 @@ import { Card } from './ui/Card';
 import { Avatar } from './ui/Avatar';
 import { SubjectBadge } from './ui/Badge';
 import { colors, spacing, typography, borderRadius } from '../theme';
+import { parseBirthday } from '../utils/dateUtils';
 
 interface StudentCardProps {
   name: string;
@@ -12,6 +13,8 @@ interface StudentCardProps {
   subjects: string[];
   parentName: string;
   avatarUrl?: string | null;
+  birthday?: string | null;
+  age?: number | null;
   pianoLevel?: 'beginner' | 'intermediate' | 'advanced';
   nextLesson?: string;
   onPress?: () => void;
@@ -29,23 +32,39 @@ function getOrdinalSuffix(n: number): string {
   return 'th';
 }
 
+// Timezone-safe MM/DD/YYYY formatting for the stored birthday.
+function formatBirthday(birthday: string): string {
+  const date = parseBirthday(birthday);
+  const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+  const dd = date.getDate().toString().padStart(2, '0');
+  return `${mm}/${dd}/${date.getFullYear()}`;
+}
+
 export function StudentCard({
   name,
   grade,
   subjects,
   parentName,
   avatarUrl,
+  birthday,
+  age,
   pianoLevel,
   nextLesson,
   onPress,
 }: StudentCardProps) {
+  const birthdayLabel = birthday
+    ? `🎂 ${formatBirthday(birthday)}${age != null ? ` (${age})` : ''}`
+    : null;
   return (
     <Card onPress={onPress} style={styles.card}>
       <View style={styles.header}>
         <Avatar name={name} size="lg" imageUrl={avatarUrl || undefined} />
         <View style={styles.headerText}>
           <Text style={styles.name}>{name}</Text>
-          <Text style={styles.grade}>{gradeToString(grade)}</Text>
+          <Text style={styles.grade}>
+            {gradeToString(grade)}
+            {birthdayLabel ? ` · ${birthdayLabel}` : ''}
+          </Text>
           <View style={styles.subjects}>
             {subjects.map((subject) => (
               <SubjectBadge key={subject} subject={subject} size="sm" style={styles.subjectBadge} />

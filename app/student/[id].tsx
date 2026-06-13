@@ -15,6 +15,16 @@ import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
 import { UpdateStudentInput, ScheduledLessonWithStudent } from '../../src/types/database';
 
+// Lesson status filter for the schedule section
+type LessonStatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
+
+const STATUS_FILTERS: { key: LessonStatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'scheduled', label: 'Scheduled' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
 // Helper to format date for display
 const formatLessonDate = (dateString: string): string => {
   const date = new Date(dateString);
@@ -66,43 +76,56 @@ export default function StudentDetailScreen() {
   const { mutate: deleteStudent, loading: deleting } = useDeleteStudent();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<LessonStatusFilter>('all');
 
-  // Organize lessons into upcoming (this month + next month) and recent past
-  const { upcomingLessons, pastLessons, totalUpcoming, totalPast } = useMemo(() => {
+  // Counts per status across ALL of this student's lessons, for the filter chips.
+  const statusCounts = useMemo(() => {
+    const counts = { all: lessons.length, scheduled: 0, completed: 0, cancelled: 0 };
+    lessons.forEach(lesson => {
+      if (lesson.status === 'scheduled') counts.scheduled += 1;
+      else if (lesson.status === 'completed') counts.completed += 1;
+      else if (lesson.status === 'cancelled') counts.cancelled += 1;
+    });
+    return counts;
+  }, [lessons]);
+
+  // Organize the lessons matching the active status filter into upcoming
+  // (future scheduled) and recent (everything else). No date or count caps —
+  // every lesson is reachable so the totals always match what's shown.
+  const { upcomingLessons, pastLessons } = useMemo(() => {
     const now = new Date();
     const upcoming: ScheduledLessonWithStudent[] = [];
     const past: ScheduledLessonWithStudent[] = [];
 
-    // Calculate end of next month for filtering
-    const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0, 23, 59, 59, 999);
+    lessons
+      .filter(lesson => statusFilter === 'all' || lesson.status === statusFilter)
+      .forEach(lesson => {
+        const lessonDate = new Date(lesson.scheduled_at);
+        if (lessonDate >= now && lesson.status === 'scheduled') {
+          upcoming.push(lesson);
+        } else {
+          past.push(lesson);
+        }
+      });
 
-    lessons.forEach(lesson => {
-      const lessonDate = new Date(lesson.scheduled_at);
-      if (lessonDate >= now && lesson.status === 'scheduled') {
-        upcoming.push(lesson);
-      } else {
-        past.push(lesson);
-      }
-    });
-
-    // Sort upcoming by date ascending
+    // Sort upcoming by date ascending (soonest first)
     upcoming.sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime());
     // Sort past by date descending (most recent first)
     past.sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
 
-    // Filter upcoming to only show this month and next month
-    const filteredUpcoming = upcoming.filter(lesson => {
-      const lessonDate = new Date(lesson.scheduled_at);
-      return lessonDate <= endOfNextMonth;
-    });
+    return { upcomingLessons: upcoming, pastLessons: past };
+  }, [lessons, statusFilter]);
 
-    return {
-      upcomingLessons: filteredUpcoming,
-      pastLessons: past.slice(0, 5), // Only show last 5 past lessons
-      totalUpcoming: upcoming.length,
-      totalPast: past.length
-    };
-  }, [lessons]);
+  const visibleLessonCount = upcomingLessons.length + pastLessons.length;
+
+  // The "past" group holds different things depending on the active filter:
+  // overdue lessons when viewing scheduled, completed/cancelled when filtered,
+  // and a mix when viewing all.
+  const pastGroupLabel =
+    statusFilter === 'scheduled' ? 'Overdue'
+    : statusFilter === 'completed' ? 'Completed'
+    : statusFilter === 'cancelled' ? 'Cancelled'
+    : 'Recent';
 
   const handleEditStudent = () => {
     setEditModalVisible(true);
@@ -323,9 +346,32 @@ export default function StudentDetailScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Lesson Schedule</Text>
             {lessons.length > 0 && (
-              <Text style={styles.lessonCount}>{lessons.length} total</Text>
+              <Text style={styles.lessonCount}>
+                {statusFilter === 'all'
+                  ? `${lessons.length} total`
+                  : `${visibleLessonCount} of ${lessons.length}`}
+              </Text>
             )}
           </View>
+
+          {lessons.length > 0 && !lessonsLoading && (
+            <View style={styles.statusFilterRow}>
+              {STATUS_FILTERS.map((filter) => {
+                const isActive = statusFilter === filter.key;
+                return (
+                  <TouchableOpacity
+                    key={filter.key}
+                    style={[styles.statusFilterChip, isActive && styles.statusFilterChipActive]}
+                    onPress={() => setStatusFilter(filter.key)}
+                  >
+                    <Text style={[styles.statusFilterText, isActive && styles.statusFilterTextActive]}>
+                      {filter.label} ({statusCounts[filter.key]})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           {lessonsLoading ? (
             <View style={styles.lessonsLoading}>
@@ -338,6 +384,12 @@ export default function StudentDetailScreen() {
               <Text style={styles.emptyText}>No lessons scheduled</Text>
               <Text style={styles.emptySubtext}>Lessons will appear here once scheduled</Text>
             </View>
+          ) : visibleLessonCount === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="calendar-outline" size={32} color="#CCC" />
+              <Text style={styles.emptyText}>No {statusFilter} lessons</Text>
+              <Text style={styles.emptySubtext}>Try a different filter above</Text>
+            </View>
           ) : (
             <View style={styles.lessonsContainer}>
               {/* Upcoming Lessons */}
@@ -346,10 +398,9 @@ export default function StudentDetailScreen() {
                   <View style={styles.lessonGroupHeader}>
                     <Ionicons name="arrow-forward-circle" size={18} color={colors.piano.primary} />
                     <Text style={styles.lessonGroupTitle}>
-                      Upcoming ({upcomingLessons.length}{totalUpcoming > upcomingLessons.length ? ` of ${totalUpcoming}` : ''})
+                      Upcoming ({upcomingLessons.length})
                     </Text>
                   </View>
-                  <Text style={styles.lessonGroupSubtitle}>Showing this month and next month</Text>
                   {upcomingLessons.map((lesson) => {
                     const subjectConfig = SUBJECT_CONFIG[lesson.subject] || {
                       icon: 'school',
@@ -403,7 +454,7 @@ export default function StudentDetailScreen() {
                   <View style={styles.lessonGroupHeader}>
                     <Ionicons name="checkmark-done-circle" size={18} color={colors.neutral.textMuted} />
                     <Text style={[styles.lessonGroupTitle, { color: colors.neutral.textMuted }]}>
-                      Recent ({pastLessons.length}{totalPast > 5 ? ` of ${totalPast}` : ''})
+                      {pastGroupLabel} ({pastLessons.length})
                     </Text>
                   </View>
                   {pastLessons.map((lesson) => {
@@ -761,6 +812,33 @@ const styles = StyleSheet.create({
     color: colors.neutral.textMuted,
     fontWeight: typography.weights.medium,
   },
+  // Status filter chips
+  statusFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  statusFilterChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.neutral.surface,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+  },
+  statusFilterChipActive: {
+    backgroundColor: colors.piano.primary,
+    borderColor: colors.piano.primary,
+  },
+  statusFilterText: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textSecondary,
+    fontWeight: typography.weights.medium,
+  },
+  statusFilterTextActive: {
+    color: colors.neutral.white,
+  },
   // Lessons loading state
   lessonsLoading: {
     backgroundColor: colors.neutral.surface,
@@ -792,11 +870,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
     color: colors.piano.primary,
-  },
-  lessonGroupSubtitle: {
-    fontSize: typography.sizes.xs,
-    color: colors.neutral.textMuted,
-    marginBottom: spacing.xs,
   },
   // Lesson card
   lessonCard: {
