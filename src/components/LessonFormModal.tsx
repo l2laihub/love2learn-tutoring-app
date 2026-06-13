@@ -405,7 +405,7 @@ export function LessonFormModal({
         return;
       }
       if (!onSubmitSession) {
-        setError('Series edits support a single student. To create a group lesson, edit a single occurrence instead.');
+        setError('Series edits support a single student. To make this a recurring group lesson, delete the series and create a new combined session with the same time and repeat schedule.');
         return;
       }
       // Single-occurrence edit: selecting multiple students implicitly converts
