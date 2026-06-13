@@ -894,6 +894,8 @@ export default function StudentsScreen() {
                           subjects={student.subjects || []}
                           parentName={student.parent?.name || 'Unknown'}
                           avatarUrl={student.avatar_url}
+                          birthday={student.birthday}
+                          age={student.age}
                           onPress={() => toggleStudentSelection(student.id)}
                         />
                       </View>
@@ -914,6 +916,8 @@ export default function StudentsScreen() {
                       subjects={student.subjects || []}
                       parentName={student.parent?.name || 'Unknown'}
                       avatarUrl={student.avatar_url}
+                      birthday={student.birthday}
+                      age={student.age}
                       onPress={() => handleStudentPress(student.id)}
                     />
                   </TouchableOpacity>
@@ -966,6 +970,8 @@ export default function StudentsScreen() {
                                   subjects={student.subjects || []}
                                   parentName={student.parent?.name || 'Unknown'}
                                   avatarUrl={student.avatar_url}
+                                  birthday={student.birthday}
+                                  age={student.age}
                                   onPress={() => toggleStudentSelection(student.id)}
                                 />
                               </View>
@@ -986,6 +992,8 @@ export default function StudentsScreen() {
                               subjects={student.subjects || []}
                               parentName={student.parent?.name || 'Unknown'}
                               avatarUrl={student.avatar_url}
+                              birthday={student.birthday}
+                              age={student.age}
                               onPress={() => handleStudentPress(student.id)}
                             />
                           </TouchableOpacity>
