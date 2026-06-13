@@ -23,6 +23,7 @@
     "src/lib/openSlots.test.ts",
     "src/lib/lessonSeries.test.ts",
     "src/lib/sessionPlan.test.ts",
-    "src/lib/prepaidCoverage.test.ts"
+    "src/lib/prepaidCoverage.test.ts",
+    "src/lib/recurrence.test.ts"
   ]
 }

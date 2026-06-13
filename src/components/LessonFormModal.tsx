@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { StudentWithParent, TutoringSubject, ScheduledLessonWithStudent } from '../types/database';
 import { supabase } from '../lib/supabase';
+import type { RecurrenceType } from '../lib/recurrence';
 
 interface LessonFormModalProps {
   visible: boolean;
@@ -44,6 +45,8 @@ export interface SessionFormData {
   }>;
   recurrence?: RecurrenceType;
   recurrence_end_date?: string;
+  /** For 'monthly_by_week': ordinals to repeat on (1-4 = 1st..4th, 5 = last). */
+  recurrence_weeks?: number[];
 }
 
 export interface LessonFormData {
@@ -54,6 +57,8 @@ export interface LessonFormData {
   notes?: string;
   recurrence?: RecurrenceType;
   recurrence_end_date?: string;
+  /** For 'monthly_by_week': ordinals to repeat on (1-4 = 1st..4th, 5 = last). */
+  recurrence_weeks?: number[];
 }
 
 // Extended type for batch scheduling
@@ -67,9 +72,13 @@ export interface BatchLessonFormData {
   notes?: string;
   recurrence?: RecurrenceType;
   recurrence_end_date?: string;
+  /** For 'monthly_by_week': ordinals to repeat on (1-4 = 1st..4th, 5 = last). */
+  recurrence_weeks?: number[];
 }
 
-export type RecurrenceType = 'none' | 'weekly' | 'biweekly' | 'monthly';
+// RecurrenceType is defined in src/lib/recurrence.ts (so the pure date-expansion
+// logic stays Deno-testable); re-exported here for existing import sites.
+export type { RecurrenceType } from '../lib/recurrence';
 
 const PRESET_DURATIONS = [30, 45, 60, 90];
 
@@ -86,6 +95,16 @@ const RECURRENCE_OPTIONS: { value: RecurrenceType; label: string; description: s
   { value: 'weekly', label: 'Weekly', description: 'Every week' },
   { value: 'biweekly', label: 'Bi-weekly', description: 'Every 2 weeks' },
   { value: 'monthly', label: 'Monthly', description: 'Same day each month' },
+  { value: 'monthly_by_week', label: 'Monthly (by week)', description: 'e.g. 2nd & 4th Monday' },
+];
+
+// Week ordinals for the 'monthly_by_week' pattern (5 = the last occurrence).
+const WEEK_ORDINAL_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: '1st' },
+  { value: 2, label: '2nd' },
+  { value: 3, label: '3rd' },
+  { value: 4, label: '4th' },
+  { value: 5, label: 'Last' },
 ];
 
 const TIME_SLOTS = [
@@ -133,6 +152,8 @@ export function LessonFormModal({
   const [notes, setNotes] = useState<string>('');
   const [recurrence, setRecurrence] = useState<RecurrenceType>('none');
   const [recurrenceEndDate, setRecurrenceEndDate] = useState<Date | null>(null);
+  // For 'monthly_by_week': which week ordinals (1-4, 5=last) to repeat on.
+  const [recurrenceWeeks, setRecurrenceWeeks] = useState<number[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -173,6 +194,7 @@ export function LessonFormModal({
         }
         setRecurrence('none');
         setRecurrenceEndDate(null);
+        setRecurrenceWeeks([]);
         setCreateAsSession(false);
       } else {
         // Create mode - reset form
@@ -190,6 +212,7 @@ export function LessonFormModal({
         setNotes('');
         setRecurrence('none');
         setRecurrenceEndDate(null);
+        setRecurrenceWeeks([]);
         setCreateAsSession(false);
       }
       setStudentSearch('');
@@ -242,6 +265,23 @@ export function LessonFormModal({
 
     return days;
   }, [calendarMonth]);
+
+  // Weekday + ordinal of the picked date, used by the 'monthly_by_week' pattern.
+  const selectedDayInfo = useMemo(() => {
+    const base = selectedDates[0] || new Date();
+    return {
+      weekdayLabel: base.toLocaleDateString('en-US', { weekday: 'long' }),
+      ordinal: Math.min(5, Math.floor((base.getDate() - 1) / 7) + 1),
+    };
+  }, [selectedDates]);
+
+  const toggleRecurrenceWeek = (week: number) => {
+    setRecurrenceWeeks(prev =>
+      prev.includes(week)
+        ? prev.filter(w => w !== week)
+        : [...prev, week].sort((a, b) => a - b)
+    );
+  };
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCalendarMonth(prev => {
@@ -398,6 +438,11 @@ export function LessonFormModal({
       return;
     }
 
+    if (recurrence === 'monthly_by_week' && recurrenceWeeks.length === 0) {
+      setError('Please pick at least one week for the monthly repeat');
+      return;
+    }
+
     // In edit mode, multiple students/subjects can only be saved as a combined session
     if (mode === 'edit' && getTotalLessonsCount() > 1) {
       if (initialData?.session_id) {
@@ -514,6 +559,7 @@ export function LessonFormModal({
             notes: notes.trim() || undefined,
             recurrence: recurrence !== 'none' ? recurrence : undefined,
             recurrence_end_date: recurrenceEndDate ? recurrenceEndDate.toISOString() : undefined,
+            recurrence_weeks: recurrence === 'monthly_by_week' ? recurrenceWeeks : undefined,
           });
         }
       } else if (createAsSession && onSubmitSession) {
@@ -544,6 +590,7 @@ export function LessonFormModal({
             lessons,
             recurrence: recurrence !== 'none' ? recurrence : undefined,
             recurrence_end_date: recurrenceEndDate ? recurrenceEndDate.toISOString() : undefined,
+            recurrence_weeks: recurrence === 'monthly_by_week' ? recurrenceWeeks : undefined,
           });
         }
       } else {
@@ -565,6 +612,7 @@ export function LessonFormModal({
                 notes: notes.trim() || undefined,
                 recurrence: recurrence !== 'none' ? recurrence : undefined,
                 recurrence_end_date: recurrenceEndDate ? recurrenceEndDate.toISOString() : undefined,
+                recurrence_weeks: recurrence === 'monthly_by_week' ? recurrenceWeeks : undefined,
               });
             }
           }
@@ -1164,7 +1212,14 @@ export function LessonFormModal({
                         backgroundColor: primaryColor + '15',
                       },
                     ]}
-                    onPress={() => setRecurrence(option.value)}
+                    onPress={() => {
+                      setRecurrence(option.value);
+                      // Pre-select the picked date's own week so the natural
+                      // single-week case works without extra taps.
+                      if (option.value === 'monthly_by_week' && recurrenceWeeks.length === 0) {
+                        setRecurrenceWeeks([selectedDayInfo.ordinal]);
+                      }
+                    }}
                   >
                     <Text
                       style={[
@@ -1181,6 +1236,37 @@ export function LessonFormModal({
                   </Pressable>
                 ))}
               </View>
+
+              {/* Week selection for the monthly-by-week pattern */}
+              {recurrence === 'monthly_by_week' && (
+                <View style={styles.recurrenceEndContainer}>
+                  <Text style={styles.recurrenceEndLabel}>
+                    On which weeks? (lesson day: {selectedDayInfo.weekdayLabel})
+                  </Text>
+                  <View style={styles.recurrenceEndOptions}>
+                    {WEEK_ORDINAL_OPTIONS.map((week) => {
+                      const isSelected = recurrenceWeeks.includes(week.value);
+                      return (
+                        <Pressable
+                          key={week.value}
+                          style={[
+                            styles.recurrenceEndButton,
+                            isSelected && styles.recurrenceEndButtonActive,
+                          ]}
+                          onPress={() => toggleRecurrenceWeek(week.value)}
+                        >
+                          <Text style={[
+                            styles.recurrenceEndButtonText,
+                            isSelected && { color: primaryColor, fontWeight: typography.weights.semibold },
+                          ]}>
+                            {week.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
 
               {/* End Date for Recurring Lessons */}
               {recurrence !== 'none' && (

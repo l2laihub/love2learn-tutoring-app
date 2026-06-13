@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor } from '../../src/theme';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
-import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone, getDayInTimezone, getDayOfWeekInTimezone, getPartsInTimezone, dateFromTimezone, isSameDayInTimezone, formatTimeInTimezone } from '../../src/utils/dateUtils';
+import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone, getDayInTimezone, getDayOfWeekInTimezone, getPartsInTimezone, isSameDayInTimezone, formatTimeInTimezone } from '../../src/utils/dateUtils';
 import { supabase } from '../../src/lib/supabase';
 import { prepaidCoverage } from '../../src/lib/prepaidCoverage';
 import {
@@ -40,6 +40,7 @@ import {
   useDeleteLessonSeries,
 } from '../../src/hooks/useLessons';
 import { buildSessionLessonPlan } from '../../src/lib/sessionPlan';
+import { generateRecurringDates } from '../../src/lib/recurrence';
 import { useStudents, useStudentsByParent } from '../../src/hooks/useStudents';
 import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useTutorSettings, getSubjectRateConfig } from '../../src/hooks/useTutorSettings';
@@ -344,50 +345,15 @@ export default function CalendarScreen() {
       return;
     }
 
-    // Generate recurring dates (timezone-aware to handle DST transitions)
+    // Expand the recurrence into individual dates (timezone-aware / DST-safe).
     const startDate = new Date(data.scheduled_at);
     const endDate = data.recurrence_end_date
       ? new Date(data.recurrence_end_date)
       : addDaysInTimezone(startDate, 365, tutorTimezone); // Default 1 year
 
-    // Calculate interval in days based on recurrence type
-    let intervalDays: number;
-    switch (data.recurrence) {
-      case 'weekly':
-        intervalDays = 7;
-        break;
-      case 'biweekly':
-        intervalDays = 14;
-        break;
-      case 'monthly':
-        intervalDays = 0; // Special handling for monthly
-        break;
-      default:
-        intervalDays = 7;
-    }
-
-    const datesToCreate: Date[] = [startDate];
-    let currentDate = new Date(startDate);
-
-    // Generate dates for the recurrence period using timezone-aware arithmetic
-    // to preserve wall-clock time across DST transitions
-    while (true) {
-      if (data.recurrence === 'monthly') {
-        // For monthly, add one month preserving wall-clock time in tutor's timezone
-        const parts = getPartsInTimezone(currentDate, tutorTimezone);
-        // Normalize month overflow (e.g., month 13 → Jan next year) via Date.UTC
-        const resolved = new Date(Date.UTC(parts.year, parts.month, parts.day)); // month is already 1-based, so month+0 in 0-based = next month
-        currentDate = dateFromTimezone(resolved.getUTCFullYear(), resolved.getUTCMonth() + 1, resolved.getUTCDate(), parts.hour, parts.minute, parts.second, tutorTimezone);
-      } else {
-        // For weekly/biweekly, use DST-safe day addition
-        currentDate = addDaysInTimezone(currentDate, intervalDays, tutorTimezone);
-      }
-
-      // Stop if we've passed the end date
-      if (currentDate > endDate) break;
-
-      datesToCreate.push(new Date(currentDate));
-    }
+    const datesToCreate = generateRecurringDates(
+      startDate, data.recurrence, endDate, tutorTimezone, data.recurrence_weeks
+    );
 
     // Create lessons for all dates
     for (const date of datesToCreate) {
@@ -402,45 +368,18 @@ export default function CalendarScreen() {
   };
 
   const handleCreateSession = async (sessionData: SessionFormData) => {
-    // Generate dates for recurring sessions
+    // Generate dates for recurring sessions (timezone-aware / DST-safe).
     const startDate = new Date(sessionData.scheduled_at);
     let datesToCreate: Date[] = [startDate];
 
-    // If recurrence is set, generate additional dates (timezone-aware for DST)
     if (sessionData.recurrence && sessionData.recurrence !== 'none') {
       const endDate = sessionData.recurrence_end_date
         ? new Date(sessionData.recurrence_end_date)
         : addDaysInTimezone(startDate, 365, tutorTimezone); // Default 1 year
 
-      let intervalDays: number;
-      switch (sessionData.recurrence) {
-        case 'weekly':
-          intervalDays = 7;
-          break;
-        case 'biweekly':
-          intervalDays = 14;
-          break;
-        case 'monthly':
-          intervalDays = 0; // Special handling for monthly
-          break;
-        default:
-          intervalDays = 7;
-      }
-
-      let currentDate = new Date(startDate);
-
-      while (true) {
-        if (sessionData.recurrence === 'monthly') {
-          const parts = getPartsInTimezone(currentDate, tutorTimezone);
-          const resolved = new Date(Date.UTC(parts.year, parts.month, parts.day)); // month is 1-based, so this advances by 1 month in 0-based
-          currentDate = dateFromTimezone(resolved.getUTCFullYear(), resolved.getUTCMonth() + 1, resolved.getUTCDate(), parts.hour, parts.minute, parts.second, tutorTimezone);
-        } else {
-          currentDate = addDaysInTimezone(currentDate, intervalDays, tutorTimezone);
-        }
-
-        if (currentDate > endDate) break;
-        datesToCreate.push(new Date(currentDate));
-      }
+      datesToCreate = generateRecurringDates(
+        startDate, sessionData.recurrence, endDate, tutorTimezone, sessionData.recurrence_weeks
+      );
     }
 
     // Per-lesson durations (group lesson / sequential / multi-subject scenarios)
