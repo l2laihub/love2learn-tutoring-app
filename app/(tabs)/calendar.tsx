@@ -23,6 +23,7 @@ import { useResponsive } from '../../src/hooks/useResponsive';
 import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
 import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone, getDayInTimezone, getDayOfWeekInTimezone, getPartsInTimezone, dateFromTimezone, isSameDayInTimezone, formatTimeInTimezone } from '../../src/utils/dateUtils';
 import { supabase } from '../../src/lib/supabase';
+import { prepaidCoverage } from '../../src/lib/prepaidCoverage';
 import {
   useWeekGroupedLessons,
   useCreateLesson,
@@ -570,6 +571,64 @@ export default function CalendarScreen() {
     setIsEditSeriesMode(false);
   };
 
+  // After completing prepaid-subject lessons, flag any that had no prepaid
+  // balance to draw from. `useCompleteLesson` only increments an EXISTING prepaid
+  // package; with no package for the month (or one that's exhausted) the session
+  // is completed but silently uncharged. Mirrors that hook's lookup so a lesson is
+  // flagged exactly when the increment had nothing to record against.
+  const warnUncoveredPrepaid = async (lessons: ScheduledLessonWithStudent[]) => {
+    const uncovered: string[] = [];
+    for (const lesson of lessons) {
+      const parent = lesson.student.parent;
+      const prepaidSubjects = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
+        .map((s: string) => s.toLowerCase());
+      const isFullyPrepaid = parent.billing_mode === 'prepaid' && prepaidSubjects.length === 0;
+      const isSubjectPrepaid = isFullyPrepaid || prepaidSubjects.includes(lesson.subject.toLowerCase());
+      if (!isSubjectPrepaid) continue;
+
+      const lessonDate = new Date(lesson.scheduled_at);
+      const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
+        .toISOString().split('T')[0];
+
+      // Subject-specific package first, then legacy null-subject only when the
+      // family has no per-subject prepaid config (matches useCompleteLesson).
+      const { data: subjectPrepaid } = await supabase
+        .from('payments')
+        .select('sessions_used, sessions_prepaid')
+        .eq('parent_id', parent.id)
+        .eq('month', monthStart)
+        .eq('payment_type', 'prepaid')
+        .eq('subject', lesson.subject)
+        .maybeSingle();
+
+      let row = subjectPrepaid;
+      if (!row && prepaidSubjects.length === 0) {
+        const { data: legacyPrepaid } = await supabase
+          .from('payments')
+          .select('sessions_used, sessions_prepaid')
+          .eq('parent_id', parent.id)
+          .eq('month', monthStart)
+          .eq('payment_type', 'prepaid')
+          .is('subject', null)
+          .maybeSingle();
+        row = legacyPrepaid;
+      }
+
+      if (prepaidCoverage(row) === 'uncovered') {
+        uncovered.push(`• ${lesson.student.name} (${lesson.subject})`);
+      }
+    }
+
+    if (uncovered.length > 0) {
+      Alert.alert(
+        'No prepaid balance',
+        `These completed prepaid lesson(s) had no active prepaid package for the month, ` +
+          `so they were not charged:\n\n${uncovered.join('\n')}\n\n` +
+          `Add a prepaid package for the family, or switch them to invoicing, to bill these sessions.`,
+      );
+    }
+  };
+
   const handleCompleteLesson = async (notes?: string) => {
     if (!selectedGroupedLesson) return;
 
@@ -627,6 +686,9 @@ export default function CalendarScreen() {
       }
       // Prepaid subjects: session usage already incremented in useCompleteLesson
     }
+
+    // Flag prepaid lessons that had no balance to draw from (silent no-charge).
+    await warnUncoveredPrepaid(selectedGroupedLesson.lessons);
   };
 
   const handleCompleteLessonAndPay = async (notes?: string) => {
@@ -684,6 +746,9 @@ export default function CalendarScreen() {
       }
       // Prepaid subjects: session usage already incremented in useCompleteLesson
     }
+
+    // Flag prepaid lessons that had no balance to draw from (silent no-charge).
+    await warnUncoveredPrepaid(selectedGroupedLesson.lessons);
   };
 
   const handleCancelLesson = async (reason?: string) => {
