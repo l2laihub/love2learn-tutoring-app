@@ -1298,10 +1298,31 @@ export function groupLessonsBySession(lessons: ScheduledLessonWithStudent[]): Gr
 
     const firstLesson = sessionLessons[0];
 
-    // For grouped sessions, calculate total session duration as sum of all lesson durations
-    // This handles both same-subject sessions (equal split) and multi-subject sessions
-    // E.g., Long Bui (30min Piano) + An Bui (30min Speech) = 60min total session
-    const sessionDuration = sessionLessons.reduce((sum, lesson) => sum + lesson.duration_min, 0);
+    // Reconstruct the session's wall-clock window from its lessons. Classification
+    // mirrors buildSessionLessonPlan (src/lib/sessionPlan.ts):
+    // - a student with >1 subject (scenario B) → durations sum to the session length
+    // - one subject + >1 student (scenario A1, group lesson) → students attend
+    //   concurrently, so each lesson holds the FULL window; summing would over-count
+    //   (3 x 60min = 180min). Use the shared window, not the sum.
+    // - otherwise (scenario A2, sequential) → durations divide the window, sum is correct
+    // Phase 2 will read lesson_sessions.duration_min directly; this is the fallback.
+    const studentSubjectCounts = new Map<string, number>();
+    for (const lesson of sessionLessons) {
+      studentSubjectCounts.set(
+        lesson.student_id,
+        (studentSubjectCounts.get(lesson.student_id) || 0) + 1
+      );
+    }
+    const hasStudentWithMultipleSubjects = Array.from(studentSubjectCounts.values()).some(
+      (count) => count > 1
+    );
+    const uniqueSubjects = new Set(sessionLessons.map((l) => l.subject));
+    const isGroupLesson =
+      !hasStudentWithMultipleSubjects && uniqueSubjects.size === 1 && sessionLessons.length > 1;
+
+    const sessionDuration = isGroupLesson
+      ? Math.max(...sessionLessons.map((lesson) => lesson.duration_min))
+      : sessionLessons.reduce((sum, lesson) => sum + lesson.duration_min, 0);
 
     // Get unique student names and subjects
     const studentNames = [...new Set(sessionLessons.map(l => l.student.name))];
