@@ -176,3 +176,24 @@ export function isSameDayInTimezone(a: Date, b: Date, timezone: string): boolean
   const pb = getPartsInTimezone(b, timezone);
   return pa.year === pb.year && pa.month === pb.month && pa.day === pb.day;
 }
+
+/**
+ * Parse a stored birthday into the calendar day the user intended.
+ *
+ * Two storage shapes can reach this: a plain date-only string (YYYY-MM-DD, the
+ * `birthday` DATE column) and, for some legacy records, a full ISO timestamp.
+ *   - Date-only: `new Date('2017-12-13')` parses as UTC midnight, which renders
+ *     as the previous day in timezones behind UTC. Build it from local parts.
+ *   - Timestamp (e.g. a local-midnight value stored as `...T17:00:00Z`): do NOT
+ *     slice the literal UTC date (that shows the previous day in timezones ahead
+ *     of UTC); let Date convert the instant back to local time.
+ * The date-only branch is anchored with `$` so timestamps fall through.
+ */
+export function parseBirthday(dateString: string): Date {
+  const dateOnlyMatch = dateString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+  }
+  return new Date(dateString);
+}

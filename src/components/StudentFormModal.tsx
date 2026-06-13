@@ -21,6 +21,7 @@ import { Input } from './ui/Input';
 import { Button } from './ui/Button';
 import { colors, spacing, typography, borderRadius } from '../theme';
 import { Student, Parent, CreateStudentInput, UpdateStudentInput } from '../types/database';
+import { parseBirthday } from '../utils/dateUtils';
 
 interface StudentFormModalProps {
   visible: boolean;
@@ -61,7 +62,7 @@ const SUBJECT_OPTIONS = [
 // Helper function to calculate age from birthday
 function calculateAgeFromBirthday(birthday: string | null): number | null {
   if (!birthday) return null;
-  const birthDate = new Date(birthday);
+  const birthDate = parseBirthday(birthday);
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const monthDiff = today.getMonth() - birthDate.getMonth();
@@ -75,7 +76,7 @@ function calculateAgeFromBirthday(birthday: string | null): number | null {
 function suggestGradeFromBirthday(birthday: string | null): string | null {
   if (!birthday) return null;
 
-  const birthDate = new Date(birthday);
+  const birthDate = parseBirthday(birthday);
   const today = new Date();
 
   // Determine school year start date (September 1st)
@@ -86,7 +87,9 @@ function suggestGradeFromBirthday(birthday: string | null): string | null {
     schoolYearStart = new Date(today.getFullYear() - 1, 8, 1); // Sept 1 of previous year
   }
 
-  // Calculate age at school year start
+  // Age at the Sept 1 enrollment cutoff. A child must have reached the grade's
+  // age by Sept 1, so a Dec-2017 child is 7 at Sept 1 2025 -> 2nd grade for the
+  // 2025-26 school year.
   let ageAtSchoolStart = schoolYearStart.getFullYear() - birthDate.getFullYear();
   const monthDiff = schoolYearStart.getMonth() - birthDate.getMonth();
   if (monthDiff < 0 || (monthDiff === 0 && schoolYearStart.getDate() < birthDate.getDate())) {
@@ -120,7 +123,7 @@ function suggestGradeFromBirthday(birthday: string | null): string | null {
 // Format date for display (MM/DD/YYYY)
 function formatDateForDisplay(dateString: string | null): string {
   if (!dateString) return '';
-  const date = new Date(dateString);
+  const date = parseBirthday(dateString);
   return `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
 }
 

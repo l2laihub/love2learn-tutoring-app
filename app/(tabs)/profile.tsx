@@ -23,6 +23,7 @@ import { useUpdateParent } from '../../src/hooks/useParents';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { Student, UpdateStudentInput } from '../../src/types/database';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
+import { parseBirthday } from '../../src/utils/dateUtils';
 import { AvatarUpload, AvatarDisplay } from '../../src/components/AvatarUpload';
 
 // Subject display names
@@ -398,7 +399,7 @@ function ChildCard({ student, onEdit, onAvatarUpload, onAvatarRemove }: ChildCar
   // Format birthday for display
   const formatBirthday = (birthday: string | null): string => {
     if (!birthday) return '';
-    const date = new Date(birthday);
+    const date = parseBirthday(birthday);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
