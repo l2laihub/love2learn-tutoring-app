@@ -198,6 +198,18 @@ export function LessonFormModal({
     }
   }, [visible, initialData, mode]);
 
+  // In edit mode there is no "separate lessons" alternative: a single lesson
+  // can only hold multiple students/subjects as a combined session. So when the
+  // tutor selects more than one lesson here, auto-enable the conversion instead
+  // of blocking the save behind an easy-to-miss toggle above the fold.
+  useEffect(() => {
+    if (mode !== 'edit' || !onSubmitSession) return;
+    const totalLessons = selectedStudents.reduce((total, s) => total + s.subjects.length, 0);
+    if (totalLessons > 1) {
+      setCreateAsSession(true);
+    }
+  }, [mode, onSubmitSession, selectedStudents]);
+
   // Filter students based on search
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students;
@@ -396,10 +408,8 @@ export function LessonFormModal({
         setError('Series edits support a single student. To create a group lesson, edit a single occurrence instead.');
         return;
       }
-      if (!createAsSession) {
-        setError('Enable "Convert to Combined Session" to save this lesson with multiple students or subjects.');
-        return;
-      }
+      // Single-occurrence edit: selecting multiple students implicitly converts
+      // this lesson to a combined session (no separate-lessons alternative exists).
     }
 
     // Check for scheduling conflicts (overlapping sessions)
@@ -476,7 +486,7 @@ export function LessonFormModal({
         const scheduledAt = new Date(selectedDates[0]);
         scheduledAt.setHours(hours, minutes, 0, 0);
 
-        if (createAsSession && onSubmitSession && getTotalLessonsCount() > 1) {
+        if (onSubmitSession && getTotalLessonsCount() > 1) {
           // Convert to a combined session with all selected students/subjects
           const lessons: Array<{ student_id: string; subject: TutoringSubject }> = [];
           for (const selection of selectedStudents) {
@@ -730,6 +740,9 @@ export function LessonFormModal({
                   styles.sessionToggle,
                   createAsSession && styles.sessionToggleActive,
                 ]}
+                // In edit mode the conversion is mandatory (no separate-lessons
+                // alternative), so the toggle is locked on and informational.
+                disabled={mode === 'edit'}
                 onPress={() => setCreateAsSession(!createAsSession)}
               >
                 <View style={styles.sessionToggleContent}>
@@ -748,9 +761,7 @@ export function LessonFormModal({
                     <Text style={styles.sessionToggleDesc}>
                       {createAsSession
                         ? 'All students will share one time slot on calendar'
-                        : mode === 'create'
-                          ? 'Each lesson will be displayed separately'
-                          : 'Required to save this lesson with multiple students'}
+                        : 'Each lesson will be displayed separately'}
                     </Text>
                   </View>
                 </View>
