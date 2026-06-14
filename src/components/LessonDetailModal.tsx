@@ -51,8 +51,8 @@ interface LessonDetailModalProps {
   onClose: () => void;
   onEdit: () => void;
   onEditSeries?: () => void; // Edit this and all future lessons in the recurring series
-  onComplete: (notes?: string) => Promise<void>;
-  onCompleteAndPay?: (notes?: string) => Promise<void>; // Complete and mark as paid
+  onComplete: (notes?: string, cancelledLessonIds?: string[]) => Promise<void>;
+  onCompleteAndPay?: (notes?: string, cancelledLessonIds?: string[]) => Promise<void>; // Complete and mark as paid
   onCancel: (reason?: string) => Promise<void>;
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
   onDelete?: () => Promise<void>;
@@ -92,7 +92,11 @@ export function LessonDetailModal({
   const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [completeNotes, setCompleteNotes] = useState('');
+  // Student lessons (by id) the tutor marked as canceled while completing a combined session.
+  const [cancelledLessonIds, setCancelledLessonIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  // Which complete-dialog action is in flight, so only its button shows a spinner.
+  const [completingAction, setCompletingAction] = useState<'complete' | 'completeAndPay' | null>(null);
   const [showEnrollmentSettings, setShowEnrollmentSettings] = useState(false);
   const [showEnrollmentsExpanded, setShowEnrollmentsExpanded] = useState(false);
   const [convertingToSession, setConvertingToSession] = useState(false);
@@ -182,33 +186,54 @@ export function LessonDetailModal({
   // Format student names
   const studentNamesDisplay = displayData.student_names.join(' & ');
 
+  // Students still pending completion in this session, and whether the tutor has
+  // marked every one of them as canceled (which is a full cancel, not a completion).
+  const pendingGroupLessons = displayData.lessons.filter((l) => l.status === 'scheduled');
+  const allStudentsCancelled =
+    isGroupedSession &&
+    pendingGroupLessons.length > 0 &&
+    pendingGroupLessons.every((l) => cancelledLessonIds.includes(l.id));
+
   const handleComplete = async () => {
+    if (allStudentsCancelled) return;
     setLoading(true);
+    setCompletingAction('complete');
     try {
-      await onComplete(completeNotes.trim() || undefined);
+      await onComplete(completeNotes.trim() || undefined, cancelledLessonIds);
       setShowCompleteConfirm(false);
       setCompleteNotes('');
+      setCancelledLessonIds([]);
       onClose();
     } catch (err) {
       console.error('Failed to complete lesson:', err);
     } finally {
       setLoading(false);
+      setCompletingAction(null);
     }
   };
 
   const handleCompleteAndPay = async () => {
-    if (!onCompleteAndPay) return;
+    if (!onCompleteAndPay || allStudentsCancelled) return;
     setLoading(true);
+    setCompletingAction('completeAndPay');
     try {
-      await onCompleteAndPay(completeNotes.trim() || undefined);
+      await onCompleteAndPay(completeNotes.trim() || undefined, cancelledLessonIds);
       setShowCompleteConfirm(false);
       setCompleteNotes('');
+      setCancelledLessonIds([]);
       onClose();
     } catch (err) {
       console.error('Failed to complete and mark paid:', err);
     } finally {
       setLoading(false);
+      setCompletingAction(null);
     }
+  };
+
+  const toggleCancelledLesson = (lessonId: string) => {
+    setCancelledLessonIds((prev) =>
+      prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
+    );
   };
 
   const handleCancel = async () => {
@@ -288,6 +313,8 @@ export function LessonDetailModal({
     setShowDeleteSeriesConfirm(false);
     setCancelReason('');
     setCompleteNotes('');
+    setCancelledLessonIds([]);
+    setCompletingAction(null);
     onClose();
   };
 
@@ -342,10 +369,56 @@ export function LessonDetailModal({
         <View style={styles.overlay}>
           <View style={styles.confirmDialog}>
             <Ionicons name="checkmark-circle" size={48} color={colors.status.success} />
-            <Text style={styles.confirmTitle}>Complete Lesson?</Text>
-            <Text style={styles.confirmSubtitle}>
-              Mark this lesson with {lesson.student?.name || 'this student'} as completed.
+            <Text style={styles.confirmTitle}>
+              {isGroupedSession ? 'Complete Session?' : 'Complete Lesson?'}
             </Text>
+            <Text style={styles.confirmSubtitle}>
+              {isGroupedSession
+                ? 'Mark each student as attending or canceled. Canceled students are not charged.'
+                : `Mark this lesson with ${lesson.student?.name || 'this student'} as completed.`}
+            </Text>
+            {isGroupedSession && (
+              <View style={styles.attendanceList}>
+                {displayData.lessons
+                  .filter((l) => l.status === 'scheduled')
+                  .map((l) => {
+                    const isCancelled = cancelledLessonIds.includes(l.id);
+                    return (
+                      <View key={l.id} style={styles.attendanceRow}>
+                        <Text style={styles.attendanceIcon}>{SUBJECT_EMOJI[l.subject]}</Text>
+                        <View style={styles.attendanceInfo}>
+                          <Text style={styles.attendanceName}>{l.student?.name || 'Student'}</Text>
+                          <Text style={styles.attendanceSubject}>{SUBJECT_NAMES[l.subject]}</Text>
+                        </View>
+                        <Pressable
+                          style={[
+                            styles.attendanceToggle,
+                            isCancelled
+                              ? styles.attendanceToggleCancelled
+                              : styles.attendanceToggleAttending,
+                          ]}
+                          onPress={() => toggleCancelledLesson(l.id)}
+                          disabled={loading}
+                        >
+                          <Ionicons
+                            name={isCancelled ? 'close-circle' : 'checkmark-circle'}
+                            size={14}
+                            color={isCancelled ? colors.status.error : colors.status.success}
+                          />
+                          <Text
+                            style={[
+                              styles.attendanceToggleText,
+                              { color: isCancelled ? colors.status.error : colors.status.success },
+                            ]}
+                          >
+                            {isCancelled ? 'Canceled' : 'Attending'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+              </View>
+            )}
             <TextInput
               style={styles.confirmInput}
               value={completeNotes}
@@ -354,6 +427,11 @@ export function LessonDetailModal({
               placeholderTextColor={colors.neutral.textMuted}
               multiline
             />
+            {allStudentsCancelled && (
+              <Text style={styles.allCancelledHint}>
+                All students are marked canceled. Use “Cancel Session” instead to cancel the whole session.
+              </Text>
+            )}
             <View style={styles.confirmActions}>
               <Pressable
                 style={[styles.confirmButton, styles.confirmButtonSecondary]}
@@ -363,11 +441,15 @@ export function LessonDetailModal({
                 <Text style={styles.confirmButtonSecondaryText}>Go Back</Text>
               </Pressable>
               <Pressable
-                style={[styles.confirmButton, styles.confirmButtonSuccess]}
+                style={[
+                  styles.confirmButton,
+                  styles.confirmButtonSuccess,
+                  allStudentsCancelled && styles.confirmButtonDisabled,
+                ]}
                 onPress={handleComplete}
-                disabled={loading}
+                disabled={loading || allStudentsCancelled}
               >
-                {loading ? (
+                {completingAction === 'complete' ? (
                   <ActivityIndicator size="small" color={colors.neutral.white} />
                 ) : (
                   <Text style={styles.confirmButtonText}>Complete</Text>
@@ -376,11 +458,14 @@ export function LessonDetailModal({
             </View>
             {onCompleteAndPay && (
               <Pressable
-                style={styles.completeAndPayButton}
+                style={[
+                  styles.completeAndPayButton,
+                  allStudentsCancelled && styles.confirmButtonDisabled,
+                ]}
                 onPress={handleCompleteAndPay}
-                disabled={loading}
+                disabled={loading || allStudentsCancelled}
               >
-                {loading ? (
+                {completingAction === 'completeAndPay' ? (
                   <ActivityIndicator size="small" color={colors.primary.main} />
                 ) : (
                   <>
@@ -1055,6 +1140,64 @@ const styles = StyleSheet.create({
   },
   miniStatusCancelled: {
     backgroundColor: colors.status.errorBg,
+  },
+  attendanceList: {
+    width: '100%',
+    marginBottom: spacing.lg,
+  },
+  attendanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutral.border,
+  },
+  attendanceIcon: {
+    fontSize: 18,
+    marginRight: spacing.sm,
+  },
+  attendanceInfo: {
+    flex: 1,
+  },
+  attendanceName: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.text,
+  },
+  attendanceSubject: {
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.textMuted,
+  },
+  attendanceToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  attendanceToggleAttending: {
+    backgroundColor: colors.status.successBg,
+    borderColor: colors.status.success,
+  },
+  attendanceToggleCancelled: {
+    backgroundColor: colors.status.errorBg,
+    borderColor: colors.status.error,
+  },
+  attendanceToggleText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+  },
+  allCancelledHint: {
+    width: '100%',
+    fontSize: typography.sizes.sm,
+    color: colors.status.error,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
   },
   detailsCard: {
     backgroundColor: colors.neutral.white,
