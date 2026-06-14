@@ -10,6 +10,7 @@ export interface CandidateLesson {
   override_amount: number | null;
   student?: {
     id: string;
+    name?: string;
     parent_id: string;
     parent?: {
       id: string;
@@ -45,4 +46,21 @@ export function isSubjectPrepaid(
   const lower = (prepaidSubjects ?? []).map((s) => s.toLowerCase());
   const fullyPrepaid = billingMode === 'prepaid' && lower.length === 0;
   return fullyPrepaid || lower.includes((subject ?? '').toLowerCase());
+}
+
+// Notification text for prepaid lessons the job auto-completed but couldn't draw
+// against (no active package, or the package was already exhausted). Mirrors the
+// calendar's Alert copy (calendar.tsx:562-567) so the cron and the UI tell the
+// tutor the same thing. Pure so it can be unit-tested without a DB.
+export function buildUncoveredPrepaidMessage(
+  items: { studentName: string; subject: string }[],
+): { title: string; message: string } {
+  const lines = items.map((i) => `• ${i.studentName} (${i.subject})`).join('\n');
+  return {
+    title: items.length === 1 ? 'Prepaid lesson not charged' : 'Prepaid lessons not charged',
+    message:
+      `These auto-completed prepaid lesson(s) had no active prepaid package for the month, ` +
+      `so they were not charged:\n\n${lines}\n\n` +
+      `Add a prepaid package for the family, or switch them to invoicing, to bill these sessions.`,
+  };
 }

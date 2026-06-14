@@ -16,7 +16,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 import { calculateLessonAmount } from '../_shared/lessonAmount.ts';
-import { dueLessons, isSubjectPrepaid, type CandidateLesson } from './autocomplete.ts';
+import { prepaidCoverage } from '../_shared/prepaidCoverage.ts';
+import {
+  buildUncoveredPrepaidMessage,
+  dueLessons,
+  isSubjectPrepaid,
+  type CandidateLesson,
+} from './autocomplete.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -108,7 +114,7 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
     .from('scheduled_lessons')
     .select(
       'id, subject, scheduled_at, duration_min, session_id, override_amount, ' +
-        'student:students!inner(id, parent_id, parent:parents!parent_id(id, billing_mode, prepaid_subjects))',
+        'student:students!inner(id, name, parent_id, parent:parents!parent_id(id, billing_mode, prepaid_subjects))',
     )
     .eq('tutor_id', tutorId)
     .eq('status', 'scheduled')
@@ -121,6 +127,10 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
 
   // 1. Complete each due lesson; collect (parent, month) pairs needing an invoice.
   const invoiceTargets = new Map<string, { parentId: string; monthStart: string; lessonIds: string[] }>();
+  // Prepaid lessons we auto-completed but couldn't draw against (no package / exhausted).
+  // A cron can't pop an Alert like the calendar UI, so we summarize these into one
+  // in-app notification for the tutor below (mirrors calendar.tsx warnUncoveredPrepaid).
+  const uncoveredPrepaid: { studentName: string; subject: string }[] = [];
   let completed = 0;
   for (const l of due) {
     const parent = l.student?.parent;
@@ -142,7 +152,10 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
 
     const monthStart = monthStartOf(l.scheduled_at);
     if (subjectPrepaid) {
-      await incrementPrepaid(supabase, parent.id, monthStart, l.subject, parent.prepaid_subjects ?? []);
+      const coverage = await incrementPrepaid(supabase, parent.id, monthStart, l.subject, parent.prepaid_subjects ?? []);
+      if (coverage === 'uncovered') {
+        uncoveredPrepaid.push({ studentName: l.student?.name ?? 'A student', subject: l.subject });
+      }
     } else {
       const key = `${parent.id}|${monthStart}`;
       const target = invoiceTargets.get(key) ?? { parentId: parent.id, monthStart, lessonIds: [] };
@@ -162,21 +175,45 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
     }
   }
 
-  return { completed, invoiced, paid, parents: invoiceTargets.size };
+  // 3. Flag prepaid sessions that were auto-completed with nothing to draw from.
+  // Reuses the existing 'general' notification_type (no enum change). Both recipient
+  // AND tutor_id are the tutor's own parents.id: tutor_id scopes the row to this
+  // business so the multi-tutor SELECT policy (tutor_id = get_current_tutor_id())
+  // shows it only to this tutor — a NULL tutor_id would leak it to every tutor.
+  // Best-effort: a failed notification must not fail the run.
+  if (uncoveredPrepaid.length > 0) {
+    const { title, message } = buildUncoveredPrepaidMessage(uncoveredPrepaid);
+    const { error: notifErr } = await supabase.from('notifications').insert({
+      recipient_id: tutor.id,
+      tutor_id: tutor.id,
+      type: 'general',
+      priority: 'high',
+      title,
+      message,
+      data: { kind: 'prepaid_uncovered', lessons: uncoveredPrepaid },
+      action_url: '/payments',
+    });
+    if (notifErr) console.error('uncovered-prepaid notification failed', notifErr.message);
+  }
+
+  return { completed, invoiced, paid, parents: invoiceTargets.size, uncoveredPrepaid: uncoveredPrepaid.length };
 }
 
-// Port of useCompleteLesson's prepaid increment (useLessons.ts:644-696).
+// Port of useCompleteLesson's prepaid increment (useLessons.ts:644-696). Returns
+// whether the lesson actually drew from a balance — 'uncovered' when there's no
+// package or it's exhausted/over-drawn — so the caller can flag silently
+// uncharged sessions (mirrors calendar.tsx warnUncoveredPrepaid).
 async function incrementPrepaid(
   supabase: SupabaseClient,
   parentId: string,
   monthStart: string,
   subject: string,
   prepaidSubjects: string[],
-) {
+): Promise<'covered' | 'uncovered'> {
   const lower = (prepaidSubjects ?? []).map((s) => s.toLowerCase());
   let { data: prepaid } = await supabase
     .from('payments')
-    .select('id, sessions_used')
+    .select('id, sessions_used, sessions_prepaid')
     .eq('parent_id', parentId)
     .eq('month', monthStart)
     .eq('payment_type', 'prepaid')
@@ -186,7 +223,7 @@ async function incrementPrepaid(
   if (!prepaid && lower.length === 0) {
     const { data: legacy } = await supabase
       .from('payments')
-      .select('id, sessions_used')
+      .select('id, sessions_used, sessions_prepaid')
       .eq('parent_id', parentId)
       .eq('month', monthStart)
       .eq('payment_type', 'prepaid')
@@ -195,12 +232,17 @@ async function incrementPrepaid(
     prepaid = legacy;
   }
 
-  if (prepaid) {
-    await supabase
-      .from('payments')
-      .update({ sessions_used: (prepaid.sessions_used || 0) + 1, updated_at: new Date().toISOString() })
-      .eq('id', prepaid.id);
-  }
+  // No package for the month: nothing to increment, session goes uncharged.
+  if (!prepaid) return 'uncovered';
+
+  const newUsed = (prepaid.sessions_used || 0) + 1;
+  await supabase
+    .from('payments')
+    .update({ sessions_used: newUsed, updated_at: new Date().toISOString() })
+    .eq('id', prepaid.id);
+
+  // Judge coverage on the POST-increment count, matching src/lib/prepaidCoverage.
+  return prepaidCoverage({ sessions_used: newUsed, sessions_prepaid: prepaid.sessions_prepaid });
 }
 
 // Port of useQuickInvoice.generateQuickInvoice (usePayments.ts:1799-1992),

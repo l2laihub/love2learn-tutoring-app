@@ -726,10 +726,11 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
         throw new Error('User not authenticated');
       }
 
-      // First, get all students for this parent with their rates
+      // First, get all students for this parent (only the name is used below;
+      // billing rates live in tutor_settings, not on the student record).
       const { data: students, error: studentsError } = await supabase
         .from('students')
-        .select('id, name, hourly_rate, subject_rates')
+        .select('id, name')
         .eq('parent_id', parentId);
 
       if (studentsError) {

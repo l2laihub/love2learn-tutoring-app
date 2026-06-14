@@ -638,11 +638,9 @@ export type Database = {
           avatar_url: string | null
           created_at: string | null
           grade_level: string
-          hourly_rate: number | null
           id: string
           name: string
           parent_id: string
-          subject_rates: Json | null
           subjects: string[] | null
           updated_at: string | null
         }
@@ -651,11 +649,9 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string | null
           grade_level: string
-          hourly_rate?: number | null
           id?: string
           name: string
           parent_id: string
-          subject_rates?: Json | null
           subjects?: string[] | null
           updated_at?: string | null
         }
@@ -664,11 +660,9 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string | null
           grade_level?: string
-          hourly_rate?: number | null
           id?: string
           name?: string
           parent_id?: string
-          subject_rates?: Json | null
           subjects?: string[] | null
           updated_at?: string | null
         }

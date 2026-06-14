@@ -1,5 +1,5 @@
 import { assertEquals } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
-import { dueLessons, isSubjectPrepaid } from './autocomplete.ts';
+import { buildUncoveredPrepaidMessage, dueLessons, isSubjectPrepaid } from './autocomplete.ts';
 
 const NOW = Date.UTC(2026, 5, 7, 18, 0, 0); // 2026-06-07T18:00:00Z
 const MAX_AGE = 7;
@@ -40,4 +40,23 @@ Deno.test('isSubjectPrepaid: hybrid -> only listed subjects prepaid', () => {
 Deno.test('isSubjectPrepaid: invoice family -> never prepaid', () => {
   assertEquals(isSubjectPrepaid('invoice', [], 'math'), false);
   assertEquals(isSubjectPrepaid('invoice', ['piano'], 'piano'), true); // listed subject still prepaid
+});
+
+Deno.test('buildUncoveredPrepaidMessage: single uncovered lesson', () => {
+  const out = buildUncoveredPrepaidMessage([{ studentName: 'Lucas Nguyen', subject: 'piano' }]);
+  assertEquals(out.title, 'Prepaid lesson not charged');
+  assertEquals(
+    out.message.includes('• Lucas Nguyen (piano)'),
+    true,
+  );
+});
+
+Deno.test('buildUncoveredPrepaidMessage: title pluralizes for multiple', () => {
+  const out = buildUncoveredPrepaidMessage([
+    { studentName: 'Lucas Nguyen', subject: 'piano' },
+    { studentName: 'Mia Chen', subject: 'math' },
+  ]);
+  assertEquals(out.title, 'Prepaid lessons not charged');
+  assertEquals(out.message.includes('• Lucas Nguyen (piano)'), true);
+  assertEquals(out.message.includes('• Mia Chen (math)'), true);
 });
