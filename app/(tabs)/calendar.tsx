@@ -568,14 +568,24 @@ export default function CalendarScreen() {
     }
   };
 
-  const handleCompleteLesson = async (notes?: string) => {
+  const handleCompleteLesson = async (notes?: string, cancelledLessonIds: string[] = []) => {
     if (!selectedGroupedLesson) return;
 
-    // Complete all lessons in the group
+    // Complete attending students; cancel (no charge) any the tutor marked canceled.
+    // Cancelled lessons keep status 'cancelled', so they're excluded from invoicing and prepaid.
     for (const lesson of selectedGroupedLesson.lessons) {
-      await completeLesson.mutate(lesson.id, notes);
+      if (cancelledLessonIds.includes(lesson.id)) {
+        await cancelLesson.mutate(lesson.id);
+      } else {
+        await completeLesson.mutate(lesson.id, notes);
+      }
     }
     await refetch();
+
+    // Only attending (non-cancelled) students drive invoice/prepaid logic.
+    const billableLessons = selectedGroupedLesson.lessons.filter(
+      (lesson) => !cancelledLessonIds.includes(lesson.id)
+    );
 
     // Auto-generate invoice for non-prepaid subjects
     // Prepaid session usage is already handled in useCompleteLesson hook
@@ -586,7 +596,7 @@ export default function CalendarScreen() {
       prepaid_subjects: string[];
       hasInvoiceSubjects: boolean;
     }>();
-    for (const lesson of selectedGroupedLesson.lessons) {
+    for (const lesson of billableLessons) {
       const parent = lesson.student.parent;
       if (!parentMap.has(parent.id)) {
         const prepaidSubjects: string[] = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
@@ -627,17 +637,26 @@ export default function CalendarScreen() {
     }
 
     // Flag prepaid lessons that had no balance to draw from (silent no-charge).
-    await warnUncoveredPrepaid(selectedGroupedLesson.lessons);
+    await warnUncoveredPrepaid(billableLessons);
   };
 
-  const handleCompleteLessonAndPay = async (notes?: string) => {
+  const handleCompleteLessonAndPay = async (notes?: string, cancelledLessonIds: string[] = []) => {
     if (!selectedGroupedLesson) return;
 
-    // Complete all lessons in the group
+    // Complete attending students; cancel (no charge) any the tutor marked canceled.
     for (const lesson of selectedGroupedLesson.lessons) {
-      await completeLesson.mutate(lesson.id, notes);
+      if (cancelledLessonIds.includes(lesson.id)) {
+        await cancelLesson.mutate(lesson.id);
+      } else {
+        await completeLesson.mutate(lesson.id, notes);
+      }
     }
     await refetch();
+
+    // Only attending (non-cancelled) students drive invoice/prepaid logic.
+    const billableLessons = selectedGroupedLesson.lessons.filter(
+      (lesson) => !cancelledLessonIds.includes(lesson.id)
+    );
 
     // Auto-generate invoice and mark as paid for non-prepaid subjects
     const parentMap = new Map<string, {
@@ -646,7 +665,7 @@ export default function CalendarScreen() {
       prepaid_subjects: string[];
       hasInvoiceSubjects: boolean;
     }>();
-    for (const lesson of selectedGroupedLesson.lessons) {
+    for (const lesson of billableLessons) {
       const parent = lesson.student.parent;
       if (!parentMap.has(parent.id)) {
         const prepaidSubjects: string[] = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
@@ -687,7 +706,7 @@ export default function CalendarScreen() {
     }
 
     // Flag prepaid lessons that had no balance to draw from (silent no-charge).
-    await warnUncoveredPrepaid(selectedGroupedLesson.lessons);
+    await warnUncoveredPrepaid(billableLessons);
   };
 
   const handleCancelLesson = async (reason?: string) => {
