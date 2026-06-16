@@ -93,7 +93,6 @@ export interface TutorProfile {
   // From tutor_settings table
   defaultRate: number;
   defaultBaseDuration: number;
-  combinedSessionRate: number;
   subjectRates: SubjectRates;
   customSubjects: CustomSubject[];
 }
@@ -122,7 +121,6 @@ const DEFAULT_PROFILE: Omit<TutorProfile, 'id' | 'userId' | 'name' | 'email'> = 
   timezone: 'America/New_York',
   defaultRate: 45,
   defaultBaseDuration: 60,
-  combinedSessionRate: 40,
   subjectRates: {},
   customSubjects: [],
 };
@@ -198,7 +196,6 @@ export function useTutorProfile(): QueryState<TutorProfile> & { refetch: () => P
         timezone,
         defaultRate: settings?.default_rate ?? DEFAULT_PROFILE.defaultRate,
         defaultBaseDuration: settings?.default_base_duration ?? DEFAULT_PROFILE.defaultBaseDuration,
-        combinedSessionRate: settings?.combined_session_rate ?? DEFAULT_PROFILE.combinedSessionRate,
         subjectRates,
         customSubjects,
       };
