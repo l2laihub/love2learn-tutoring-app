@@ -730,7 +730,7 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       // billing rates live in tutor_settings, not on the student record).
       const { data: students, error: studentsError } = await supabase
         .from('students')
-        .select('id, name')
+        .select('id, name, subject_rates')
         .eq('parent_id', parentId);
 
       if (studentsError) {
@@ -831,7 +831,12 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
           let calculatedAmount: number;
           let rateDisplay: string;
 
-          const subjectRateConfig = tutorSubjectRates[lesson.subject as keyof SubjectRates];
+          const studentSubjectRates = (student?.subject_rates as SubjectRates | undefined) || {};
+          const studentRateConfig = studentSubjectRates[lesson.subject as keyof SubjectRates];
+          const subjectRateConfig =
+            studentRateConfig && studentRateConfig.rate > 0 && studentRateConfig.base_duration > 0
+              ? studentRateConfig
+              : tutorSubjectRates[lesson.subject as keyof SubjectRates];
           if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
             // Check for explicit duration price tier first
             // JSON from database has string keys, so we must use string key for lookup
