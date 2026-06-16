@@ -1,8 +1,8 @@
 // Pure, dependency-free lesson-amount math shared by Edge Functions.
 // Faithful port of calculateLessonAmountWithDetails in src/hooks/usePayments.ts —
-// keep in sync (lessonAmount.test.ts pins the values). Combined-session pricing
-// intentionally uses the same duration-based rate as single sessions (the source
-// function ignores isCombinedSession for the amount).
+// keep in sync (lessonAmount.test.ts pins the values). For combined sessions, a
+// per-subject group rate (group_subject_rates) is used when set; otherwise the
+// individual subject rate applies (then the default rate).
 
 export interface SubjectRateConfig {
   rate: number;
@@ -13,14 +13,18 @@ export interface TutorRateSettings {
   default_rate?: number | null;
   default_base_duration?: number | null;
   subject_rates?: Record<string, SubjectRateConfig> | null;
-  combined_session_rate?: number | null;
+  group_subject_rates?: Record<string, SubjectRateConfig> | null;
+}
+
+function isValidConfig(c: SubjectRateConfig | undefined): c is SubjectRateConfig {
+  return !!c && c.rate > 0 && c.base_duration > 0;
 }
 
 export function calculateLessonAmount(
   settings: TutorRateSettings | null,
   subject: string,
   durationMin: number,
-  _isCombinedSession: boolean,
+  isCombinedSession: boolean,
   overrideAmount?: number | null,
 ): number {
   const defaultRate = 45;
@@ -30,12 +34,28 @@ export function calculateLessonAmount(
     return overrideAmount;
   }
 
-  const subjectRates = settings?.subject_rates ?? undefined;
+  // Resolve the applicable rate config: combined sessions prefer the group rate
+  // for the subject, then fall back to the individual subject rate.
+  let rateConfig: SubjectRateConfig | undefined;
+  if (isCombinedSession) {
+    const groupRates = settings?.group_subject_rates ?? undefined;
+    const groupCfg = groupRates ? groupRates[subject] : undefined;
+    if (isValidConfig(groupCfg)) {
+      rateConfig = groupCfg;
+    }
+  }
+  if (!rateConfig) {
+    const subjectRates = settings?.subject_rates ?? undefined;
+    const subjectCfg = subjectRates ? subjectRates[subject] : undefined;
+    if (isValidConfig(subjectCfg)) {
+      rateConfig = subjectCfg;
+    }
+  }
+
   let rate: number;
   let baseDuration: number;
 
-  const rateConfig = subjectRates ? subjectRates[subject] : undefined;
-  if (rateConfig && rateConfig.rate > 0 && rateConfig.base_duration > 0) {
+  if (rateConfig) {
     const durationPrices = rateConfig.duration_prices;
     if (durationPrices && typeof durationPrices === 'object') {
       const explicit = durationPrices[String(durationMin)];

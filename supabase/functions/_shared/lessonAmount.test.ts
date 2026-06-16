@@ -19,10 +19,41 @@ Deno.test('explicit duration tier price', () => {
   assertEquals(calculateLessonAmount(settings, 'piano', 45, false, null), 50);
 });
 
-Deno.test('combined session uses same amount as single (flag ignored)', () => {
+Deno.test('combined session falls back to individual rate when no group rate set', () => {
   const settings = { subject_rates: { math: { rate: 60, base_duration: 60 } } };
   assertEquals(
     calculateLessonAmount(settings, 'math', 60, true, null),
     calculateLessonAmount(settings, 'math', 60, false, null),
   );
+});
+
+Deno.test('combined session uses group rate when set (linear)', () => {
+  const settings = {
+    subject_rates: { piano: { rate: 60, base_duration: 60 } },
+    group_subject_rates: { piano: { rate: 30, base_duration: 60 } },
+  };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, true, null), 30);
+  // non-combined still uses the individual rate
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null), 60);
+});
+
+Deno.test('combined session uses group duration tier when set', () => {
+  const settings = {
+    subject_rates: { piano: { rate: 60, base_duration: 60 } },
+    group_subject_rates: { piano: { rate: 30, base_duration: 60, duration_prices: { '45': 25 } } },
+  };
+  assertEquals(calculateLessonAmount(settings, 'piano', 45, true, null), 25);
+});
+
+Deno.test('group rate ignored for non-combined lessons', () => {
+  const settings = {
+    subject_rates: { piano: { rate: 60, base_duration: 60 } },
+    group_subject_rates: { piano: { rate: 30, base_duration: 60 } },
+  };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null), 60);
+});
+
+Deno.test('override wins even for combined session with group rate', () => {
+  const settings = { group_subject_rates: { piano: { rate: 30, base_duration: 60 } } };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, true, 12.5), 12.5);
 });
