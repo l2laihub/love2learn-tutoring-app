@@ -218,7 +218,7 @@ export function getSubjectRateConfig(
  * @param settings Tutor settings
  * @param subject Lesson subject
  * @param durationMin Lesson duration in minutes
- * @param isCombinedSession Whether this is a combined session (flat rate applies)
+ * @param isCombinedSession Whether this is a combined session (uses the subject's group rate if set, else the individual rate)
  */
 export function calculateLessonRate(
   settings: TutorSettings | null,
