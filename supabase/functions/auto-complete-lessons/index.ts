@@ -100,7 +100,7 @@ async function processTutor(supabase: SupabaseClient, tutorId: string) {
   // tutor_settings is keyed by auth user id (= parents.user_id), not parents.id.
   const { data: settings } = await supabase
     .from('tutor_settings')
-    .select('default_rate, default_base_duration, subject_rates, combined_session_rate')
+    .select('default_rate, default_base_duration, subject_rates, group_subject_rates')
     .eq('tutor_id', tutor.user_id)
     .maybeSingle();
 
