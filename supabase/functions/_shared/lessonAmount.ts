@@ -26,6 +26,7 @@ export function calculateLessonAmount(
   durationMin: number,
   isCombinedSession: boolean,
   overrideAmount?: number | null,
+  studentRates?: Record<string, SubjectRateConfig> | null,
 ): number {
   const defaultRate = 45;
   const defaultBaseDuration = 60;
@@ -34,10 +35,15 @@ export function calculateLessonAmount(
     return overrideAmount;
   }
 
-  // Resolve the applicable rate config: combined sessions prefer the group rate
-  // for the subject, then fall back to the individual subject rate.
+  // Resolve the applicable rate config. A valid per-student rate wins over all
+  // tutor-wide rates (solo or combined). Otherwise: combined sessions prefer the
+  // group rate, then the individual subject rate, then the default.
   let rateConfig: SubjectRateConfig | undefined;
-  if (isCombinedSession) {
+  const studentCfg = studentRates ? studentRates[subject] : undefined;
+  if (isValidConfig(studentCfg)) {
+    rateConfig = studentCfg;
+  }
+  if (!rateConfig && isCombinedSession) {
     const groupRates = settings?.group_subject_rates ?? undefined;
     const groupCfg = groupRates ? groupRates[subject] : undefined;
     if (isValidConfig(groupCfg)) {

@@ -57,3 +57,45 @@ Deno.test('override wins even for combined session with group rate', () => {
   const settings = { group_subject_rates: { piano: { rate: 30, base_duration: 60 } } };
   assertEquals(calculateLessonAmount(settings, 'piano', 60, true, 12.5), 12.5);
 });
+
+Deno.test('student rate wins over subject rate (solo)', () => {
+  const settings = { subject_rates: { piano: { rate: 60, base_duration: 60 } } };
+  const studentRates = { piano: { rate: 40, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null, studentRates), 40);
+});
+
+Deno.test('student rate wins over group rate (combined)', () => {
+  const settings = {
+    subject_rates: { piano: { rate: 60, base_duration: 60 } },
+    group_subject_rates: { piano: { rate: 30, base_duration: 60 } },
+  };
+  const studentRates = { piano: { rate: 40, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, true, null, studentRates), 40);
+});
+
+Deno.test('student rate duration tier applies', () => {
+  const studentRates = { piano: { rate: 40, base_duration: 60, duration_prices: { '45': 35 } } };
+  assertEquals(calculateLessonAmount(null, 'piano', 45, false, null, studentRates), 35);
+});
+
+Deno.test('student rate pro-rated by duration', () => {
+  const studentRates = { piano: { rate: 40, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(null, 'piano', 30, false, null, studentRates), 20);
+});
+
+Deno.test('inactive student rate falls through to subject rate', () => {
+  const settings = { subject_rates: { piano: { rate: 60, base_duration: 60 } } };
+  const studentRates = { piano: { rate: 0, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null, studentRates), 60);
+});
+
+Deno.test('no student rate for subject falls through', () => {
+  const settings = { subject_rates: { piano: { rate: 60, base_duration: 60 } } };
+  const studentRates = { math: { rate: 40, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, false, null, studentRates), 60);
+});
+
+Deno.test('override_amount beats an active student rate', () => {
+  const studentRates = { piano: { rate: 40, base_duration: 60 } };
+  assertEquals(calculateLessonAmount(null, 'piano', 60, false, 12.5, studentRates), 12.5);
+});
