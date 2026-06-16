@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS: Omit<TutorSettings, 'id' | 'tutor_id' | 'created_at' | '
   default_rate: 45,           // $45 default
   default_base_duration: 60,  // per 60 minutes
   subject_rates: {},
-  combined_session_rate: 40,
+  group_subject_rates: {},
 };
 
 /**
@@ -67,6 +67,7 @@ export function useTutorSettings(): QueryState<TutorSettings> & { refetch: () =>
         setData({
           ...settings,
           subject_rates: (settings.subject_rates as SubjectRates) || {},
+          group_subject_rates: (settings.group_subject_rates as SubjectRates) || {},
         });
       } else {
         // Return defaults with user info
@@ -131,7 +132,7 @@ export function useUpdateTutorSettings() {
             default_rate: input.default_rate,
             default_base_duration: input.default_base_duration,
             subject_rates: (input.subject_rates || {}) as unknown as Json,
-            combined_session_rate: input.combined_session_rate,
+            group_subject_rates: (input.group_subject_rates || {}) as unknown as Json,
           })
           .eq('tutor_id', user.id)
           .select()
@@ -148,7 +149,7 @@ export function useUpdateTutorSettings() {
             default_rate: input.default_rate ?? DEFAULT_SETTINGS.default_rate,
             default_base_duration: input.default_base_duration ?? DEFAULT_SETTINGS.default_base_duration,
             subject_rates: (input.subject_rates || {}) as unknown as Json,
-            combined_session_rate: input.combined_session_rate ?? DEFAULT_SETTINGS.combined_session_rate,
+            group_subject_rates: (input.group_subject_rates || {}) as unknown as Json,
           })
           .select()
           .single();
@@ -160,6 +161,7 @@ export function useUpdateTutorSettings() {
       const settings: TutorSettings = {
         ...result,
         subject_rates: (result.subject_rates as SubjectRates) || {},
+        group_subject_rates: (result.group_subject_rates as SubjectRates) || {},
       };
 
       setData(settings);
@@ -224,16 +226,24 @@ export function calculateLessonRate(
   durationMin: number,
   isCombinedSession: boolean
 ): number {
+  // Combined sessions prefer the per-subject group rate when set; otherwise fall
+  // back to the individual subject rate (then the tutor default).
+  let rateConfig: SubjectRateConfig | undefined;
   if (isCombinedSession) {
-    // Flat rate per student for combined sessions
-    return settings?.combined_session_rate ?? DEFAULT_SETTINGS.combined_session_rate;
+    const groupRates = settings?.group_subject_rates as
+      | Record<string, SubjectRateConfig>
+      | null
+      | undefined;
+    const groupCfg = groupRates?.[subject];
+    if (groupCfg && groupCfg.rate > 0 && groupCfg.base_duration > 0) {
+      rateConfig = groupCfg;
+    }
+  }
+  if (!rateConfig) {
+    rateConfig = getSubjectRateConfig(settings, subject);
   }
 
-  // Get the rate config for this subject
-  const rateConfig = getSubjectRateConfig(settings, subject);
-
-  // Check for explicit duration price first
-  // JSON from database has string keys, so we must use string key for lookup
+  // Check for explicit duration price first (string keys from JSON).
   const durationPricesRaw = rateConfig.duration_prices;
   if (durationPricesRaw && typeof durationPricesRaw === 'object') {
     const durationKey = String(durationMin);
@@ -244,8 +254,6 @@ export function calculateLessonRate(
   }
 
   // Fall back to linear calculation: (lesson duration / base duration) * rate
-  // e.g., 30min lesson with $35/30min rate = (30/30) * 35 = $35
-  // e.g., 60min lesson with $35/30min rate = (60/30) * 35 = $70
   return (durationMin / rateConfig.base_duration) * rateConfig.rate;
 }
 
