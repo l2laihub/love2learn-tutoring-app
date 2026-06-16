@@ -1347,53 +1347,50 @@ function calculateLessonAmountWithDetails(
     };
   }
 
-  // Use duration-based subject rates for ALL lessons (including combined sessions)
+  // Resolve the applicable rate config. Combined sessions prefer the per-subject
+  // group rate (group_subject_rates); otherwise the individual subject rate applies,
+  // then the tutor default.
   let rate: number;
   let baseDuration: number;
   let rateSource: string;
 
-  // Cast subject_rates from JSON - it may come as a plain object from database
   const subjectRates = tutorSettings?.subject_rates as SubjectRates | null | undefined;
+  const groupRates = (tutorSettings as TutorSettings | null)?.group_subject_rates as
+    | SubjectRates
+    | null
+    | undefined;
 
-  if (subjectRates && subject in subjectRates) {
-    // Access the rate config - may be a plain object from JSON
-    const rawConfig = subjectRates[subject as keyof SubjectRates];
-    // Ensure we have a valid config object
-    const rateConfig = rawConfig as SubjectRateConfig | undefined;
+  const pickConfig = (rates: SubjectRates | null | undefined): SubjectRateConfig | undefined => {
+    if (!rates || !(subject in rates)) return undefined;
+    const cfg = rates[subject as keyof SubjectRates] as SubjectRateConfig | undefined;
+    return cfg && cfg.rate > 0 && cfg.base_duration > 0 ? cfg : undefined;
+  };
 
-    if (rateConfig && rateConfig.rate > 0 && rateConfig.base_duration > 0) {
-      // Check for explicit duration price tier first
-      // JSON from database has string keys, so we must use string key for lookup
-      const durationPricesRaw = rateConfig.duration_prices;
+  const groupConfig = isCombinedSession ? pickConfig(groupRates) : undefined;
+  const rateConfig = groupConfig ?? pickConfig(subjectRates);
 
-      if (durationPricesRaw && typeof durationPricesRaw === 'object') {
-        // Convert to a plain object and use string key lookup
-        const durationKey = String(durationMin);
-        const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
-
-        if (typeof explicitPrice === 'number' && explicitPrice > 0) {
-          // Use explicit tier pricing
-          const rateDisplay = `$${explicitPrice}/${durationMin}min`;
-          const sessionType = isCombinedSession ? ' (combined session)' : '';
-          const formula = `${durationMin}min = $${explicitPrice.toFixed(2)} (${subject} tier${sessionType})`;
-          return {
-            amount: explicitPrice,
-            rate: explicitPrice,
-            baseDuration: durationMin,
-            rateDisplay,
-            formula,
-          };
-        }
+  if (rateConfig) {
+    // Check for explicit duration price tier first (string keys from JSON).
+    const durationPricesRaw = rateConfig.duration_prices;
+    if (durationPricesRaw && typeof durationPricesRaw === 'object') {
+      const durationKey = String(durationMin);
+      const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
+      if (typeof explicitPrice === 'number' && explicitPrice > 0) {
+        const rateDisplay = `$${explicitPrice}/${durationMin}min`;
+        const tierKind = groupConfig ? 'group tier' : 'tier';
+        const formula = `${durationMin}min = $${explicitPrice.toFixed(2)} (${subject} ${tierKind})`;
+        return {
+          amount: explicitPrice,
+          rate: explicitPrice,
+          baseDuration: durationMin,
+          rateDisplay,
+          formula,
+        };
       }
-
-      rate = rateConfig.rate;
-      baseDuration = rateConfig.base_duration;
-      rateSource = `${subject} rate`;
-    } else {
-      rate = tutorSettings?.default_rate ?? defaultRate;
-      baseDuration = tutorSettings?.default_base_duration ?? defaultBaseDuration;
-      rateSource = 'default rate';
     }
+    rate = rateConfig.rate;
+    baseDuration = rateConfig.base_duration;
+    rateSource = groupConfig ? `${subject} group rate` : `${subject} rate`;
   } else {
     rate = tutorSettings?.default_rate ?? defaultRate;
     baseDuration = tutorSettings?.default_base_duration ?? defaultBaseDuration;
