@@ -209,7 +209,7 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
 
   const handleToggleGroupEnabled = (subject: string) => {
     setGroupRates(prev => {
-      const current = prev[subject] || { rate: '', duration: 30, enabled: false, useTiers: false, tierPrices: {} };
+      const current = prev[subject] || { rate: '', duration: SUBJECTS.find(s => s.key === subject)?.defaultDuration ?? 60, enabled: false, useTiers: false, tierPrices: {} };
       return { ...prev, [subject]: { ...current, enabled: !current.enabled } };
     });
     setHasChanges(true);
