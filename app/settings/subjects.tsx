@@ -243,7 +243,6 @@ export default function SubjectsSettingsScreen() {
   // Form state
   const [defaultRate, setDefaultRate] = useState('45');
   const [defaultDuration, setDefaultDuration] = useState(60);
-  const [combinedRate, setCombinedRate] = useState('40');
   const [subjectRates, setSubjectRates] = useState<SubjectRates>({});
   const [customSubjectsList, setCustomSubjectsList] = useState<CustomSubject[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
@@ -258,7 +257,6 @@ export default function SubjectsSettingsScreen() {
     if (settings) {
       setDefaultRate(settings.default_rate.toString());
       setDefaultDuration(settings.default_base_duration);
-      setCombinedRate(settings.combined_session_rate.toString());
       setSubjectRates(settings.subject_rates || {});
       setCustomSubjectsList(
         extractCustomSubjects(settings.subject_rates as Record<string, unknown> || {})
@@ -373,15 +371,9 @@ export default function SubjectsSettingsScreen() {
   // Handle save all settings
   const handleSave = async () => {
     const parsedDefault = parseFloat(defaultRate);
-    const parsedCombined = parseFloat(combinedRate);
 
     if (isNaN(parsedDefault) || parsedDefault <= 0) {
       Alert.alert('Error', 'Please enter a valid default rate');
-      return;
-    }
-
-    if (isNaN(parsedCombined) || parsedCombined <= 0) {
-      Alert.alert('Error', 'Please enter a valid combined session rate');
       return;
     }
 
@@ -391,7 +383,6 @@ export default function SubjectsSettingsScreen() {
       const result = await updateSettings.mutate({
         default_rate: parsedDefault,
         default_base_duration: defaultDuration,
-        combined_session_rate: parsedCombined,
         subject_rates: subjectRates,
       });
 
@@ -472,26 +463,6 @@ export default function SubjectsSettingsScreen() {
               </View>
             </View>
 
-            <View style={styles.rateDivider} />
-
-            <View style={styles.rateRow}>
-              <Text style={styles.rateLabel}>Combined Session Rate</Text>
-              <View style={styles.rateInputContainer}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.rateInput}
-                  value={combinedRate}
-                  onChangeText={(value) => {
-                    setCombinedRate(value);
-                    setHasChanges(true);
-                  }}
-                  keyboardType="decimal-pad"
-                  placeholder="40"
-                  placeholderTextColor={colors.neutral.textMuted}
-                />
-                <Text style={styles.rateUnit}>/student</Text>
-              </View>
-            </View>
           </View>
         </View>
 
