@@ -200,6 +200,7 @@ export type Database = {
           age: number;
           grade_level: string;
           subjects: string[];
+          subject_rates: Json;
           avatar_url: string | null;
           birthday: string | null;
           created_at: string;
@@ -212,6 +213,7 @@ export type Database = {
           age: number;
           grade_level: string;
           subjects?: string[];
+          subject_rates?: Json;
           avatar_url?: string | null;
           birthday?: string | null;
           created_at?: string;
@@ -224,6 +226,7 @@ export type Database = {
           age?: number;
           grade_level?: string;
           subjects?: string[];
+          subject_rates?: Json;
           avatar_url?: string | null;
           birthday?: string | null;
           created_at?: string;
@@ -1653,6 +1656,7 @@ export interface UpdateStudentInput {
   age?: number;
   grade_level?: string;
   subjects?: string[];
+  subject_rates?: SubjectRates;
   avatar_url?: string | null;
 }
 

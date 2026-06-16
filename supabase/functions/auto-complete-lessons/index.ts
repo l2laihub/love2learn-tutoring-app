@@ -285,9 +285,15 @@ async function generateInvoice(
       .map((p: { subject: string | null }) => p.subject!.toLowerCase()),
   ]);
 
-  const { data: students } = await supabase.from('students').select('id').eq('parent_id', parentId);
+  const { data: students } = await supabase
+    .from('students')
+    .select('id, subject_rates')
+    .eq('parent_id', parentId);
   if (!students || students.length === 0) return null;
   const studentIds = students.map((s: { id: string }) => s.id);
+  const studentRatesById = new Map<string, Record<string, any> | null>(
+    students.map((s: { id: string; subject_rates: Record<string, any> | null }) => [s.id, s.subject_rates ?? null]),
+  );
 
   const { data: lessons } = await supabase
     .from('scheduled_lessons')
@@ -320,6 +326,7 @@ async function generateInvoice(
       Number(l.duration_min) || 0,
       l.session_id !== null,
       l.override_amount == null ? null : Number(l.override_amount),
+      (studentRatesById.get(l.student_id) as any) ?? null,
     ),
   }));
   const roundedTotal = Math.round(lessonAmounts.reduce((s: number, l: { amount: number }) => s + l.amount, 0) * 100) / 100;

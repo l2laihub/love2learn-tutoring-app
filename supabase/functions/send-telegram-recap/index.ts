@@ -149,7 +149,7 @@ serve(async (req: Request) => {
     // 3. Classes in window (all statuses), joined to students.
     const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
-      .select('id, subject, scheduled_at, duration_min, status, session_id, override_amount, auto_completed_at, payment_lessons(paid), student:students!inner(name)')
+      .select('id, subject, scheduled_at, duration_min, status, session_id, override_amount, auto_completed_at, payment_lessons(paid), student:students!inner(name, subject_rates)')
       .eq('tutor_id', effectiveTutorId)
       .gte('scheduled_at', startUtc)
       .lt('scheduled_at', endUtc)
@@ -188,6 +188,7 @@ serve(async (req: Request) => {
             Number(l.duration_min) || 0,
             l.session_id !== null,
             l.override_amount == null ? null : Number(l.override_amount),
+            (l.student?.subject_rates as any) ?? null,
           ),
         0,
       );

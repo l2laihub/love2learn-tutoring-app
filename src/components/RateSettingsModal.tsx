@@ -22,6 +22,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { SubjectRates, SubjectRateConfig, TutoringSubject, DurationPrices } from '../types/database';
 import { useTutorSettings, useUpdateTutorSettings, formatRateDisplay } from '../hooks/useTutorSettings';
+import {
+  SubjectRateFormState, DURATION_TIERS, formStateFromConfig, buildSubjectRateConfig,
+} from '../lib/subjectRateForm';
+import { SubjectRateEditor } from './SubjectRateEditor';
 
 interface RateSettingsModalProps {
   visible: boolean;
@@ -40,17 +44,6 @@ const SUBJECTS: { key: TutoringSubject; label: string; emoji: string; defaultDur
 
 // Duration options for picker
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
-
-// Common duration tiers for explicit pricing
-const DURATION_TIERS = [30, 45, 60, 90] as const;
-
-interface SubjectRateFormState {
-  rate: string;
-  duration: number;
-  enabled: boolean;
-  useTiers: boolean;  // Whether to use explicit duration tier pricing
-  tierPrices: Record<number, string>;  // Explicit prices per duration (e.g., { 30: '35', 45: '50', 60: '65' })
-}
 
 export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModalProps) {
   const { data: settings, loading, refetch } = useTutorSettings();
@@ -71,36 +64,10 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
 
       const rates: Record<string, SubjectRateFormState> = {};
       SUBJECTS.forEach(subject => {
-        const rateConfig = settings.subject_rates?.[subject.key];
-        if (rateConfig && rateConfig.rate > 0) {
-          // Check if duration_prices are set
-          const hasTiers = rateConfig.duration_prices && Object.keys(rateConfig.duration_prices).length > 0;
-          const tierPrices: Record<number, string> = {};
-
-          if (hasTiers && rateConfig.duration_prices) {
-            // Load existing tier prices
-            DURATION_TIERS.forEach(dur => {
-              const price = rateConfig.duration_prices?.[dur as keyof DurationPrices];
-              tierPrices[dur] = price !== undefined && price !== null ? price.toString() : '';
-            });
-          }
-
-          rates[subject.key] = {
-            rate: rateConfig.rate.toString(),
-            duration: rateConfig.base_duration,
-            enabled: true,
-            useTiers: hasTiers || false,
-            tierPrices,
-          };
-        } else {
-          rates[subject.key] = {
-            rate: '',
-            duration: subject.defaultDuration,
-            enabled: false,
-            useTiers: false,
-            tierPrices: {},
-          };
-        }
+        rates[subject.key] = formStateFromConfig(
+          settings.subject_rates?.[subject.key],
+          subject.defaultDuration,
+        );
       });
       const gRates: Record<string, SubjectRateFormState> = {};
       SUBJECTS.forEach(subject => {
@@ -251,43 +218,8 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
     // Build subject rates object (only include enabled subjects with valid rates)
     const parsedSubjectRates: SubjectRates = {};
     for (const subject of SUBJECTS) {
-      const formState = subjectRates[subject.key];
-      if (formState?.enabled && formState.rate.trim() !== '') {
-        const parsed = parseFloat(formState.rate);
-        if (!isNaN(parsed) && parsed > 0) {
-          const rateConfig: SubjectRateConfig = {
-            rate: parsed,
-            base_duration: formState.duration,
-          };
-
-          // Add duration_prices if tier mode is enabled
-          if (formState.useTiers && formState.tierPrices) {
-            const durationPrices: Record<string, number> = {};
-            let hasTierPrices = false;
-
-            // Use string keys explicitly for JSON compatibility
-            DURATION_TIERS.forEach(dur => {
-              // Access with both number and string key for safety
-              const tierPricesObj = formState.tierPrices as Record<string | number, string>;
-              const priceStr = tierPricesObj[dur] || tierPricesObj[String(dur)];
-              if (priceStr && priceStr.trim() !== '') {
-                const priceVal = parseFloat(priceStr);
-                if (!isNaN(priceVal) && priceVal > 0) {
-                  // Store with string key for JSON/database compatibility
-                  durationPrices[String(dur)] = priceVal;
-                  hasTierPrices = true;
-                }
-              }
-            });
-
-            if (hasTierPrices) {
-              rateConfig.duration_prices = durationPrices as DurationPrices;
-            }
-          }
-
-          parsedSubjectRates[subject.key] = rateConfig;
-        }
-      }
+      const cfg = buildSubjectRateConfig(subjectRates[subject.key]);
+      if (cfg) parsedSubjectRates[subject.key] = cfg;
     }
 
     const parsedGroupRates: SubjectRates = {};
@@ -483,110 +415,16 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                   const formState = subjectRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false, useTiers: false, tierPrices: {} };
                   const groupState = groupRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false, useTiers: false, tierPrices: {} };
                   return (
-                    <View key={subject.key} style={styles.subjectRateCard}>
-                      <View style={styles.subjectHeader}>
-                        <Text style={styles.subjectEmoji}>{subject.emoji}</Text>
-                        <Text style={styles.subjectName}>{subject.label}</Text>
-                        {formState.enabled && (
-                          <View style={styles.customBadge}>
-                            <Text style={styles.customBadgeText}>{formState.useTiers ? 'Tiers' : 'Custom'}</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Base rate row */}
-                      <View style={styles.subjectRateRow}>
-                        <View style={styles.subjectInputGroup}>
-                          <View style={styles.subjectRateInputContainer}>
-                            <Text style={styles.currencySymbolSmall}>$</Text>
-                            <TextInput
-                              style={styles.subjectRateInput}
-                              value={formState.rate}
-                              onChangeText={(value) => handleSubjectRateChange(subject.key, value)}
-                              keyboardType="decimal-pad"
-                              placeholder=""
-                              placeholderTextColor={colors.neutral.textMuted}
-                            />
-                          </View>
-                          <Text style={styles.perTextSmall}>per</Text>
-                          <Pressable
-                            style={[
-                              styles.durationOptionSmall,
-                              formState.duration === 30 && styles.durationOptionSmallSelected,
-                            ]}
-                            onPress={() => handleSubjectDurationChange(subject.key, 30)}
-                          >
-                            <Text
-                              style={[
-                                styles.durationOptionTextSmall,
-                                formState.duration === 30 && styles.durationOptionTextSmallSelected,
-                              ]}
-                            >
-                              30m
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            style={[
-                              styles.durationOptionSmall,
-                              formState.duration === 60 && styles.durationOptionSmallSelected,
-                            ]}
-                            onPress={() => handleSubjectDurationChange(subject.key, 60)}
-                          >
-                            <Text
-                              style={[
-                                styles.durationOptionTextSmall,
-                                formState.duration === 60 && styles.durationOptionTextSmallSelected,
-                              ]}
-                            >
-                              60m
-                            </Text>
-                          </Pressable>
-                        </View>
-                      </View>
-
-                      {/* Duration Tiers toggle and inputs */}
-                      {formState.enabled && (
-                        <View style={styles.tiersSection}>
-                          <Pressable
-                            style={styles.tiersToggle}
-                            onPress={() => handleToggleTiers(subject.key)}
-                          >
-                            <Ionicons
-                              name={formState.useTiers ? 'checkbox' : 'square-outline'}
-                              size={20}
-                              color={formState.useTiers ? colors.piano.primary : colors.neutral.textMuted}
-                            />
-                            <Text style={styles.tiersToggleText}>Custom prices per duration</Text>
-                          </Pressable>
-
-                          {formState.useTiers && (
-                            <View style={styles.tiersInputsContainer}>
-                              <View style={styles.tiersGrid}>
-                                {DURATION_TIERS.map(dur => (
-                                  <View key={dur} style={styles.tierInputRow}>
-                                    <View style={styles.tierInputContainer}>
-                                      <Text style={styles.currencySymbolTiny}>$</Text>
-                                      <TextInput
-                                        style={styles.tierInput}
-                                        value={formState.tierPrices?.[dur] || ''}
-                                        onChangeText={(value) => handleTierPriceChange(subject.key, dur, value)}
-                                        keyboardType="decimal-pad"
-                                        placeholder="—"
-                                        placeholderTextColor={colors.neutral.textMuted}
-                                      />
-                                    </View>
-                                    <Text style={styles.tierLabel}>/{dur}m</Text>
-                                  </View>
-                                ))}
-                              </View>
-                              <Text style={styles.tiersHint}>
-                                Leave empty to use base rate calculation
-                              </Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-
+                    <View key={subject.key}>
+                      <SubjectRateEditor
+                        label={subject.label}
+                        emoji={subject.emoji}
+                        formState={formState}
+                        onRateChange={(value) => handleSubjectRateChange(subject.key, value)}
+                        onDurationChange={(duration) => handleSubjectDurationChange(subject.key, duration)}
+                        onToggleTiers={() => handleToggleTiers(subject.key)}
+                        onTierPriceChange={(dur, value) => handleTierPriceChange(subject.key, dur, value)}
+                      />
                       {/* Group / combined-session price */}
                       <View style={styles.tiersSection}>
                         <Pressable

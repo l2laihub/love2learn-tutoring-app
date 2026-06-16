@@ -12,6 +12,7 @@ import {
   UpdateStudentInput,
   ListQueryState,
   QueryState,
+  Json,
 } from '../types/database';
 import { PAYWALL_ENABLED, getStudentLimit } from '../config/subscription';
 import type { SubscriptionPlan } from '../lib/stripe';
@@ -234,10 +235,18 @@ export function useUpdateStudent() {
       setLoading(true);
       setError(null);
 
+      // subject_rates is typed as SubjectRates on the input but stored as JSONB;
+      // pull it out of the spread and cast through unknown like
+      // useUpdateTutorSettings does, so the rest stays type-checked.
+      const { subject_rates, ...rest } = input;
+
       const { data: student, error: updateError } = await supabase
         .from('students')
         .update({
-          ...input,
+          ...rest,
+          ...(subject_rates !== undefined
+            ? { subject_rates: subject_rates as unknown as Json }
+            : {}),
           updated_at: new Date().toISOString(),
         })
         .eq('id', id)

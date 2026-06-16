@@ -13,7 +13,8 @@ import { useParents } from '../../src/hooks/useParents';
 import { useLessons } from '../../src/hooks/useLessons';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
-import { UpdateStudentInput, ScheduledLessonWithStudent } from '../../src/types/database';
+import { UpdateStudentInput, ScheduledLessonWithStudent, SubjectRates } from '../../src/types/database';
+import { StudentRateSettingsModal } from '../../src/components/StudentRateSettingsModal';
 
 // Lesson status filter for the schedule section
 type LessonStatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
@@ -75,6 +76,7 @@ export default function StudentDetailScreen() {
   const { mutate: updateStudent, loading: updating } = useUpdateStudent();
   const { mutate: deleteStudent, loading: deleting } = useDeleteStudent();
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [rateModalVisible, setRateModalVisible] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [statusFilter, setStatusFilter] = useState<LessonStatusFilter>('all');
 
@@ -134,6 +136,16 @@ export default function StudentDetailScreen() {
   const handleSaveStudent = async (data: UpdateStudentInput): Promise<boolean> => {
     if (!id) return false;
     const result = await updateStudent(id, data);
+    if (result) {
+      await refetch();
+      return true;
+    }
+    return false;
+  };
+
+  const handleSaveRates = async (subjectRates: SubjectRates): Promise<boolean> => {
+    if (!id) return false;
+    const result = await updateStudent(id, { subject_rates: subjectRates });
     if (result) {
       await refetch();
       return true;
@@ -506,6 +518,59 @@ export default function StudentDetailScreen() {
           )}
         </View>
 
+        {/* Custom Rates Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Custom Rates</Text>
+            <TouchableOpacity onPress={() => setRateModalVisible(true)}>
+              <Text style={styles.manageRatesLink}>Manage</Text>
+            </TouchableOpacity>
+          </View>
+          {(() => {
+            const customRates = (student.subject_rates as SubjectRates | undefined) || {};
+            const entries = Object.entries(customRates).filter(
+              ([, cfg]) => cfg && cfg.rate > 0 && cfg.base_duration > 0
+            );
+            if (entries.length === 0) {
+              return (
+                <TouchableOpacity style={styles.emptyState} onPress={() => setRateModalVisible(true)}>
+                  <Ionicons name="pricetags-outline" size={32} color="#CCC" />
+                  <Text style={styles.emptyText}>No custom rates set</Text>
+                  <Text style={styles.emptySubtext}>Tap to set a special rate for this student</Text>
+                </TouchableOpacity>
+              );
+            }
+            return (
+              <View style={styles.customRatesList}>
+                {entries.map(([subject, cfg]) => {
+                  const subjectConfig = SUBJECT_CONFIG[subject] || {
+                    icon: 'school',
+                    color: colors.neutral.textSecondary,
+                    label: subject.charAt(0).toUpperCase() + subject.slice(1),
+                  };
+                  const label =
+                    cfg!.base_duration === 60
+                      ? `$${cfg!.rate}/hr`
+                      : `$${cfg!.rate}/${cfg!.base_duration}min`;
+                  return (
+                    <View key={subject} style={styles.customRateRow}>
+                      <View style={styles.lessonSubjectBadge}>
+                        <Ionicons name={subjectConfig.icon as any} size={14} color={subjectConfig.color} />
+                        <Text style={[styles.lessonSubjectText, { color: subjectConfig.color }]}>
+                          {subjectConfig.label}
+                        </Text>
+                      </View>
+                      <Text style={styles.customRateValue}>
+                        {label}{cfg!.duration_prices ? ' + tiers' : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
+        </View>
+
         {/* Recent Progress Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent Progress</Text>
@@ -580,6 +645,14 @@ export default function StudentDetailScreen() {
         student={student}
         parents={parents}
         loading={updating}
+      />
+
+      <StudentRateSettingsModal
+        visible={rateModalVisible}
+        onClose={() => setRateModalVisible(false)}
+        student={student}
+        onSave={handleSaveRates}
+        saving={updating}
       />
     </SafeAreaView>
   );
@@ -806,6 +879,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
+  },
+  manageRatesLink: {
+    fontSize: typography.sizes.sm,
+    color: colors.piano.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  customRatesList: {
+    backgroundColor: colors.neutral.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  customRateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  customRateValue: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.neutral.text,
   },
   lessonCount: {
     fontSize: typography.sizes.sm,

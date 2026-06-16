@@ -18,6 +18,7 @@ import {
   SubjectRates,
   SubjectRateConfig,
   TutorSettings,
+  Json,
   CreatePrepaidPaymentInput,
   PaymentType,
   PrepaidStatus,
@@ -730,7 +731,7 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
       // billing rates live in tutor_settings, not on the student record).
       const { data: students, error: studentsError } = await supabase
         .from('students')
-        .select('id, name')
+        .select('id, name, subject_rates')
         .eq('parent_id', parentId);
 
       if (studentsError) {
@@ -831,7 +832,12 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
           let calculatedAmount: number;
           let rateDisplay: string;
 
-          const subjectRateConfig = tutorSubjectRates[lesson.subject as keyof SubjectRates];
+          const studentSubjectRates = (student?.subject_rates as SubjectRates | undefined) || {};
+          const studentRateConfig = studentSubjectRates[lesson.subject as keyof SubjectRates];
+          const subjectRateConfig =
+            studentRateConfig && studentRateConfig.rate > 0 && studentRateConfig.base_duration > 0
+              ? studentRateConfig
+              : tutorSubjectRates[lesson.subject as keyof SubjectRates];
           if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
             // Check for explicit duration price tier first
             // JSON from database has string keys, so we must use string key for lookup
@@ -1331,7 +1337,8 @@ function calculateLessonAmountWithDetails(
   subject: TutoringSubject,
   durationMin: number,
   isCombinedSession: boolean,
-  overrideAmount?: number | null
+  overrideAmount?: number | null,
+  studentRates?: SubjectRates | null
 ): RateCalculationResult {
   const defaultRate = 45;
   const defaultBaseDuration = 60;
@@ -1347,9 +1354,10 @@ function calculateLessonAmountWithDetails(
     };
   }
 
-  // Resolve the applicable rate config. Combined sessions prefer the per-subject
-  // group rate (group_subject_rates); otherwise the individual subject rate applies,
-  // then the tutor default.
+  // Resolve the applicable rate config. A valid per-student rate wins over all
+  // tutor-wide rates (solo or combined). Otherwise combined sessions prefer the
+  // per-subject group rate (group_subject_rates); then the individual subject
+  // rate; then the tutor default.
   let rate: number;
   let baseDuration: number;
   let rateSource: string;
@@ -1363,8 +1371,10 @@ function calculateLessonAmountWithDetails(
     return cfg && cfg.rate > 0 && cfg.base_duration > 0 ? cfg : undefined;
   };
 
-  const groupConfig = isCombinedSession ? pickConfig(groupRates) : undefined;
-  const rateConfig = groupConfig ?? pickConfig(subjectRates);
+  const studentConfig = pickConfig(studentRates);
+  const groupConfig = !studentConfig && isCombinedSession ? pickConfig(groupRates) : undefined;
+  const rateConfig = studentConfig ?? groupConfig ?? pickConfig(subjectRates);
+  const sourceLabel = studentConfig ? 'student rate' : groupConfig ? 'group rate' : 'rate';
 
   if (rateConfig) {
     // Check for explicit duration price tier first (string keys from JSON).
@@ -1374,7 +1384,7 @@ function calculateLessonAmountWithDetails(
       const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
       if (typeof explicitPrice === 'number' && explicitPrice > 0) {
         const rateDisplay = `$${explicitPrice}/${durationMin}min`;
-        const tierKind = groupConfig ? 'group tier' : 'tier';
+        const tierKind = studentConfig ? 'student tier' : groupConfig ? 'group tier' : 'tier';
         const formula = `${durationMin}min = $${explicitPrice.toFixed(2)} (${subject} ${tierKind})`;
         return {
           amount: explicitPrice,
@@ -1387,7 +1397,7 @@ function calculateLessonAmountWithDetails(
     }
     rate = rateConfig.rate;
     baseDuration = rateConfig.base_duration;
-    rateSource = groupConfig ? `${subject} group rate` : `${subject} rate`;
+    rateSource = `${subject} ${sourceLabel}`;
   } else {
     rate = tutorSettings?.default_rate ?? defaultRate;
     baseDuration = tutorSettings?.default_base_duration ?? defaultBaseDuration;
@@ -1416,9 +1426,10 @@ function calculateLessonAmountFromSettings(
   subject: TutoringSubject,
   durationMin: number,
   isCombinedSession: boolean,
-  overrideAmount?: number | null
+  overrideAmount?: number | null,
+  studentRates?: SubjectRates | null
 ): number {
-  return calculateLessonAmountWithDetails(tutorSettings, subject, durationMin, isCombinedSession, overrideAmount).amount;
+  return calculateLessonAmountWithDetails(tutorSettings, subject, durationMin, isCombinedSession, overrideAmount, studentRates).amount;
 }
 
 /**
@@ -1458,7 +1469,7 @@ export function useMonthlyLessonSummary(month?: Date) {
       // 2. Fetch all parents with students (include all billing modes for hybrid support)
       const { data: parents, error: parentsError } = await supabase
         .from('parents')
-        .select('id, name, billing_mode, prepaid_subjects, students!parent_id(id, name)');
+        .select('id, name, billing_mode, prepaid_subjects, students!parent_id(id, name, subject_rates)');
 
       if (parentsError) throw new Error(parentsError.message);
       if (!parents || parents.length === 0) {
@@ -1485,9 +1496,14 @@ export function useMonthlyLessonSummary(month?: Date) {
       // Create parent-to-students map
       const parentMap = new Map<string, { name: string; studentIds: string[]; prepaidSubjects: string[] }>();
       const studentToParentMap = new Map<string, string>();
+      // Per-student custom rates, keyed by student id (wins over tutor-wide rates).
+      const studentRatesById = new Map<string, SubjectRates>();
 
-      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; prepaid_subjects: string[] | null; students: { id: string; name: string }[] }) => {
+      parents.forEach((parent: { id: string; name: string; billing_mode: string | null; prepaid_subjects: string[] | null; students: { id: string; name: string; subject_rates: Json }[] }) => {
         const studentIds = parent.students?.map((s: { id: string }) => s.id) || [];
+        (parent.students || []).forEach((s: { id: string; subject_rates: Json }) => {
+          studentRatesById.set(s.id, (s.subject_rates as SubjectRates | null) || {});
+        });
         const prepaidSubjects: string[] = (parent.prepaid_subjects || []).map((s: string) => s.toLowerCase());
         // For legacy fully-prepaid families with no per-subject config, treat all subjects as prepaid
         if (parent.billing_mode === 'prepaid' && prepaidSubjects.length === 0) {
@@ -1626,7 +1642,8 @@ export function useMonthlyLessonSummary(month?: Date) {
           lesson.subject,
           lesson.duration_min,
           isCombinedSession,
-          lesson.override_amount
+          lesson.override_amount,
+          studentRatesById.get(lesson.student_id) || null
         );
         const amount = rateCalc.amount;
 
@@ -1858,10 +1875,10 @@ export function useQuickInvoice() {
         .eq('tutor_id', user.id)
         .maybeSingle();
 
-      // Get student IDs for this parent
+      // Get student IDs for this parent (plus per-student custom rates)
       const { data: students, error: studentsError } = await supabase
         .from('students')
-        .select('id')
+        .select('id, subject_rates')
         .eq('parent_id', parentId);
 
       if (studentsError) throw new Error(studentsError.message);
@@ -1870,6 +1887,12 @@ export function useQuickInvoice() {
       }
 
       const studentIds = students.map((s: { id: string }) => s.id);
+      const studentRatesById = new Map<string, SubjectRates>(
+        students.map((s: { id: string; subject_rates: Json }) => [
+          s.id,
+          (s.subject_rates as SubjectRates | null) || {},
+        ]),
+      );
 
       // Get completed lessons that aren't invoiced (include override_amount)
       const { data: lessons, error: lessonsError } = await supabase
@@ -1904,6 +1927,7 @@ export function useQuickInvoice() {
 
       const lessonAmounts = uninvoicedLessons.map((lesson: {
         id: string;
+        student_id: string;
         subject: TutoringSubject;
         duration_min: number;
         session_id: string | null;
@@ -1915,7 +1939,8 @@ export function useQuickInvoice() {
           lesson.subject,
           lesson.duration_min,
           lesson.session_id !== null,
-          lesson.override_amount
+          lesson.override_amount,
+          studentRatesById.get(lesson.student_id) || null
         ),
       }));
 

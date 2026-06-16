@@ -219,17 +219,24 @@ export function getSubjectRateConfig(
  * @param subject Lesson subject
  * @param durationMin Lesson duration in minutes
  * @param isCombinedSession Whether this is a combined session (uses the subject's group rate if set, else the individual rate)
+ * @param studentRates Optional per-student subject rates; when present and valid, takes precedence over all tutor-wide rates
  */
 export function calculateLessonRate(
   settings: TutorSettings | null,
   subject: string,
   durationMin: number,
-  isCombinedSession: boolean
+  isCombinedSession: boolean,
+  studentRates?: SubjectRates | null
 ): number {
-  // Combined sessions prefer the per-subject group rate when set; otherwise fall
+  // A valid per-student rate wins over all tutor-wide rates (solo or combined).
+  // Otherwise combined sessions prefer the per-subject group rate, then fall
   // back to the individual subject rate (then the tutor default).
   let rateConfig: SubjectRateConfig | undefined;
-  if (isCombinedSession) {
+  const studentCfg = studentRates?.[subject as keyof SubjectRates];
+  if (studentCfg && studentCfg.rate > 0 && studentCfg.base_duration > 0) {
+    rateConfig = studentCfg;
+  }
+  if (!rateConfig && isCombinedSession) {
     const groupRates = settings?.group_subject_rates as
       | Record<string, SubjectRateConfig>
       | null
