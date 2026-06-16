@@ -1355,10 +1355,7 @@ function calculateLessonAmountWithDetails(
   let rateSource: string;
 
   const subjectRates = tutorSettings?.subject_rates as SubjectRates | null | undefined;
-  const groupRates = (tutorSettings as TutorSettings | null)?.group_subject_rates as
-    | SubjectRates
-    | null
-    | undefined;
+  const groupRates = tutorSettings?.group_subject_rates as SubjectRates | null | undefined;
 
   const pickConfig = (rates: SubjectRates | null | undefined): SubjectRateConfig | undefined => {
     if (!rates || !(subject in rates)) return undefined;
