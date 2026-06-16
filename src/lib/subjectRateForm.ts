@@ -4,7 +4,7 @@
  * StudentRateSettingsModal so the two stay consistent. No React/RN imports —
  * unit-testable with `deno test`.
  */
-import type { SubjectRateConfig, DurationPrices } from '../types/database.ts';
+import type { SubjectRateConfig, DurationPrices } from '../types/database';
 
 // Common duration tiers offered for explicit per-duration pricing.
 export const DURATION_TIERS = [30, 45, 60, 90] as const;
