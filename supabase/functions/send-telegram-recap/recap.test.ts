@@ -13,7 +13,6 @@ const settings = {
     piano: { rate: 30, base_duration: 30, duration_prices: { '45': 50 } },
     math: { rate: 60, base_duration: 60 },
   },
-  combined_session_rate: 0,
 };
 
 Deno.test('override wins over rates', () => {
@@ -157,4 +156,12 @@ Deno.test('buildRecapMessage escapes HTML in user text', () => {
   });
   assertEquals(msg.includes('A &amp; B &lt;x&gt;'), true);
   assertEquals(msg.includes('<x>'), false);
+});
+
+Deno.test('recap: combined session uses group rate when set', () => {
+  const settings = {
+    subject_rates: { piano: { rate: 60, base_duration: 60 } },
+    group_subject_rates: { piano: { rate: 30, base_duration: 60 } },
+  };
+  assertEquals(calculateLessonAmount(settings, 'piano', 60, true, null), 30);
 });

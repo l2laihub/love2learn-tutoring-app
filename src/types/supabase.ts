@@ -752,7 +752,7 @@ export type Database = {
       }
       tutor_settings: {
         Row: {
-          combined_session_rate: number
+          group_subject_rates: Json
           created_at: string | null
           default_base_duration: number
           default_rate: number
@@ -762,7 +762,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          combined_session_rate?: number
+          group_subject_rates?: Json
           created_at?: string | null
           default_base_duration?: number
           default_rate?: number
@@ -772,7 +772,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          combined_session_rate?: number
+          group_subject_rates?: Json
           created_at?: string | null
           default_base_duration?: number
           default_rate?: number

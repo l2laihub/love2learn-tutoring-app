@@ -129,7 +129,7 @@ serve(async (req: Request) => {
     // tutor_settings.tutor_id references auth.users(id), not parents(id) — key by user_id.
     const { data: settings } = await supabase
       .from('tutor_settings')
-      .select('default_rate, default_base_duration, subject_rates, combined_session_rate')
+      .select('default_rate, default_base_duration, subject_rates, group_subject_rates')
       .eq('tutor_id', tutor.user_id)
       .maybeSingle();
 
@@ -149,7 +149,7 @@ serve(async (req: Request) => {
     // 3. Classes in window (all statuses), joined to students.
     const { data: lessonRows, error: lessonsErr } = await supabase
       .from('scheduled_lessons')
-      .select('id, subject, scheduled_at, duration_min, status, override_amount, auto_completed_at, payment_lessons(paid), student:students!inner(name)')
+      .select('id, subject, scheduled_at, duration_min, status, session_id, override_amount, auto_completed_at, payment_lessons(paid), student:students!inner(name)')
       .eq('tutor_id', effectiveTutorId)
       .gte('scheduled_at', startUtc)
       .lt('scheduled_at', endUtc)
@@ -186,7 +186,7 @@ serve(async (req: Request) => {
             settings ?? null,
             l.subject,
             Number(l.duration_min) || 0,
-            false,
+            l.session_id !== null,
             l.override_amount == null ? null : Number(l.override_amount),
           ),
         0,

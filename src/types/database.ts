@@ -756,7 +756,7 @@ export type Database = {
           default_rate: number;
           default_base_duration: number;
           subject_rates: Json;
-          combined_session_rate: number;
+          group_subject_rates: Json;
           reminder_settings: Json;
           created_at: string;
           updated_at: string;
@@ -767,7 +767,7 @@ export type Database = {
           default_rate?: number;
           default_base_duration?: number;
           subject_rates?: Json;
-          combined_session_rate?: number;
+          group_subject_rates?: Json;
           reminder_settings?: Json;
           created_at?: string;
           updated_at?: string;
@@ -778,7 +778,7 @@ export type Database = {
           default_rate?: number;
           default_base_duration?: number;
           subject_rates?: Json;
-          combined_session_rate?: number;
+          group_subject_rates?: Json;
           reminder_settings?: Json;
           created_at?: string;
           updated_at?: string;
@@ -1466,7 +1466,7 @@ export interface TutorSettings {
   default_rate: number;           // Default rate amount
   default_base_duration: number;  // Default base duration in minutes (e.g., 60)
   subject_rates: SubjectRates;    // Per-subject rate overrides
-  combined_session_rate: number;  // Flat rate per student for combined sessions
+  group_subject_rates: SubjectRates; // Per-subject group/combined-session rate overrides
   reminder_settings: ReminderSettings; // Payment reminder automation settings
   created_at: string;
   updated_at: string;
@@ -1477,7 +1477,7 @@ export interface UpdateTutorSettingsInput {
   default_rate?: number;
   default_base_duration?: number;
   subject_rates?: SubjectRates;
-  combined_session_rate?: number;
+  group_subject_rates?: SubjectRates;
 }
 
 // Worksheet assignment

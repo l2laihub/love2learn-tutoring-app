@@ -76,7 +76,6 @@ export default function SubjectsScreen() {
       baseDuration: 30,
     }))
   );
-  const [combinedRate, setCombinedRate] = useState('25');
   const [showAddSubject, setShowAddSubject] = useState(false);
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectColor, setNewSubjectColor] = useState(COLOR_OPTIONS[0]);
@@ -199,7 +198,6 @@ export default function SubjectsScreen() {
           .from('tutor_settings')
           .update({
             subject_rates: subjectRates as unknown as Json,
-            combined_session_rate: parseFloat(combinedRate) || 25,
             default_rate: enabledSubjects[0]?.rate || 35,
             default_base_duration: 30,
             updated_at: new Date().toISOString(),
@@ -218,7 +216,6 @@ export default function SubjectsScreen() {
           .insert({
             tutor_id: user.id,
             subject_rates: subjectRates as unknown as Json,
-            combined_session_rate: parseFloat(combinedRate) || 25,
             default_rate: enabledSubjects[0]?.rate || 35,
             default_base_duration: 30,
             reminder_settings: {
@@ -364,29 +361,6 @@ export default function SubjectsScreen() {
                   </View>
                 </View>
               ))}
-            </View>
-          </View>
-        )}
-
-        {/* Combined Session Rate */}
-        {enabledSubjects.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Combined Session Rate</Text>
-            <Text style={styles.sectionDescription}>
-              Rate per student when teaching siblings together
-            </Text>
-
-            <View style={styles.combinedRateContainer}>
-              <Text style={styles.rateCurrency}>$</Text>
-              <TextInput
-                style={styles.combinedRateInput}
-                value={combinedRate}
-                onChangeText={setCombinedRate}
-                keyboardType="numeric"
-                placeholder="25"
-                placeholderTextColor={colors.neutral.textMuted}
-              />
-              <Text style={styles.rateUnit}>/student</Text>
             </View>
           </View>
         )}
@@ -667,26 +641,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.neutral.textMuted,
     marginLeft: spacing.xs,
-  },
-  combinedRateContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.neutral.background,
-    borderRadius: borderRadius.lg,
-    padding: spacing.base,
-    alignSelf: 'flex-start',
-  },
-  combinedRateInput: {
-    width: 80,
-    height: 44,
-    fontSize: typography.sizes.lg,
-    color: colors.neutral.text,
-    textAlign: 'center',
-    backgroundColor: colors.neutral.white,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral.border,
-    marginHorizontal: spacing.sm,
   },
   errorContainer: {
     flexDirection: 'row',

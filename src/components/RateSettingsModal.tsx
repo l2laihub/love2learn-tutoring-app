@@ -59,8 +59,8 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
   // Form state
   const [defaultRate, setDefaultRate] = useState('45');
   const [defaultDuration, setDefaultDuration] = useState(60);
-  const [combinedRate, setCombinedRate] = useState('40');
   const [subjectRates, setSubjectRates] = useState<Record<string, SubjectRateFormState>>({});
+  const [groupRates, setGroupRates] = useState<Record<string, SubjectRateFormState>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
   // Initialize form when settings load
@@ -68,7 +68,6 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
     if (settings) {
       setDefaultRate(settings.default_rate.toString());
       setDefaultDuration(settings.default_base_duration);
-      setCombinedRate(settings.combined_session_rate.toString());
 
       const rates: Record<string, SubjectRateFormState> = {};
       SUBJECTS.forEach(subject => {
@@ -103,7 +102,37 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
           };
         }
       });
+      const gRates: Record<string, SubjectRateFormState> = {};
+      SUBJECTS.forEach(subject => {
+        const rateConfig = settings.group_subject_rates?.[subject.key];
+        if (rateConfig && rateConfig.rate > 0) {
+          const hasTiers = rateConfig.duration_prices && Object.keys(rateConfig.duration_prices).length > 0;
+          const tierPrices: Record<number, string> = {};
+          if (hasTiers && rateConfig.duration_prices) {
+            DURATION_TIERS.forEach(dur => {
+              const price = rateConfig.duration_prices?.[dur as keyof DurationPrices];
+              tierPrices[dur] = price !== undefined && price !== null ? price.toString() : '';
+            });
+          }
+          gRates[subject.key] = {
+            rate: rateConfig.rate.toString(),
+            duration: rateConfig.base_duration,
+            enabled: true,
+            useTiers: hasTiers || false,
+            tierPrices,
+          };
+        } else {
+          gRates[subject.key] = {
+            rate: '',
+            duration: subject.defaultDuration,
+            enabled: false,
+            useTiers: false,
+            tierPrices: {},
+          };
+        }
+      });
       setSubjectRates(rates);
+      setGroupRates(gRates);
       setHasChanges(false);
     }
   }, [settings]);
@@ -116,11 +145,6 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
 
   const handleDefaultDurationChange = (duration: number) => {
     setDefaultDuration(duration);
-    setHasChanges(true);
-  };
-
-  const handleCombinedRateChange = (value: string) => {
-    setCombinedRate(value);
     setHasChanges(true);
   };
 
@@ -167,18 +191,60 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
     setHasChanges(true);
   };
 
+  const handleGroupRateChange = (subject: string, value: string) => {
+    setGroupRates(prev => ({
+      ...prev,
+      [subject]: { ...prev[subject], rate: value, enabled: value.trim() !== '' },
+    }));
+    setHasChanges(true);
+  };
+
+  const handleGroupDurationChange = (subject: string, duration: number) => {
+    setGroupRates(prev => ({
+      ...prev,
+      [subject]: { ...prev[subject], duration },
+    }));
+    setHasChanges(true);
+  };
+
+  const handleToggleGroupEnabled = (subject: string) => {
+    setGroupRates(prev => {
+      const current = prev[subject] || { rate: '', duration: SUBJECTS.find(s => s.key === subject)?.defaultDuration ?? 60, enabled: false, useTiers: false, tierPrices: {} };
+      return { ...prev, [subject]: { ...current, enabled: !current.enabled } };
+    });
+    setHasChanges(true);
+  };
+
+  const handleToggleGroupTiers = (subject: string) => {
+    setGroupRates(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        useTiers: !prev[subject]?.useTiers,
+        tierPrices: prev[subject]?.tierPrices || {},
+      },
+    }));
+    setHasChanges(true);
+  };
+
+  const handleGroupTierPriceChange = (subject: string, duration: number, value: string) => {
+    setGroupRates(prev => ({
+      ...prev,
+      [subject]: {
+        ...prev[subject],
+        tierPrices: { ...prev[subject]?.tierPrices, [duration]: value },
+        enabled: true,
+      },
+    }));
+    setHasChanges(true);
+  };
+
   const handleSave = async () => {
     // Validate inputs
     const parsedDefault = parseFloat(defaultRate);
-    const parsedCombined = parseFloat(combinedRate);
 
     if (isNaN(parsedDefault) || parsedDefault <= 0) {
       Alert.alert('Invalid Rate', 'Please enter a valid default rate');
-      return;
-    }
-
-    if (isNaN(parsedCombined) || parsedCombined <= 0) {
-      Alert.alert('Invalid Rate', 'Please enter a valid combined session rate');
       return;
     }
 
@@ -224,13 +290,46 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
       }
     }
 
+    const parsedGroupRates: SubjectRates = {};
+    for (const subject of SUBJECTS) {
+      const formState = groupRates[subject.key];
+      if (formState?.enabled && formState.rate.trim() !== '') {
+        const parsed = parseFloat(formState.rate);
+        if (!isNaN(parsed) && parsed > 0) {
+          const rateConfig: SubjectRateConfig = {
+            rate: parsed,
+            base_duration: formState.duration,
+          };
+          if (formState.useTiers && formState.tierPrices) {
+            const durationPrices: Record<string, number> = {};
+            let hasTierPrices = false;
+            DURATION_TIERS.forEach(dur => {
+              const tierPricesObj = formState.tierPrices as Record<string | number, string>;
+              const priceStr = tierPricesObj[dur] || tierPricesObj[String(dur)];
+              if (priceStr && priceStr.trim() !== '') {
+                const priceVal = parseFloat(priceStr);
+                if (!isNaN(priceVal) && priceVal > 0) {
+                  durationPrices[String(dur)] = priceVal;
+                  hasTierPrices = true;
+                }
+              }
+            });
+            if (hasTierPrices) {
+              rateConfig.duration_prices = durationPrices as DurationPrices;
+            }
+          }
+          parsedGroupRates[subject.key] = rateConfig;
+        }
+      }
+    }
+
     // DEBUG: Log what we're about to save
     console.log('[RateSettingsModal] Saving subject_rates:', JSON.stringify(parsedSubjectRates, null, 2));
 
     const result = await updateSettings.mutate({
       default_rate: parsedDefault,
       default_base_duration: defaultDuration,
-      combined_session_rate: parsedCombined,
+      group_subject_rates: parsedGroupRates,
       subject_rates: parsedSubjectRates,
     });
 
@@ -372,26 +471,6 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
               </View>
             </View>
 
-            {/* Combined Session Rate */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Combined Session Rate</Text>
-              <Text style={styles.sectionDescription}>
-                Flat rate per student for group/combined sessions (regardless of duration).
-              </Text>
-              <View style={styles.rateInputContainer}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.rateInput}
-                  value={combinedRate}
-                  onChangeText={handleCombinedRateChange}
-                  keyboardType="decimal-pad"
-                  placeholder="40"
-                  placeholderTextColor={colors.neutral.textMuted}
-                />
-                <Text style={styles.rateUnit}>/session</Text>
-              </View>
-            </View>
-
             {/* Subject-Specific Rates */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Subject Rates</Text>
@@ -402,6 +481,7 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
               <View style={styles.subjectRatesContainer}>
                 {SUBJECTS.map(subject => {
                   const formState = subjectRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false, useTiers: false, tierPrices: {} };
+                  const groupState = groupRates[subject.key] || { rate: '', duration: subject.defaultDuration, enabled: false, useTiers: false, tierPrices: {} };
                   return (
                     <View key={subject.key} style={styles.subjectRateCard}>
                       <View style={styles.subjectHeader}>
@@ -506,6 +586,107 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                           )}
                         </View>
                       )}
+
+                      {/* Group / combined-session price */}
+                      <View style={styles.tiersSection}>
+                        <Pressable
+                          style={styles.tiersToggle}
+                          onPress={() => handleToggleGroupEnabled(subject.key)}
+                        >
+                          <Ionicons
+                            name={groupState.enabled ? 'checkbox' : 'square-outline'}
+                            size={20}
+                            color={groupState.enabled ? colors.piano.primary : colors.neutral.textMuted}
+                          />
+                          <Text style={styles.tiersToggleText}>Set a different group price</Text>
+                        </Pressable>
+
+                        {groupState.enabled && (
+                          <View style={styles.tiersInputsContainer}>
+                            <View style={styles.subjectRateRow}>
+                              <View style={styles.subjectInputGroup}>
+                                <View style={styles.subjectRateInputContainer}>
+                                  <Text style={styles.currencySymbolSmall}>$</Text>
+                                  <TextInput
+                                    style={styles.subjectRateInput}
+                                    value={groupState.rate}
+                                    onChangeText={(value) => handleGroupRateChange(subject.key, value)}
+                                    keyboardType="decimal-pad"
+                                    placeholder=""
+                                    placeholderTextColor={colors.neutral.textMuted}
+                                  />
+                                </View>
+                                <Text style={styles.perTextSmall}>per</Text>
+                                <Pressable
+                                  style={[
+                                    styles.durationOptionSmall,
+                                    groupState.duration === 30 && styles.durationOptionSmallSelected,
+                                  ]}
+                                  onPress={() => handleGroupDurationChange(subject.key, 30)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.durationOptionTextSmall,
+                                      groupState.duration === 30 && styles.durationOptionTextSmallSelected,
+                                    ]}
+                                  >
+                                    30m
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={[
+                                    styles.durationOptionSmall,
+                                    groupState.duration === 60 && styles.durationOptionSmallSelected,
+                                  ]}
+                                  onPress={() => handleGroupDurationChange(subject.key, 60)}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.durationOptionTextSmall,
+                                      groupState.duration === 60 && styles.durationOptionTextSmallSelected,
+                                    ]}
+                                  >
+                                    60m
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            </View>
+
+                            <Pressable
+                              style={styles.tiersToggle}
+                              onPress={() => handleToggleGroupTiers(subject.key)}
+                            >
+                              <Ionicons
+                                name={groupState.useTiers ? 'checkbox' : 'square-outline'}
+                                size={20}
+                                color={groupState.useTiers ? colors.piano.primary : colors.neutral.textMuted}
+                              />
+                              <Text style={styles.tiersToggleText}>Custom group prices per duration</Text>
+                            </Pressable>
+
+                            {groupState.useTiers && (
+                              <View style={styles.tiersGrid}>
+                                {DURATION_TIERS.map(dur => (
+                                  <View key={dur} style={styles.tierInputRow}>
+                                    <View style={styles.tierInputContainer}>
+                                      <Text style={styles.currencySymbolTiny}>$</Text>
+                                      <TextInput
+                                        style={styles.tierInput}
+                                        value={groupState.tierPrices?.[dur] || ''}
+                                        onChangeText={(value) => handleGroupTierPriceChange(subject.key, dur, value)}
+                                        keyboardType="decimal-pad"
+                                        placeholder="—"
+                                        placeholderTextColor={colors.neutral.textMuted}
+                                      />
+                                    </View>
+                                    <Text style={styles.tierLabel}>/{dur}m</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
                     </View>
                   );
                 })}
@@ -557,12 +738,20 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
                           ${math60.amount.toFixed(2)}
                         </Text>
                       </View>
-                      <View style={styles.exampleRow}>
-                        <Text style={styles.exampleLabel}>Combined session (2 students):</Text>
-                        <Text style={styles.exampleValue}>
-                          ${(parseFloat(combinedRate || '40') * 2).toFixed(2)}
-                        </Text>
-                      </View>
+                      {groupRates['piano']?.enabled && (
+                        <View style={styles.exampleRow}>
+                          <Text style={styles.exampleLabel}>30-min Piano (group):</Text>
+                          <Text style={styles.exampleValue}>
+                            ${(() => {
+                              const g = groupRates['piano'];
+                              const tier = g.useTiers ? g.tierPrices?.[30] : undefined;
+                              if (tier && tier.trim() !== '' && parseFloat(tier) > 0) return parseFloat(tier).toFixed(2);
+                              const r = parseFloat(g.rate) || 0;
+                              return ((30 / (g.duration || 30)) * r).toFixed(2);
+                            })()}
+                          </Text>
+                        </View>
+                      )}
                     </>
                   );
                 })()}
