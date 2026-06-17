@@ -78,6 +78,8 @@ export default function StudentDetailScreen() {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [rateModalVisible, setRateModalVisible] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [upcomingCollapsed, setUpcomingCollapsed] = useState(false);
+  const [pastCollapsed, setPastCollapsed] = useState(false);
   const [statusFilter, setStatusFilter] = useState<LessonStatusFilter>('all');
 
   // Counts per status across ALL of this student's lessons, for the filter chips.
@@ -460,13 +462,24 @@ export default function StudentDetailScreen() {
               {/* Upcoming Lessons */}
               {upcomingLessons.length > 0 && (
                 <View style={styles.lessonGroup}>
-                  <View style={styles.lessonGroupHeader}>
-                    <Ionicons name="arrow-forward-circle" size={18} color={colors.piano.primary} />
-                    <Text style={styles.lessonGroupTitle}>
-                      Upcoming ({upcomingLessons.length})
-                    </Text>
-                  </View>
-                  {upcomingLessons.map((lesson) => {
+                  <TouchableOpacity
+                    style={styles.lessonGroupHeader}
+                    onPress={() => setUpcomingCollapsed((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.lessonGroupHeaderLeft}>
+                      <Ionicons name="arrow-forward-circle" size={18} color={colors.piano.primary} />
+                      <Text style={styles.lessonGroupTitle}>
+                        Upcoming ({upcomingLessons.length})
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={upcomingCollapsed ? 'chevron-down' : 'chevron-up'}
+                      size={18}
+                      color={colors.neutral.textMuted}
+                    />
+                  </TouchableOpacity>
+                  {!upcomingCollapsed && upcomingLessons.map((lesson) => {
                     const subjectConfig = SUBJECT_CONFIG[lesson.subject] || {
                       icon: 'school',
                       color: colors.neutral.textSecondary,
@@ -516,13 +529,24 @@ export default function StudentDetailScreen() {
               {/* Past/Completed Lessons */}
               {pastLessons.length > 0 && (
                 <View style={styles.lessonGroup}>
-                  <View style={styles.lessonGroupHeader}>
-                    <Ionicons name="checkmark-done-circle" size={18} color={colors.neutral.textMuted} />
-                    <Text style={[styles.lessonGroupTitle, { color: colors.neutral.textMuted }]}>
-                      {pastGroupLabel} ({pastLessons.length})
-                    </Text>
-                  </View>
-                  {pastLessons.map((lesson) => {
+                  <TouchableOpacity
+                    style={styles.lessonGroupHeader}
+                    onPress={() => setPastCollapsed((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.lessonGroupHeaderLeft}>
+                      <Ionicons name="checkmark-done-circle" size={18} color={colors.neutral.textMuted} />
+                      <Text style={[styles.lessonGroupTitle, { color: colors.neutral.textMuted }]}>
+                        {pastGroupLabel} ({pastLessons.length})
+                      </Text>
+                    </View>
+                    <Ionicons
+                      name={pastCollapsed ? 'chevron-down' : 'chevron-up'}
+                      size={18}
+                      color={colors.neutral.textMuted}
+                    />
+                  </TouchableOpacity>
+                  {!pastCollapsed && pastLessons.map((lesson) => {
                     const subjectConfig = SUBJECT_CONFIG[lesson.subject] || {
                       icon: 'school',
                       color: colors.neutral.textSecondary,
@@ -957,8 +981,14 @@ const styles = StyleSheet.create({
   lessonGroupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing.xs,
     marginBottom: spacing.xs,
+  },
+  lessonGroupHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   lessonGroupTitle: {
     fontSize: typography.sizes.sm,
