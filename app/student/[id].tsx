@@ -353,6 +353,59 @@ export default function StudentDetailScreen() {
           )}
         </View>
 
+        {/* Custom Rates Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Custom Rates</Text>
+            <TouchableOpacity onPress={() => setRateModalVisible(true)}>
+              <Text style={styles.manageRatesLink}>Manage</Text>
+            </TouchableOpacity>
+          </View>
+          {(() => {
+            const customRates = (student.subject_rates as SubjectRates | undefined) || {};
+            const entries = Object.entries(customRates).filter(
+              ([, cfg]) => cfg && cfg.rate > 0 && cfg.base_duration > 0
+            );
+            if (entries.length === 0) {
+              return (
+                <TouchableOpacity style={styles.emptyState} onPress={() => setRateModalVisible(true)}>
+                  <Ionicons name="pricetags-outline" size={32} color="#CCC" />
+                  <Text style={styles.emptyText}>No custom rates set</Text>
+                  <Text style={styles.emptySubtext}>Tap to set a special rate for this student</Text>
+                </TouchableOpacity>
+              );
+            }
+            return (
+              <View style={styles.customRatesList}>
+                {entries.map(([subject, cfg]) => {
+                  const subjectConfig = SUBJECT_CONFIG[subject] || {
+                    icon: 'school',
+                    color: colors.neutral.textSecondary,
+                    label: subject.charAt(0).toUpperCase() + subject.slice(1),
+                  };
+                  const label =
+                    cfg!.base_duration === 60
+                      ? `$${cfg!.rate}/hr`
+                      : `$${cfg!.rate}/${cfg!.base_duration}min`;
+                  return (
+                    <View key={subject} style={styles.customRateRow}>
+                      <View style={styles.lessonSubjectBadge}>
+                        <Ionicons name={subjectConfig.icon as any} size={14} color={subjectConfig.color} />
+                        <Text style={[styles.lessonSubjectText, { color: subjectConfig.color }]}>
+                          {subjectConfig.label}
+                        </Text>
+                      </View>
+                      <Text style={styles.customRateValue}>
+                        {label}{cfg!.duration_prices ? ' + tiers' : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })()}
+        </View>
+
         {/* Lesson Schedule Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -516,59 +569,6 @@ export default function StudentDetailScreen() {
               )}
             </View>
           )}
-        </View>
-
-        {/* Custom Rates Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Custom Rates</Text>
-            <TouchableOpacity onPress={() => setRateModalVisible(true)}>
-              <Text style={styles.manageRatesLink}>Manage</Text>
-            </TouchableOpacity>
-          </View>
-          {(() => {
-            const customRates = (student.subject_rates as SubjectRates | undefined) || {};
-            const entries = Object.entries(customRates).filter(
-              ([, cfg]) => cfg && cfg.rate > 0 && cfg.base_duration > 0
-            );
-            if (entries.length === 0) {
-              return (
-                <TouchableOpacity style={styles.emptyState} onPress={() => setRateModalVisible(true)}>
-                  <Ionicons name="pricetags-outline" size={32} color="#CCC" />
-                  <Text style={styles.emptyText}>No custom rates set</Text>
-                  <Text style={styles.emptySubtext}>Tap to set a special rate for this student</Text>
-                </TouchableOpacity>
-              );
-            }
-            return (
-              <View style={styles.customRatesList}>
-                {entries.map(([subject, cfg]) => {
-                  const subjectConfig = SUBJECT_CONFIG[subject] || {
-                    icon: 'school',
-                    color: colors.neutral.textSecondary,
-                    label: subject.charAt(0).toUpperCase() + subject.slice(1),
-                  };
-                  const label =
-                    cfg!.base_duration === 60
-                      ? `$${cfg!.rate}/hr`
-                      : `$${cfg!.rate}/${cfg!.base_duration}min`;
-                  return (
-                    <View key={subject} style={styles.customRateRow}>
-                      <View style={styles.lessonSubjectBadge}>
-                        <Ionicons name={subjectConfig.icon as any} size={14} color={subjectConfig.color} />
-                        <Text style={[styles.lessonSubjectText, { color: subjectConfig.color }]}>
-                          {subjectConfig.label}
-                        </Text>
-                      </View>
-                      <Text style={styles.customRateValue}>
-                        {label}{cfg!.duration_prices ? ' + tiers' : ''}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            );
-          })()}
         </View>
 
         {/* Recent Progress Section */}
