@@ -1,33 +1,54 @@
 /**
- * Prepaid coverage decision (pure).
+ * Pure decision helpers for prepaid lessons.
  *
- * When a prepaid-subject lesson is completed, `useCompleteLesson` increments the
- * matching month's prepaid payment `sessions_used`. If there is NO prepaid payment
- * for the month — or the package is already over its purchased session count — the
- * completion has nothing to draw from and the session goes uncharged.
- *
- * This function decides, given the prepaid payment row the completion flow looked
- * up (after any increment), whether the lesson was actually covered by a balance.
- * Kept pure so it can be unit-tested and shared by the calendar completion handlers.
+ * `sessions_used` is derived by counting completed lessons that match a package's scope
+ * (see lib/prepaidSessions), so these rules — which lessons count, and whether a subject
+ * is prepaid at all — are the shared, unit-tested membership logic behind that count and
+ * the UI that flags prepaid lessons.
  */
 
-export interface PrepaidRow {
-  sessions_used: number | null;
-  sessions_prepaid: number | null;
+/**
+ * Does a completed lesson count against a given prepaid payment row? (pure)
+ *
+ * `sessions_used` is derived by counting completed lessons that match the row's
+ * scope, so this is the single rule shared by the count helper and any caller
+ * that needs to decide membership. Mirrors the lookup `useCompleteLesson` used
+ * to do inline.
+ *
+ * @param lessonSubject   The lesson's subject (raw casing).
+ * @param paymentSubject  The prepaid row's `subject`: a specific subject
+ *                        (lowercased) for a per-subject package, or null for a
+ *                        legacy all-subjects package.
+ * @param prepaidSubjects The family's per-subject prepaid config (lowercased).
+ *                        A legacy/all-subjects row only applies when this is
+ *                        empty — otherwise the family is in hybrid mode and
+ *                        unlisted subjects are invoiced, not drawn from legacy.
+ */
+export function lessonCountsTowardPrepaid(
+  lessonSubject: string,
+  paymentSubject: string | null,
+  prepaidSubjects: string[],
+): boolean {
+  if (paymentSubject != null) {
+    return lessonSubject.toLowerCase() === paymentSubject.toLowerCase();
+  }
+  return prepaidSubjects.length === 0;
 }
 
 /**
- * @param row The month's prepaid payment for the lesson's (parent, subject),
- *            or null when none exists. `sessions_used` is read AFTER the
- *            completion flow's increment.
- * @returns 'covered' when the lesson drew from a real balance, 'uncovered' when
- *          there was no package or the package is exhausted/over-drawn.
+ * Is a lesson's subject billed via prepaid for its family? (pure, config-level)
+ *
+ * Decided from the family's billing config alone — no payment row needed — so the UI
+ * can flag prepaid lessons without a query. A fully-prepaid family (billing_mode
+ * 'prepaid', no per-subject overrides) covers every subject; otherwise only the
+ * subjects listed in `prepaidSubjects` are prepaid (hybrid mode).
  */
-export function prepaidCoverage(row: PrepaidRow | null): 'covered' | 'uncovered' {
-  if (!row) return 'uncovered';
-  // A legacy/unlimited package has no purchased-session cap — always covered.
-  if (row.sessions_prepaid == null) return 'covered';
-  // Post-increment: using the last available slot (used === prepaid) is covered;
-  // going past the purchased count (used > prepaid) is not.
-  return (row.sessions_used ?? 0) <= row.sessions_prepaid ? 'covered' : 'uncovered';
+export function isSubjectOnPrepaid(
+  billingMode: string | null | undefined,
+  prepaidSubjects: string[],
+  lessonSubject: string,
+): boolean {
+  const subs = prepaidSubjects.map((s) => s.toLowerCase());
+  const fullyPrepaid = billingMode === 'prepaid' && subs.length === 0;
+  return fullyPrepaid || subs.includes(lessonSubject.toLowerCase());
 }

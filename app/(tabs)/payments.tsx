@@ -34,16 +34,19 @@ import {
   useCreatePrepaidPayment,
   usePrepaidPayments,
   useMarkPrepaidPaymentPaid,
-  useUpdatePrepaidSessionsUsed,
+  usePrepaidUsageByPaymentId,
 } from '../../src/hooks/usePayments';
+import { fetchPrepaidSessionsUsed } from '../../src/lib/prepaidSessions';
+import { supabase } from '../../src/lib/supabase';
 import { useParents, useUpdateBillingMode } from '../../src/hooks/useParents';
 import { PaymentWithParent, CreatePaymentInput, UpdatePaymentInput, ParentWithStudents } from '../../src/types/database';
 import { PaymentFormModal, PaymentFormData } from '../../src/components/PaymentFormModal';
 import { GenerateInvoiceModal } from '../../src/components/GenerateInvoiceModal';
 import { RateSettingsModal } from '../../src/components/RateSettingsModal';
 import { MonthlyPaymentSummary } from '../../src/components/MonthlyPaymentSummary';
-import { PrepaidStatusCard } from '../../src/components/PrepaidStatusCard';
+import { PrepaidStatusCardConnected } from '../../src/components/PrepaidStatusCardConnected';
 import { CreatePrepaidModal } from '../../src/components/CreatePrepaidModal';
+import { PrepaidHelpSheet, InvoiceHelpSheet } from '../../src/components/HelpSheet';
 import { ParentViewPreviewModal } from '../../src/components/ParentViewPreviewModal';
 import { LessonDetailsModal, LessonFilterType, PrepaidPaymentDisplay } from '../../src/components/LessonDetailsModal';
 import { StatusFilterType } from '../../src/components/MonthlyPaymentSummary';
@@ -81,6 +84,8 @@ export default function PaymentsScreen() {
   // Prepaid-specific state
   const [viewMode, setViewMode] = useState<PaymentViewMode>('invoice');
   const [showPrepaidModal, setShowPrepaidModal] = useState(false);
+  const [showPrepaidHelp, setShowPrepaidHelp] = useState(false);
+  const [showInvoiceHelp, setShowInvoiceHelp] = useState(false);
   const [selectedPrepaidParent, setSelectedPrepaidParent] = useState<ParentWithStudents | null>(null);
   // Preview modal state
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -146,7 +151,6 @@ export default function PaymentsScreen() {
   const createPrepaid = useCreatePrepaidPayment();
   const markPrepaidPaid = useMarkPrepaidPaymentPaid();
   const updateBillingMode = useUpdateBillingMode();
-  const updateSessionsUsed = useUpdatePrepaidSessionsUsed();
 
   // Filter prepaid families (families fully on prepaid OR with any per-subject prepaid)
   const prepaidFamilies = useMemo(() => {
@@ -244,24 +248,26 @@ export default function PaymentsScreen() {
     return { dates, count: invoicedLessons.length };
   };
 
+  // Derive sessions_used (single source of truth) for the paid prepaid packages.
+  const paidPrepaid = useMemo(() => prepaidPayments.filter(p => p.status === 'paid'), [prepaidPayments]);
+  const paidUsageById = usePrepaidUsageByPaymentId(paidPrepaid);
+
   // Convert paid prepaid payments to display format for the Collected modal
   const paidPrepaidForDisplay: PrepaidPaymentDisplay[] = useMemo(() => {
-    return prepaidPayments
-      .filter(p => p.status === 'paid')
-      .map(p => ({
-        id: p.id,
-        parentId: p.parent_id,
-        parentName: p.parent?.name || 'Unknown',
-        studentNames: p.parent?.students?.map(s => s.name) || [],
-        sessionsTotal: p.sessions_prepaid || 0,
-        sessionsUsed: p.sessions_used || 0,
-        amountPaid: p.amount_paid || 0,
-        paidAt: p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-        }) : undefined,
-      }));
-  }, [prepaidPayments]);
+    return paidPrepaid.map(p => ({
+      id: p.id,
+      parentId: p.parent_id,
+      parentName: p.parent?.name || 'Unknown',
+      studentNames: p.parent?.students?.map(s => s.name) || [],
+      sessionsTotal: p.sessions_prepaid || 0,
+      sessionsUsed: paidUsageById[p.id] ?? 0,
+      amountPaid: p.amount_paid || 0,
+      paidAt: p.paid_at ? new Date(p.paid_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      }) : undefined,
+    }));
+  }, [paidPrepaid, paidUsageById]);
 
   // Reset filters helper
   const resetFilters = () => {
@@ -410,7 +416,7 @@ export default function PaymentsScreen() {
     amount: number;
     subject?: string;
     notes?: string;
-  }) => {
+  }, markPaid: boolean) => {
     const payment = await createPrepaid.mutate({
       parent_id: data.parent_id,
       month: selectedMonth.toISOString(),
@@ -421,7 +427,11 @@ export default function PaymentsScreen() {
     });
 
     if (payment) {
-      Alert.alert('Success', 'Prepaid plan created successfully!');
+      // #1 For pay-upfront families, record the payment in the same step.
+      if (markPaid) {
+        await markPrepaidPaid.mutate(payment.id);
+      }
+      Alert.alert('Success', markPaid ? 'Prepaid plan created and marked paid!' : 'Prepaid plan created successfully!');
       await handleRefresh();
     } else if (createPrepaid.error) {
       throw createPrepaid.error;
@@ -468,28 +478,35 @@ export default function PaymentsScreen() {
     setShowPrepaidModal(true);
   };
 
-  const handleUpdateSessionsUsed = async (paymentId: string, newCount: number) => {
-    const result = await updateSessionsUsed.mutate(paymentId, newCount);
-    if (result) {
-      await handleRefresh();
-    } else if (Platform.OS === 'web') {
-      window.alert('Failed to update sessions count.');
-    } else {
-      Alert.alert('Error', 'Failed to update sessions count.');
-    }
-  };
-
-  const handlePreviewParentView = (
+  const handlePreviewParentView = async (
     parentData: ParentWithStudents,
     prepaidPayment: PaymentWithParent
   ) => {
+    // Derive sessions_used so the preview matches what the parent actually sees.
+    const { data: parentRec } = await supabase
+      .from('parents')
+      .select('prepaid_subjects')
+      .eq('id', parentData.id)
+      .single();
+    const prepaidSubjects = ((parentRec?.prepaid_subjects as string[]) || []).map(s => s.toLowerCase());
+    const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1)
+      .toISOString().split('T')[0];
+    const usage = await fetchPrepaidSessionsUsed({
+      parentId: parentData.id,
+      monthStart,
+      paymentSubject: prepaidPayment.subject,
+      prepaidSubjects,
+    });
+    const sessionsUsed = usage.count;
+    const sessionsTotal = prepaidPayment.sessions_prepaid || 0;
+
     setPreviewData({
       parentName: parentData.name,
       studentNames: parentData.students?.map(s => s.name) || [],
       monthDisplay,
-      sessionsTotal: prepaidPayment.sessions_prepaid || 0,
-      sessionsUsed: prepaidPayment.sessions_used || 0,
-      sessionsRemaining: Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0)),
+      sessionsTotal,
+      sessionsUsed,
+      sessionsRemaining: Math.max(0, sessionsTotal - sessionsUsed),
       sessionsRolledOver: prepaidPayment.sessions_rolled_over || 0,
       amountDue: prepaidPayment.amount_due,
       isPaid: prepaidPayment.status === 'paid',
@@ -737,7 +754,17 @@ export default function PaymentsScreen() {
         {/* Invoice Families Section - MOVED UP for quick access */}
         {isTutor && viewMode === 'invoice' && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Invoice Families</Text>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Invoice Families</Text>
+              <Pressable
+                onPress={() => setShowInvoiceHelp(true)}
+                style={styles.helpButton}
+                hitSlop={8}
+                accessibilityLabel="How invoicing works"
+              >
+                <Ionicons name="help-circle-outline" size={20} color={colors.neutral.textSecondary} />
+              </Pressable>
+            </View>
 
             {loading ? (
               <View style={styles.loadingContainer}>
@@ -971,14 +998,14 @@ export default function PaymentsScreen() {
               (() => {
                 const prepaidPayment = prepaidPayments.find(p => p.parent_id === parent?.id)!;
                 return (
-                  <PrepaidStatusCard
+                  <PrepaidStatusCardConnected
+                    parentId={parent.id}
+                    month={selectedMonth}
+                    paymentSubject={prepaidPayment.subject}
                     parentName={parent.name}
                     studentNames={[]}
-                    month={selectedMonth.toISOString().split('T')[0]}
                     monthDisplay={monthDisplay}
                     sessionsTotal={prepaidPayment.sessions_prepaid || 0}
-                    sessionsUsed={prepaidPayment.sessions_used || 0}
-                    sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
                     sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
                     amountDue={prepaidPayment.amount_due}
                     isPaid={prepaidPayment.status === 'paid'}
@@ -1072,7 +1099,17 @@ export default function PaymentsScreen() {
         {isTutor && viewMode === 'prepaid' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Prepaid Families</Text>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>Prepaid Families</Text>
+                <Pressable
+                  onPress={() => setShowPrepaidHelp(true)}
+                  style={styles.helpButton}
+                  hitSlop={8}
+                  accessibilityLabel="How prepaid works"
+                >
+                  <Ionicons name="help-circle-outline" size={20} color={colors.neutral.textSecondary} />
+                </Pressable>
+              </View>
               <Pressable
                 style={styles.addPrepaidButton}
                 onPress={() => {
@@ -1117,15 +1154,15 @@ export default function PaymentsScreen() {
                         ? `${subjectLabel} Sessions`
                         : undefined;
                       return (
-                        <PrepaidStatusCard
+                        <PrepaidStatusCardConnected
                           key={prepaidPayment.id}
+                          parentId={parentData.id}
+                          month={selectedMonth}
+                          paymentSubject={prepaidPayment.subject}
                           parentName={parentData.name}
                           studentNames={parentData.students?.map(s => s.name) || []}
-                          month={selectedMonth.toISOString().split('T')[0]}
                           monthDisplay={monthDisplay}
                           sessionsTotal={prepaidPayment.sessions_prepaid || 0}
-                          sessionsUsed={prepaidPayment.sessions_used || 0}
-                          sessionsRemaining={Math.max(0, (prepaidPayment.sessions_prepaid || 0) - (prepaidPayment.sessions_used || 0))}
                           sessionsRolledOver={prepaidPayment.sessions_rolled_over || 0}
                           amountDue={prepaidPayment.amount_due}
                           isPaid={prepaidPayment.status === 'paid'}
@@ -1134,7 +1171,6 @@ export default function PaymentsScreen() {
                           subject={prepaidPayment.subject || undefined}
                           subjectLabel={cardTitle || undefined}
                           onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
-                          onUpdateSessionsUsed={(newCount) => handleUpdateSessionsUsed(prepaidPayment.id, newCount)}
                           onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
                           onSwitchToInvoice={() => handleSwitchToInvoice(parentData)}
                         />
@@ -1308,7 +1344,7 @@ export default function PaymentsScreen() {
         onSubmit={handleCreatePrepaid}
         parent={selectedPrepaidParent}
         month={selectedMonth}
-        loading={createPrepaid.loading}
+        loading={createPrepaid.loading || markPrepaidPaid.loading}
         existingPrepaidSubjects={
           selectedPrepaidParent
             ? prepaidPayments
@@ -1317,6 +1353,9 @@ export default function PaymentsScreen() {
             : []
         }
       />
+
+      <PrepaidHelpSheet visible={showPrepaidHelp} onClose={() => setShowPrepaidHelp(false)} />
+      <InvoiceHelpSheet visible={showInvoiceHelp} onClose={() => setShowInvoiceHelp(false)} />
 
       {/* Parent View Preview Modal */}
       {previewData && (
@@ -1733,6 +1772,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  helpButton: {
+    padding: spacing.xs,
   },
   addPrepaidButton: {
     padding: spacing.xs,

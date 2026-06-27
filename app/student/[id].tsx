@@ -15,6 +15,7 @@ import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
 import { UpdateStudentInput, ScheduledLessonWithStudent, SubjectRates } from '../../src/types/database';
 import { StudentRateSettingsModal } from '../../src/components/StudentRateSettingsModal';
+import { StudentPrepaidSection } from '../../src/components/StudentPrepaidSection';
 
 // Lesson status filter for the schedule section
 type LessonStatusFilter = 'all' | 'scheduled' | 'completed' | 'cancelled';
@@ -354,6 +355,9 @@ export default function StudentDetailScreen() {
             </View>
           )}
         </View>
+
+        {/* Prepaid Sessions Section (only renders if the family has a prepaid package) */}
+        {student.parent?.id && <StudentPrepaidSection parentId={student.parent.id} />}
 
         {/* Custom Rates Section */}
         <View style={styles.section}>

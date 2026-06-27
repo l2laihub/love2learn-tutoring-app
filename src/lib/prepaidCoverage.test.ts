@@ -1,26 +1,37 @@
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { prepaidCoverage } from './prepaidCoverage.ts';
+import { lessonCountsTowardPrepaid, isSubjectOnPrepaid } from './prepaidCoverage.ts';
 
-Deno.test('no prepaid payment row at all -> uncovered (the reported bug)', () => {
-  assertEquals(prepaidCoverage(null), 'uncovered');
+// lessonCountsTowardPrepaid — membership rule behind the derived sessions_used.
+
+Deno.test('per-subject package: same subject (case-insensitive) -> counts', () => {
+  assertEquals(lessonCountsTowardPrepaid('Piano', 'piano', ['piano']), true);
 });
 
-Deno.test('package with remaining sessions -> covered', () => {
-  assertEquals(prepaidCoverage({ sessions_used: 3, sessions_prepaid: 4 }), 'covered');
+Deno.test('per-subject package: different subject -> does not count', () => {
+  assertEquals(lessonCountsTowardPrepaid('Math', 'piano', ['piano']), false);
 });
 
-Deno.test('using the last available slot (used === prepaid) -> covered', () => {
-  assertEquals(prepaidCoverage({ sessions_used: 4, sessions_prepaid: 4 }), 'covered');
+Deno.test('legacy all-subjects package (no per-subject config) -> counts any subject', () => {
+  assertEquals(lessonCountsTowardPrepaid('Math', null, []), true);
 });
 
-Deno.test('over the purchased count (used > prepaid) -> uncovered', () => {
-  assertEquals(prepaidCoverage({ sessions_used: 5, sessions_prepaid: 4 }), 'uncovered');
+Deno.test('hybrid mode: legacy row does NOT swallow an unlisted subject', () => {
+  // Family has a per-subject prepaid (piano); a Math lesson must not draw from a
+  // legacy/all-subjects row — Math should be invoiced instead.
+  assertEquals(lessonCountsTowardPrepaid('Math', null, ['piano']), false);
 });
 
-Deno.test('legacy/unlimited package (sessions_prepaid null) -> covered', () => {
-  assertEquals(prepaidCoverage({ sessions_used: 10, sessions_prepaid: null }), 'covered');
+// isSubjectOnPrepaid — config-level flag the calendar chip uses.
+
+Deno.test('fully-prepaid family covers any subject', () => {
+  assertEquals(isSubjectOnPrepaid('prepaid', [], 'Math'), true);
 });
 
-Deno.test('row present but sessions_used null -> treated as 0 used -> covered', () => {
-  assertEquals(prepaidCoverage({ sessions_used: null, sessions_prepaid: 4 }), 'covered');
+Deno.test('hybrid family: listed subject is prepaid, unlisted is not', () => {
+  assertEquals(isSubjectOnPrepaid('prepaid', ['piano'], 'Piano'), true);
+  assertEquals(isSubjectOnPrepaid('prepaid', ['piano'], 'Math'), false);
+});
+
+Deno.test('invoice family with no prepaid subjects is never prepaid', () => {
+  assertEquals(isSubjectOnPrepaid('invoice', [], 'Math'), false);
 });
