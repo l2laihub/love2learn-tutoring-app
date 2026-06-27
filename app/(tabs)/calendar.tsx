@@ -510,6 +510,17 @@ export default function CalendarScreen() {
     setIsEditSeriesMode(false);
   };
 
+  // Save an inline note from the detail modal without opening the full edit form.
+  // For a combined session, apply the same note to every lesson in the group.
+  const handleSaveLessonNotes = async (notes: string) => {
+    const ids = selectedGroupedLesson?.lessons?.map(l => l.id)
+      ?? (selectedLesson ? [selectedLesson.id] : []);
+    for (const id of ids) {
+      await updateLesson.mutate(id, { notes: notes || null });
+    }
+    await refetch();
+  };
+
   // After completing prepaid-subject lessons, flag any that had no prepaid
   // balance to draw from. `useCompleteLesson` only increments an EXISTING prepaid
   // package; with no package for the month (or one that's exhausted) the session
@@ -1056,6 +1067,9 @@ export default function CalendarScreen() {
                       // Format student names (join with &)
                       const studentNamesDisplay = group.student_names.join(' & ');
 
+                      // First non-empty note among the grouped lessons, shown as a preview
+                      const lessonNote = group.lessons.find(l => l.notes?.trim())?.notes?.trim();
+
                       // Format subjects display
                       const subjectsDisplay = group.subjects
                         .map(s => SUBJECT_NAMES[s])
@@ -1145,6 +1159,18 @@ export default function CalendarScreen() {
                                 {subjectsDisplay}
                               </Text>
                             </View>
+                            {lessonNote && (
+                              <View style={styles.lessonNoteRow}>
+                                <Ionicons
+                                  name="document-text-outline"
+                                  size={12}
+                                  color={colors.neutral.textMuted}
+                                />
+                                <Text style={styles.lessonNoteText} numberOfLines={1}>
+                                  {lessonNote}
+                                </Text>
+                              </View>
+                            )}
                           </View>
                           {!isSelectMode && isGroupedSession && (
                             <View style={styles.groupIndicator}>
@@ -1354,6 +1380,7 @@ export default function CalendarScreen() {
             : undefined
         }
         onRequestReschedule={!isTutor ? handleRequestReschedule : undefined}
+        onSaveNotes={isTutor ? handleSaveLessonNotes : undefined}
         seriesCount={isSessionSeries ? seriesSessionIds.length : seriesLessonIds.length}
         isTutor={isTutor}
         paid={selectedLessonPaid}
@@ -1711,6 +1738,18 @@ const styles = StyleSheet.create({
   lessonSubjectText: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
+  },
+  lessonNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  lessonNoteText: {
+    flex: 1,
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textMuted,
+    fontStyle: 'italic',
   },
   legend: {
     flexDirection: 'row',

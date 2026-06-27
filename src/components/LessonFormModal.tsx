@@ -197,11 +197,11 @@ export function LessonFormModal({
         setRecurrenceWeeks([]);
         setCreateAsSession(false);
       } else {
-        // Create mode - reset form
+        // Create mode - reset form (no date/time preselected; tutor picks)
         const now = new Date();
-        setSelectedDates([now]);
+        setSelectedDates([]);
         setCalendarMonth(now);
-        setSelectedTime('15:00');
+        setSelectedTime('');
         setShowCustomTime(false);
         setCustomTimeHour('15');
         setCustomTimeMinute('00');
@@ -347,10 +347,8 @@ export function LessonFormModal({
         // Remove student
         return prev.filter(s => s.studentId !== studentId);
       } else {
-        // Add student with default subject (first available or piano)
-        const student = students.find(s => s.id === studentId);
-        const defaultSubject: TutoringSubject = student?.subjects?.[0] as TutoringSubject || 'piano';
-        return [...prev, { studentId, subjects: [defaultSubject] }];
+        // Add student with no subject preselected — tutor picks consciously.
+        return [...prev, { studentId, subjects: [] }];
       }
     });
   };
@@ -971,7 +969,9 @@ export function LessonFormModal({
               onPress={() => setShowTimePicker(!showTimePicker)}
             >
               <Ionicons name="time-outline" size={20} color={primaryColor} />
-              <Text style={styles.timeSelectorText}>{selectedTime}</Text>
+              <Text style={[styles.timeSelectorText, !selectedTime && { color: colors.neutral.textMuted }]}>
+                {selectedTime || 'Select time'}
+              </Text>
               <Ionicons
                 name={showTimePicker ? "chevron-up" : "chevron-down"}
                 size={20}
@@ -1027,7 +1027,7 @@ export function LessonFormModal({
                     setShowCustomTime(!showCustomTime);
                     if (!showCustomTime) {
                       // Parse current time to initialize custom inputs
-                      const [h, m] = selectedTime.split(':');
+                      const [h, m] = (selectedTime || '15:00').split(':');
                       setCustomTimeHour(h);
                       setCustomTimeMinute(m);
                     }
