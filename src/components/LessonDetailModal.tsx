@@ -3,7 +3,7 @@
  * Modal for viewing lesson details with edit, complete, and cancel actions
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -58,6 +58,7 @@ interface LessonDetailModalProps {
   onDelete?: () => Promise<void>;
   onDeleteSeries?: () => Promise<void>;
   onRequestReschedule?: () => void; // For parents to request reschedule
+  onSaveNotes?: (notes: string) => Promise<void>; // Save an inline note without the full edit form
   seriesCount?: number; // Number of lessons in the recurring series
   isTutor?: boolean; // Whether the current user is a tutor/admin
   paid?: boolean | null; // true=paid, false=invoiced-unpaid, null=n/a
@@ -79,6 +80,7 @@ export function LessonDetailModal({
   onDelete,
   onDeleteSeries,
   onRequestReschedule,
+  onSaveNotes,
   seriesCount = 0,
   isTutor = false,
   paid,
@@ -101,6 +103,24 @@ export function LessonDetailModal({
   const [showEnrollmentsExpanded, setShowEnrollmentsExpanded] = useState(false);
   const [convertingToSession, setConvertingToSession] = useState(false);
   const [effectiveSessionId, setEffectiveSessionId] = useState<string | null>(null);
+  // Inline note editing (no full edit form needed)
+  const [notesValue, setNotesValue] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+
+  // Seed the note field from the lesson whenever the modal opens or the lesson changes
+  useEffect(() => {
+    if (visible) setNotesValue(lesson?.notes || '');
+  }, [visible, lesson?.id, lesson?.notes]);
+
+  const handleSaveNotes = async () => {
+    if (!onSaveNotes) return;
+    setSavingNotes(true);
+    try {
+      await onSaveNotes(notesValue.trim());
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   // Get session ID if this is a grouped session (or use effective session if converted)
   const originalSessionId = groupedLesson?.session_id || lesson?.session_id || null;
@@ -616,7 +636,7 @@ export function LessonDetailModal({
         </View>
 
         {/* Content */}
-        <View style={styles.content}>
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
           {/* Student Info - Shows multiple students for grouped sessions */}
           {isGroupedSession ? (
             <View style={styles.studentSection}>
@@ -768,11 +788,38 @@ export function LessonDetailModal({
           </View>
 
           {/* Notes */}
-          {lesson.notes && (
+          {onSaveNotes ? (
             <View style={styles.notesSection}>
               <Text style={styles.notesLabel}>Notes</Text>
-              <Text style={styles.notesText}>{lesson.notes}</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={notesValue}
+                onChangeText={setNotesValue}
+                placeholder="Add a note for this lesson..."
+                placeholderTextColor={colors.neutral.textMuted}
+                multiline
+              />
+              {notesValue.trim() !== (lesson.notes || '').trim() && (
+                <Pressable
+                  style={styles.notesSaveButton}
+                  onPress={handleSaveNotes}
+                  disabled={savingNotes}
+                >
+                  {savingNotes ? (
+                    <ActivityIndicator size="small" color={colors.neutral.white} />
+                  ) : (
+                    <Text style={styles.notesSaveButtonText}>Save note</Text>
+                  )}
+                </Pressable>
+              )}
             </View>
+          ) : (
+            lesson.notes && (
+              <View style={styles.notesSection}>
+                <Text style={styles.notesLabel}>Notes</Text>
+                <Text style={styles.notesText}>{lesson.notes}</Text>
+              </View>
+            )
           )}
 
           {/* Enrollment Section - Tutor only, for all lessons */}
@@ -876,7 +923,7 @@ export function LessonDetailModal({
               )}
             </View>
           )}
-        </View>
+        </ScrollView>
 
         {/* Actions - only show for scheduled lessons (tutor only) */}
         {displayData.status === 'scheduled' && isTutor && (
@@ -1042,7 +1089,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentContainer: {
     padding: spacing.base,
+    paddingBottom: spacing.xl,
   },
   studentSection: {
     flexDirection: 'row',
@@ -1276,6 +1326,30 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.neutral.text,
     lineHeight: 22,
+  },
+  notesInput: {
+    fontSize: typography.sizes.base,
+    color: colors.neutral.text,
+    lineHeight: 22,
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    textAlignVertical: 'top',
+  },
+  notesSaveButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.sm,
+    backgroundColor: colors.primary.main,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.base,
+    borderRadius: borderRadius.md,
+  },
+  notesSaveButtonText: {
+    color: colors.neutral.white,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
   },
   actions: {
     flexDirection: 'row',
