@@ -23,7 +23,8 @@ import { useResponsive } from '../../src/hooks/useResponsive';
 import { useTutorBranding, getDateKeyInTimezone, DEFAULT_TIMEZONE } from '../../src/hooks/useTutorBranding';
 import { getWeekStartInTimezone, addDaysInTimezone, getWeekDaysInTimezone, getDayInTimezone, getDayOfWeekInTimezone, getPartsInTimezone, isSameDayInTimezone, formatTimeInTimezone } from '../../src/utils/dateUtils';
 import { supabase } from '../../src/lib/supabase';
-import { prepaidCoverage } from '../../src/lib/prepaidCoverage';
+import { fetchPrepaidSessionsUsed } from '../../src/lib/prepaidSessions';
+import { isSubjectOnPrepaid } from '../../src/lib/prepaidCoverage';
 import {
   useWeekGroupedLessons,
   useCreateLesson,
@@ -59,7 +60,7 @@ import { AvailableSessionsModal } from '../../src/components/AvailableSessionsMo
 import { useWeeklyBreaks } from '../../src/hooks/useTutorBreaks';
 import { useAvailableGroupSessions } from '../../src/hooks/useGroupSessions';
 import { TutorBreak } from '../../src/types/database';
-import { useQuickInvoice, useIncrementSessionUsage, useMarkPaymentPaid, useMarkLessonsPaid } from '../../src/hooks/usePayments';
+import { useQuickInvoice, useMarkPaymentPaid, useMarkLessonsPaid } from '../../src/hooks/usePayments';
 import { formatTimeDisplay } from '../../src/hooks/useTutorAvailability';
 import { StackedAvatars } from '../../src/components/AvatarUpload';
 
@@ -185,7 +186,6 @@ export default function CalendarScreen() {
   const { findSeries, findSessionSeries } = useFindRecurringSeries(tutorTimezone);
   const deleteLessonSeries = useDeleteLessonSeries();
   const quickInvoice = useQuickInvoice();
-  const incrementSessionUsage = useIncrementSessionUsage();
   const markPaymentPaid = useMarkPaymentPaid();
   const { markLessonsPaid } = useMarkLessonsPaid();
 
@@ -521,60 +521,88 @@ export default function CalendarScreen() {
     await refetch();
   };
 
-  // After completing prepaid-subject lessons, flag any that had no prepaid
-  // balance to draw from. `useCompleteLesson` only increments an EXISTING prepaid
-  // package; with no package for the month (or one that's exhausted) the session
-  // is completed but silently uncharged. Mirrors that hook's lookup so a lesson is
-  // flagged exactly when the increment had nothing to record against.
+  // After completing prepaid-subject lessons, flag any that won't actually be charged.
+  // sessions_used is derived from completed lessons, so a lesson is uncharged when its
+  // family/subject has NO prepaid package for the month, or completing it pushed the
+  // package's derived usage past the purchased session count.
   const warnUncoveredPrepaid = async (lessons: ScheduledLessonWithStudent[]) => {
-    const uncovered: string[] = [];
+    const noPackage: string[] = [];
+    const overCapacity: string[] = [];
+    const checkedPackages = new Set<string>();
+
     for (const lesson of lessons) {
       const parent = lesson.student.parent;
       const prepaidSubjects = ((parent as { prepaid_subjects?: string[] }).prepaid_subjects || [])
         .map((s: string) => s.toLowerCase());
-      const isFullyPrepaid = parent.billing_mode === 'prepaid' && prepaidSubjects.length === 0;
-      const isSubjectPrepaid = isFullyPrepaid || prepaidSubjects.includes(lesson.subject.toLowerCase());
-      if (!isSubjectPrepaid) continue;
+      if (!isSubjectOnPrepaid(parent.billing_mode, prepaidSubjects, lesson.subject)) continue;
 
       const lessonDate = new Date(lesson.scheduled_at);
       const monthStart = new Date(lessonDate.getFullYear(), lessonDate.getMonth(), 1)
         .toISOString().split('T')[0];
 
       // Subject-specific package first, then legacy null-subject only when the
-      // family has no per-subject prepaid config (matches useCompleteLesson).
+      // family has no per-subject prepaid config (matches the membership rule).
       const { data: subjectPrepaid } = await supabase
         .from('payments')
-        .select('sessions_used, sessions_prepaid')
+        .select('sessions_prepaid, subject')
         .eq('parent_id', parent.id)
         .eq('month', monthStart)
         .eq('payment_type', 'prepaid')
-        .eq('subject', lesson.subject)
+        .eq('subject', lesson.subject.toLowerCase())
         .maybeSingle();
 
-      let row = subjectPrepaid;
-      if (!row && prepaidSubjects.length === 0) {
+      let pkg = subjectPrepaid;
+      if (!pkg && prepaidSubjects.length === 0) {
         const { data: legacyPrepaid } = await supabase
           .from('payments')
-          .select('sessions_used, sessions_prepaid')
+          .select('sessions_prepaid, subject')
           .eq('parent_id', parent.id)
           .eq('month', monthStart)
           .eq('payment_type', 'prepaid')
           .is('subject', null)
           .maybeSingle();
-        row = legacyPrepaid;
+        pkg = legacyPrepaid;
       }
 
-      if (prepaidCoverage(row) === 'uncovered') {
-        uncovered.push(`• ${lesson.student.name} (${lesson.subject})`);
+      // No package → this lesson is genuinely uncharged; list it per student.
+      if (!pkg) {
+        noPackage.push(`• ${lesson.student.name} (${lesson.subject})`);
+        continue;
+      }
+      // Legacy/unlimited package (no cap) is always covered.
+      if (pkg.sessions_prepaid == null) continue;
+
+      // Over-capacity is a property of the package, not the lesson — check each once.
+      const pkgKey = `${parent.id}|${monthStart}|${pkg.subject ?? 'legacy'}`;
+      if (checkedPackages.has(pkgKey)) continue;
+      checkedPackages.add(pkgKey);
+
+      const usage = await fetchPrepaidSessionsUsed({
+        parentId: parent.id,
+        monthStart,
+        paymentSubject: pkg.subject,
+        prepaidSubjects,
+      });
+      if (usage.count > pkg.sessions_prepaid) {
+        const label = pkg.subject ? ` (${pkg.subject})` : '';
+        overCapacity.push(
+          `• ${parent.name}${label}: ${usage.count - pkg.sessions_prepaid} session(s) beyond the ${pkg.sessions_prepaid} prepaid`,
+        );
       }
     }
 
-    if (uncovered.length > 0) {
+    const sections: string[] = [];
+    if (noPackage.length > 0) {
+      sections.push(`No active prepaid package for the month:\n${noPackage.join('\n')}`);
+    }
+    if (overCapacity.length > 0) {
+      sections.push(`Over the purchased session count:\n${overCapacity.join('\n')}`);
+    }
+    if (sections.length > 0) {
       Alert.alert(
-        'No prepaid balance',
-        `These completed prepaid lesson(s) had no active prepaid package for the month, ` +
-          `so they were not charged:\n\n${uncovered.join('\n')}\n\n` +
-          `Add a prepaid package for the family, or switch them to invoicing, to bill these sessions.`,
+        'Prepaid sessions not charged',
+        `${sections.join('\n\n')}\n\n` +
+          `Add or top up a prepaid package for the family, or switch them to invoicing, to bill these sessions.`,
       );
     }
   };
@@ -1080,6 +1108,13 @@ export default function CalendarScreen() {
                         .map(s => SUBJECT_EMOJI[s])
                         .join(' ');
 
+                      // Does this group draw from a prepaid plan? Decided from the
+                      // already-loaded family config — no per-lesson query.
+                      const isPrepaidGroup = group.lessons.some((l) => {
+                        const p = l.student?.parent as { billing_mode?: string; prepaid_subjects?: string[] } | undefined;
+                        return p ? isSubjectOnPrepaid(p.billing_mode, p.prepaid_subjects || [], l.subject) : false;
+                      });
+
                       // Is this a grouped session?
                       const isGroupedSession = group.session_id !== null;
 
@@ -1158,6 +1193,12 @@ export default function CalendarScreen() {
                               >
                                 {subjectsDisplay}
                               </Text>
+                              {isPrepaidGroup && (
+                                <View style={styles.prepaidChip}>
+                                  <Ionicons name="wallet-outline" size={10} color={colors.piano.primary} />
+                                  <Text style={styles.prepaidChipText}>Prepaid</Text>
+                                </View>
+                              )}
                             </View>
                             {lessonNote && (
                               <View style={styles.lessonNoteRow}>
@@ -1738,6 +1779,20 @@ const styles = StyleSheet.create({
   lessonSubjectText: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
+  },
+  prepaidChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.piano.subtle,
+  },
+  prepaidChipText: {
+    fontSize: 10,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
   },
   lessonNoteRow: {
     flexDirection: 'row',

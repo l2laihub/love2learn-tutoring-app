@@ -11,7 +11,7 @@ import { useAuthContext } from '../../src/contexts/AuthContext';
 import { useStudents } from '../../src/hooks/useStudents';
 import { useTodaysLessons, useUpcomingGroupedLessons } from '../../src/hooks/useLessons';
 import { usePendingAssignments } from '../../src/hooks/useAssignments';
-import { usePaymentSummary, useOverduePayments, useParentPaymentSummary, usePrepaidPayments, ParentPaymentSummary } from '../../src/hooks/usePayments';
+import { usePaymentSummary, useOverduePayments, useParentPaymentSummary, usePrepaidPayments, usePrepaidUsage, ParentPaymentSummary } from '../../src/hooks/usePayments';
 import { useResponsive } from '../../src/hooks/useResponsive';
 import { useMemo, useState, useCallback } from 'react';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
@@ -100,6 +100,14 @@ export default function HomeScreen() {
     if (!parent) return null;
     return prepaidPayments.find(p => p.parent_id === parent.id) || null;
   }, [parent, prepaidPayments]);
+
+  // sessions_used is derived from completed lessons (single source of truth), not the stored counter.
+  const { usage: parentPrepaidUsage } = usePrepaidUsage(
+    parent?.id ?? null,
+    currentMonth,
+    parentPrepaidPayment?.subject ?? null,
+  );
+  const parentPrepaidUsed = parentPrepaidUsage?.count ?? 0;
 
   // Current month display for prepaid section
   const monthDisplay = useMemo(() => {
@@ -375,8 +383,8 @@ export default function HomeScreen() {
                 parentName={parent?.name || ''}
                 monthDisplay={monthDisplay}
                 sessionsTotal={parentPrepaidPayment.sessions_prepaid || 0}
-                sessionsUsed={parentPrepaidPayment.sessions_used || 0}
-                sessionsRemaining={Math.max(0, (parentPrepaidPayment.sessions_prepaid || 0) - (parentPrepaidPayment.sessions_used || 0))}
+                sessionsUsed={parentPrepaidUsed}
+                sessionsRemaining={Math.max(0, (parentPrepaidPayment.sessions_prepaid || 0) - parentPrepaidUsed)}
                 sessionsRolledOver={parentPrepaidPayment.sessions_rolled_over || 0}
                 amountDue={parentPrepaidPayment.amount_due}
                 isPaid={parentPrepaidPayment.status === 'paid'}

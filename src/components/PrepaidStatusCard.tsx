@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui/Card';
 import { Avatar } from './ui/Avatar';
 import { colors, spacing, typography, borderRadius, getSubjectColor } from '../theme';
+import type { PrepaidUsageLesson } from '../lib/prepaidSessions';
 
 interface PrepaidStatusCardProps {
   // Family info
@@ -25,11 +26,12 @@ interface PrepaidStatusCardProps {
   // Subject info (for per-subject prepaid)
   subject?: string;
   subjectLabel?: string;
+  // Auditable breakdown: the completed lessons that make up sessionsUsed (oldest first)
+  usageLessons?: PrepaidUsageLesson[];
   // Actions
   onPress?: () => void;
   onMarkPaid?: () => void;
   onCreatePrepaid?: () => void;
-  onUpdateSessionsUsed?: (newCount: number) => void;
   onPreviewParentView?: () => void;
   onSwitchToInvoice?: () => void;
 }
@@ -53,12 +55,13 @@ export function PrepaidStatusCard({
   notes,
   subject,
   subjectLabel,
+  usageLessons,
   onPress,
   onMarkPaid,
-  onUpdateSessionsUsed,
   onPreviewParentView,
   onSwitchToInvoice,
 }: PrepaidStatusCardProps) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const usagePercent = sessionsTotal > 0 ? (sessionsUsed / sessionsTotal) * 100 : 0;
   const isOverLimit = sessionsUsed > sessionsTotal;
 
@@ -100,27 +103,11 @@ export function PrepaidStatusCard({
         <View style={styles.sessionHeader}>
           <Text style={styles.sessionTitle}>Sessions</Text>
           <View style={styles.sessionCountRow}>
-            {onUpdateSessionsUsed && (
-              <Pressable
-                style={styles.sessionAdjustButton}
-                onPress={() => onUpdateSessionsUsed(Math.max(0, sessionsUsed - 1))}
-              >
-                <Ionicons name="remove" size={16} color={colors.neutral.text} />
-              </Pressable>
-            )}
             <Text style={styles.sessionCount}>
               <Text style={styles.sessionUsed}>{sessionsUsed}</Text>
               <Text style={styles.sessionSeparator}> / </Text>
               <Text style={styles.sessionTotal}>{sessionsTotal}</Text>
             </Text>
-            {onUpdateSessionsUsed && (
-              <Pressable
-                style={styles.sessionAdjustButton}
-                onPress={() => onUpdateSessionsUsed(sessionsUsed + 1)}
-              >
-                <Ionicons name="add" size={16} color={colors.neutral.text} />
-              </Pressable>
-            )}
           </View>
         </View>
 
@@ -163,6 +150,42 @@ export function PrepaidStatusCard({
             <Text style={styles.overLimitText}>
               {sessionsUsed - sessionsTotal} extra session(s) beyond prepaid
             </Text>
+          </View>
+        )}
+
+        {/* Auditable breakdown: which completed lessons consumed the balance */}
+        {usageLessons && usageLessons.length > 0 && (
+          <View style={styles.breakdownSection}>
+            <Pressable
+              style={styles.breakdownToggle}
+              onPress={() => setShowBreakdown((v) => !v)}
+            >
+              <Text style={styles.breakdownToggleText}>
+                {showBreakdown ? 'Hide' : 'View'} sessions used ({usageLessons.length})
+              </Text>
+              <Ionicons
+                name={showBreakdown ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.neutral.textSecondary}
+              />
+            </Pressable>
+            {showBreakdown && (
+              <View style={styles.breakdownList}>
+                {usageLessons.map((l) => (
+                  <View key={l.id} style={styles.breakdownRow}>
+                    <Text style={styles.breakdownDate}>
+                      {new Date(l.scheduledAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </Text>
+                    <Text style={styles.breakdownLesson} numberOfLines={1}>
+                      {l.studentName} · {l.subject}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -384,14 +407,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  sessionAdjustButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.neutral.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   sessionCount: {
     fontSize: typography.sizes.lg,
   },
@@ -446,6 +461,41 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     color: colors.status.error,
     fontWeight: typography.weights.medium,
+  },
+  breakdownSection: {
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral.border,
+    paddingTop: spacing.sm,
+  },
+  breakdownToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  breakdownToggleText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.neutral.textSecondary,
+  },
+  breakdownList: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  breakdownDate: {
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.textSecondary,
+    width: 56,
+  },
+  breakdownLesson: {
+    flex: 1,
+    fontSize: typography.sizes.xs,
+    color: colors.neutral.text,
   },
 
   // Amount section

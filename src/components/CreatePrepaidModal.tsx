@@ -19,6 +19,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { ParentWithStudents } from '../types/database';
+import { usePriorPrepaidPlan } from '../hooks/usePayments';
 
 interface CreatePrepaidModalProps {
   visible: boolean;
@@ -29,10 +30,9 @@ interface CreatePrepaidModalProps {
     amount: number;
     subject?: string;
     notes?: string;
-  }) => Promise<void>;
+  }, markPaid: boolean) => Promise<void>;
   parent: ParentWithStudents | null;
   month: Date;
-  rolloverSessions?: number;
   loading?: boolean;
   existingPrepaidSubjects?: string[];
 }
@@ -47,7 +47,6 @@ export function CreatePrepaidModal({
   onSubmit,
   parent,
   month,
-  rolloverSessions = 0,
   loading = false,
   existingPrepaidSubjects = [],
 }: CreatePrepaidModalProps) {
@@ -56,6 +55,21 @@ export function CreatePrepaidModal({
   const [notes, setNotes] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Last month's plan for the selected subject — powers the rollover preview and the
+  // carry-forward defaults below. Derived (same source as useCreatePrepaidPayment).
+  const priorPlan = usePriorPrepaidPlan(parent?.id ?? null, month, selectedSubject);
+  const rolloverSessions = priorPlan?.rolloverSessions ?? 0;
+
+  // #2 Carry-forward: when last month's plan loads for the chosen subject, default the
+  // sessions/amount to it so the tutor can confirm-and-go. Only fires on subject change
+  // (priorPlan identity), so it never clobbers mid-typing.
+  useEffect(() => {
+    if (priorPlan) {
+      setSessionsCount(String(priorPlan.lastSessions));
+      setAmount(String(priorPlan.lastAmount));
+    }
+  }, [priorPlan]);
 
   // Get available subjects from the family's students
   const availableSubjects = React.useMemo(() => {
@@ -89,7 +103,7 @@ export function CreatePrepaidModal({
 
   const totalSessions = parseInt(sessionsCount || '0', 10) + rolloverSessions;
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (markPaid: boolean) => {
     setError(null);
 
     const sessions = parseInt(sessionsCount, 10);
@@ -122,7 +136,7 @@ export function CreatePrepaidModal({
         amount: amountValue,
         subject: selectedSubject,
         notes: notes.trim() || undefined,
-      });
+      }, markPaid);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create prepaid plan');
@@ -352,11 +366,9 @@ export function CreatePrepaidModal({
 
           {/* Actions */}
           <View style={styles.actions}>
-            <Pressable onPress={onClose} style={styles.cancelButton}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
+            {/* #1 Primary path for pay-upfront families: create + mark paid in one step */}
             <Pressable
-              onPress={handleSubmit}
+              onPress={() => handleSubmit(true)}
               style={[styles.submitButton, loading && styles.submitButtonDisabled]}
               disabled={loading}
             >
@@ -364,11 +376,23 @@ export function CreatePrepaidModal({
                 <ActivityIndicator size="small" color={colors.neutral.white} />
               ) : (
                 <>
-                  <Ionicons name="checkmark" size={18} color={colors.neutral.white} />
-                  <Text style={styles.submitButtonText}>Create Plan</Text>
+                  <Ionicons name="checkmark-done" size={18} color={colors.neutral.white} />
+                  <Text style={styles.submitButtonText}>Create & Mark Paid</Text>
                 </>
               )}
             </Pressable>
+            <View style={styles.secondaryActionsRow}>
+              <Pressable onPress={onClose} style={styles.cancelButton} disabled={loading}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => handleSubmit(false)}
+                style={[styles.secondaryButton, loading && styles.submitButtonDisabled]}
+                disabled={loading}
+              >
+                <Text style={styles.secondaryButtonText}>Create (unpaid)</Text>
+              </Pressable>
+            </View>
           </View>
           </View>
         </KeyboardAvoidingView>
@@ -612,11 +636,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actions: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: spacing.md,
     padding: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.neutral.border,
+  },
+  secondaryActionsRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
   },
   cancelButton: {
     flex: 1,
@@ -631,8 +659,21 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.medium,
     color: colors.neutral.textSecondary,
   },
+  secondaryButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.piano.primary,
+  },
+  secondaryButtonText: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.medium,
+    color: colors.piano.primary,
+  },
   submitButton: {
-    flex: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
