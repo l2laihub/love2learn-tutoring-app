@@ -34,6 +34,7 @@ interface PrepaidStatusCardProps {
   onCreatePrepaid?: () => void;
   onPreviewParentView?: () => void;
   onSwitchToInvoice?: () => void;
+  onDelete?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -60,6 +61,7 @@ export function PrepaidStatusCard({
   onMarkPaid,
   onPreviewParentView,
   onSwitchToInvoice,
+  onDelete,
 }: PrepaidStatusCardProps) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const usagePercent = sessionsTotal > 0 ? (sessionsUsed / sessionsTotal) * 100 : 0;
@@ -233,6 +235,14 @@ export function PrepaidStatusCard({
           <Pressable onPress={onSwitchToInvoice} style={styles.switchToInvoiceButton}>
             <Ionicons name="swap-horizontal" size={18} color={colors.neutral.textSecondary} />
             <Text style={styles.switchToInvoiceText}>Switch to Invoice Billing</Text>
+          </Pressable>
+        )}
+
+        {/* Delete this prepaid plan */}
+        {onDelete && (
+          <Pressable onPress={onDelete} style={styles.deletePlanButton}>
+            <Ionicons name="trash-outline" size={18} color={colors.status.error} />
+            <Text style={styles.deletePlanText}>Delete Plan</Text>
           </Pressable>
         )}
       </View>
@@ -578,6 +588,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.neutral.textSecondary,
+  },
+  deletePlanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.status.error,
+    borderRadius: borderRadius.md,
+  },
+  deletePlanText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.status.error,
   },
 
   // Compact card
