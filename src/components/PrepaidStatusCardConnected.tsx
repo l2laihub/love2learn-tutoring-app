@@ -26,6 +26,7 @@ interface Props {
   onMarkPaid?: () => void;
   onPreviewParentView?: () => void;
   onSwitchToInvoice?: () => void;
+  onDelete?: () => void;
 }
 
 export function PrepaidStatusCardConnected({

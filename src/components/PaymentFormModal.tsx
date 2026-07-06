@@ -22,6 +22,14 @@ import { ParentWithStudents, PaymentWithParent, TutoringSubject } from '../types
 import { supabase } from '../lib/supabase';
 import { useToggleLessonPaid } from '../hooks/usePayments';
 
+// Amount Paid is the sum of the checked (paid) linked lessons — the checklist is the
+// source of truth whenever lessons are linked, so the top-line total can't drift from it.
+function sumPaidLessons(lessons: PaymentLessonDisplay[]): number {
+  return Math.round(
+    lessons.filter((pl) => pl.paid).reduce((sum, pl) => sum + pl.amount, 0) * 100
+  ) / 100;
+}
+
 // Subject display names for lessons
 const SUBJECT_NAMES: Record<TutoringSubject, string> = {
   math: 'Math',
@@ -87,8 +95,14 @@ export function PaymentFormModal({
   const [loadingLessons, setLoadingLessons] = useState(false);
   const [togglingLessons, setTogglingLessons] = useState<Set<string>>(new Set());
 
-  // Hook for toggling lesson paid status
+  // Hook for toggling lesson paid status. Persisting the derived amount_paid to the
+  // payments row is handled by a DB trigger (recompute_payment_from_lessons), so every
+  // screen that reads payments.amount_paid stays in sync — no client-side write needed.
   const { toggleLessonPaid } = useToggleLessonPaid();
+
+  // Whenever lessons are linked, the checklist drives Amount Paid — the manual input
+  // and quick-fill buttons are disabled to keep a single source of truth.
+  const lessonsDrivePaid = mode === 'edit' && paymentLessons.length > 0;
 
   // Initialize form
   useEffect(() => {
@@ -191,6 +205,12 @@ export function PaymentFormModal({
         (a, b) => new Date(a.lesson.scheduled_at).getTime() - new Date(b.lesson.scheduled_at).getTime()
       );
       setPaymentLessons(sorted);
+
+      // Checklist is the source of truth for Amount Paid — seed it from the paid lessons
+      // so an already-drifted stored amount_paid is corrected on open.
+      if (sorted.length > 0) {
+        setAmountPaid(sumPaidLessons(sorted).toFixed(2));
+      }
     } catch (err) {
       console.error('Error fetching payment lessons:', err);
     } finally {
@@ -203,12 +223,15 @@ export function PaymentFormModal({
     const newPaid = !paymentLesson.paid;
 
     // Optimistic update
-    setTogglingLessons(prev => new Set(prev).add(paymentLesson.id));
-    setPaymentLessons(prev =>
-      prev.map(pl =>
-        pl.id === paymentLesson.id ? { ...pl, paid: newPaid } : pl
-      )
+    const updatedLessons = paymentLessons.map(pl =>
+      pl.id === paymentLesson.id ? { ...pl, paid: newPaid } : pl
     );
+    setTogglingLessons(prev => new Set(prev).add(paymentLesson.id));
+    setPaymentLessons(updatedLessons);
+
+    // Amount Paid = sum of paid lessons; reflect it immediately.
+    const newPaidTotal = sumPaidLessons(updatedLessons);
+    setAmountPaid(newPaidTotal.toFixed(2));
 
     const result = await toggleLessonPaid(paymentLesson.id, newPaid);
 
@@ -220,21 +243,19 @@ export function PaymentFormModal({
 
     if (!result.success) {
       // Revert on failure
-      setPaymentLessons(prev =>
-        prev.map(pl =>
-          pl.id === paymentLesson.id ? { ...pl, paid: !newPaid } : pl
-        )
-      );
+      setPaymentLessons(paymentLessons);
+      setAmountPaid(sumPaidLessons(paymentLessons).toFixed(2));
       if (Platform.OS === 'web') {
         window.alert(result.error || 'Failed to update lesson');
       } else {
         Alert.alert('Error', result.error || 'Failed to update lesson');
       }
     } else {
-      // Refresh parent data
+      // Refresh parent data — the DB trigger has already rolled amount_paid/status
+      // up from the checklist, so the reloaded list reflects it.
       onRefresh?.();
     }
-  }, [toggleLessonPaid, onRefresh]);
+  }, [toggleLessonPaid, onRefresh, paymentLessons]);
 
   // Format lesson date for display
   const formatLessonDate = (dateStr: string): string => {
@@ -400,7 +421,7 @@ export function PaymentFormModal({
           {/* Amount Paid */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Amount Paid</Text>
-            <View style={styles.amountContainer}>
+            <View style={[styles.amountContainer, lessonsDrivePaid && styles.amountContainerDisabled]}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
                 style={styles.amountInput}
@@ -409,35 +430,42 @@ export function PaymentFormModal({
                 placeholder="0.00"
                 placeholderTextColor={colors.neutral.textMuted}
                 keyboardType="decimal-pad"
+                editable={!lessonsDrivePaid}
               />
             </View>
-            {/* Quick fill buttons */}
-            <View style={styles.quickFillRow}>
-              <Pressable
-                style={styles.quickFillButton}
-                onPress={() => setAmountPaid('0')}
-              >
-                <Text style={styles.quickFillText}>Unpaid</Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickFillButton}
-                onPress={() => {
-                  if (amountDue) {
-                    setAmountPaid((parseFloat(amountDue) / 2).toFixed(2));
-                  }
-                }}
-              >
-                <Text style={styles.quickFillText}>Half</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.quickFillButton, styles.quickFillButtonFull]}
-                onPress={() => setAmountPaid(amountDue)}
-              >
-                <Text style={[styles.quickFillText, styles.quickFillTextFull]}>
-                  Full
-                </Text>
-              </Pressable>
-            </View>
+            {lessonsDrivePaid ? (
+              <Text style={styles.sectionHint}>
+                Set automatically from the lessons checked as paid below.
+              </Text>
+            ) : (
+              /* Quick fill buttons */
+              <View style={styles.quickFillRow}>
+                <Pressable
+                  style={styles.quickFillButton}
+                  onPress={() => setAmountPaid('0')}
+                >
+                  <Text style={styles.quickFillText}>Unpaid</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.quickFillButton}
+                  onPress={() => {
+                    if (amountDue) {
+                      setAmountPaid((parseFloat(amountDue) / 2).toFixed(2));
+                    }
+                  }}
+                >
+                  <Text style={styles.quickFillText}>Half</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.quickFillButton, styles.quickFillButtonFull]}
+                  onPress={() => setAmountPaid(amountDue)}
+                >
+                  <Text style={[styles.quickFillText, styles.quickFillTextFull]}>
+                    Full
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
 
           {/* Notes */}
@@ -720,6 +748,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral.border,
     paddingHorizontal: spacing.md,
+  },
+  amountContainerDisabled: {
+    backgroundColor: colors.neutral.background,
   },
   currencySymbol: {
     fontSize: typography.sizes.xl,

@@ -473,6 +473,37 @@ export default function PaymentsScreen() {
     }
   };
 
+  const handleDeletePrepaid = async (paymentId: string, parentName: string) => {
+    const message = `Delete the prepaid plan for ${parentName}? This removes the plan for ${monthDisplay}. The family stays on prepaid billing — use "Switch to Invoice Billing" to change that. This cannot be undone.`;
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(message)) {
+        const success = await deletePayment.mutate(paymentId);
+        if (success) {
+          await handleRefresh();
+        } else {
+          window.alert('Failed to delete prepaid plan. Please try again.');
+        }
+      }
+    } else {
+      Alert.alert('Delete Prepaid Plan', message, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deletePayment.mutate(paymentId);
+            if (success) {
+              await handleRefresh();
+            } else {
+              Alert.alert('Error', 'Failed to delete prepaid plan. Please try again.');
+            }
+          },
+        },
+      ]);
+    }
+  };
+
   const handleOpenPrepaidModal = (parentData: ParentWithStudents) => {
     setSelectedPrepaidParent(parentData);
     setShowPrepaidModal(true);
@@ -1173,6 +1204,7 @@ export default function PaymentsScreen() {
                           onMarkPaid={() => handleMarkPrepaidPaid(prepaidPayment.id, parentData.name)}
                           onPreviewParentView={() => handlePreviewParentView(parentData, prepaidPayment)}
                           onSwitchToInvoice={() => handleSwitchToInvoice(parentData)}
+                          onDelete={() => handleDeletePrepaid(prepaidPayment.id, parentData.name)}
                         />
                       );
                     });
