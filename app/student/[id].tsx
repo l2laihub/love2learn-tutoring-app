@@ -83,6 +83,14 @@ export default function StudentDetailScreen() {
   const [pastCollapsed, setPastCollapsed] = useState(false);
   const [statusFilter, setStatusFilter] = useState<LessonStatusFilter>('all');
 
+  // Subjects this student is actually taught, which can differ from the subjects
+  // on their profile — the rate editor needs both so every billable subject is
+  // priceable.
+  const lessonSubjects = useMemo(
+    () => Array.from(new Set(lessons.map((lesson) => lesson.subject))),
+    [lessons]
+  );
+
   // Counts per status across ALL of this student's lessons, for the filter chips.
   const statusCounts = useMemo(() => {
     const counts = { all: lessons.length, scheduled: 0, completed: 0, cancelled: 0 };
@@ -679,6 +687,7 @@ export default function StudentDetailScreen() {
         visible={rateModalVisible}
         onClose={() => setRateModalVisible(false)}
         student={student}
+        lessonSubjects={lessonSubjects}
         onSave={handleSaveRates}
         saving={updating}
       />

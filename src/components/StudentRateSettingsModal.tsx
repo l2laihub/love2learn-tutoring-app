@@ -1,11 +1,16 @@
 /**
  * StudentRateSettingsModal
- * Lets a tutor set per-subject custom rates for a single student. Only the
- * student's enrolled subjects are shown. A set rate overrides the tutor-wide
- * rate for that student (solo or combined). Clearing a subject (toggle off /
- * empty) falls back to the tutor-wide rate.
+ * Lets a tutor set per-subject custom rates for a single student. A set rate
+ * overrides the tutor-wide rate for that student (solo or combined). Clearing a
+ * subject (toggle off / empty) falls back to the tutor-wide rate.
+ *
+ * Every subject the student can actually be billed for is offered: the subjects
+ * on their profile, the subjects of their real lessons (which can differ), any
+ * subject that already has a saved rate, and — behind "Show all subjects" —
+ * every remaining subject the tutor teaches. Listing only profile subjects used
+ * to leave students with no way to set a rate at all.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Modal, Pressable, ScrollView, ActivityIndicator, Alert,
   KeyboardAvoidingView, Platform,
@@ -17,6 +22,7 @@ import {
   SubjectRateFormState, emptyFormState, formStateFromConfig, buildSubjectRateConfig,
 } from '../lib/subjectRateForm';
 import { useTutorSettings, formatRateDisplay, getSubjectRateConfig } from '../hooks/useTutorSettings';
+import { extractCustomSubjects } from '../hooks/useTutorProfile';
 import { SubjectRateEditor } from './SubjectRateEditor';
 
 // Display metadata + default base duration per subject (mirrors RateSettingsModal).
@@ -28,65 +34,123 @@ const SUBJECT_META: Record<string, { label: string; emoji: string; defaultDurati
   english: { label: 'English', emoji: '📝', defaultDuration: 60 },
 };
 
-function metaFor(subject: string) {
-  return SUBJECT_META[subject] ?? {
-    label: subject.charAt(0).toUpperCase() + subject.slice(1),
+const DEFAULT_SUBJECT_KEYS = Object.keys(SUBJECT_META);
+
+function metaFor(subject: string, customNames: Record<string, string> = {}) {
+  const known = SUBJECT_META[subject];
+  if (known) return known;
+  return {
+    label: customNames[subject] ?? subject.charAt(0).toUpperCase() + subject.slice(1),
     emoji: '📚',
     defaultDuration: 60,
   };
+}
+
+/** De-duplicated, order-preserving concat. */
+function unique(...lists: string[][]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  lists.flat().forEach((value) => {
+    if (value && !seen.has(value)) {
+      seen.add(value);
+      out.push(value);
+    }
+  });
+  return out;
 }
 
 interface StudentRateSettingsModalProps {
   visible: boolean;
   onClose: () => void;
   student: StudentWithParent;
+  /** Subjects of this student's actual lessons — they can differ from the profile. */
+  lessonSubjects?: string[];
   /** Persist the new rates; return true on success. */
   onSave: (subjectRates: SubjectRates) => Promise<boolean>;
   saving?: boolean;
 }
 
 export function StudentRateSettingsModal({
-  visible, onClose, student, onSave, saving,
+  visible, onClose, student, lessonSubjects = [], onSave, saving,
 }: StudentRateSettingsModalProps) {
   const { data: settings } = useTutorSettings();
-  const enrolledSubjects = student.subjects || [];
   const [forms, setForms] = useState<Record<string, SubjectRateFormState>>({});
   const [hasChanges, setHasChanges] = useState(false);
+  const [showAllSubjects, setShowAllSubjects] = useState(false);
+
+  const savedRates = (student.subject_rates as SubjectRates | undefined) || {};
+
+  // Custom subjects live in tutor_settings.subject_rates under `custom_*` keys.
+  const customSubjects = useMemo(
+    () => extractCustomSubjects((settings?.subject_rates as Record<string, unknown>) || {}),
+    [settings?.subject_rates],
+  );
+  const customNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    customSubjects.forEach((s) => { names[s.id] = s.name; });
+    return names;
+  }, [customSubjects]);
+
+  // Subjects tied to this student — always shown.
+  const studentSubjects = useMemo(
+    () => unique(student.subjects || [], lessonSubjects, Object.keys(savedRates)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [student.id, student.subjects, lessonSubjects, student.subject_rates],
+  );
+
+  // Everything else the tutor teaches — shown on demand so a rate is always reachable.
+  const otherSubjects = useMemo(
+    () => unique(DEFAULT_SUBJECT_KEYS, customSubjects.map((s) => s.id))
+      .filter((subject) => !studentSubjects.includes(subject)),
+    [customSubjects, studentSubjects],
+  );
+
+  const visibleSubjects = showAllSubjects
+    ? unique(studentSubjects, otherSubjects)
+    : studentSubjects;
 
   // Initialize form state from the student's saved rates whenever the modal opens.
   useEffect(() => {
     if (!visible) return;
     const saved = (student.subject_rates as SubjectRates | undefined) || {};
     const next: Record<string, SubjectRateFormState> = {};
-    enrolledSubjects.forEach((subject) => {
+    unique(studentSubjects, otherSubjects).forEach((subject) => {
       next[subject] = formStateFromConfig(
         saved[subject as keyof SubjectRates],
-        metaFor(subject).defaultDuration,
+        metaFor(subject, customNames).defaultDuration,
       );
     });
     setForms(next);
     setHasChanges(false);
+    // A student with nothing on their profile would otherwise see an empty sheet.
+    setShowAllSubjects(studentSubjects.length === 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, student.id]);
 
   const update = (subject: string, patch: Partial<SubjectRateFormState>) => {
     setForms((prev) => ({
       ...prev,
-      [subject]: { ...(prev[subject] ?? emptyFormState(metaFor(subject).defaultDuration)), ...patch },
+      [subject]: {
+        ...(prev[subject] ?? emptyFormState(metaFor(subject, customNames).defaultDuration)),
+        ...patch,
+      },
     }));
     setHasChanges(true);
   };
 
   const handleToggleEnabled = (subject: string) => {
-    const current = forms[subject] ?? emptyFormState(metaFor(subject).defaultDuration);
+    const current = forms[subject] ?? emptyFormState(metaFor(subject, customNames).defaultDuration);
     update(subject, { enabled: !current.enabled });
   };
 
   const handleSave = async () => {
-    const result: SubjectRates = {};
-    for (const subject of enrolledSubjects) {
+    // Start from the saved rates so a subject that isn't rendered right now
+    // (e.g. one added by another device) keeps its rate.
+    const result: SubjectRates = { ...savedRates };
+    for (const subject of unique(studentSubjects, otherSubjects)) {
       const cfg = buildSubjectRateConfig(forms[subject]);
       if (cfg) result[subject as keyof SubjectRates] = cfg;
+      else delete result[subject as keyof SubjectRates];
     }
     const ok = await onSave(result);
     if (ok) {
@@ -131,19 +195,20 @@ export function StudentRateSettingsModal({
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.intro}>
-            Set a special rate for {student.name}. A custom rate overrides the
-            usual rate for this student. Leave a subject off to use your normal rate.
+            Set a special rate for {student.name}. A custom rate overrides your
+            usual rate — and your group rate — for this student, in solo and
+            group sessions alike. Leave a subject off to use your normal rate.
           </Text>
 
-          {enrolledSubjects.length === 0 ? (
+          {visibleSubjects.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="pricetags-outline" size={32} color="#CCC" />
-              <Text style={styles.emptyText}>No subjects enrolled</Text>
-              <Text style={styles.emptySubtext}>Add a subject to this student to set custom rates.</Text>
+              <Text style={styles.emptyText}>No subjects to price yet</Text>
+              <Text style={styles.emptySubtext}>Add a subject in Settings → Subjects &amp; Rates first.</Text>
             </View>
           ) : (
-            enrolledSubjects.map((subject) => {
-              const meta = metaFor(subject);
+            visibleSubjects.map((subject) => {
+              const meta = metaFor(subject, customNames);
               const formState = forms[subject] ?? emptyFormState(meta.defaultDuration);
               const tutorCfg = getSubjectRateConfig(settings, subject);
               const tutorRateLabel = formatRateDisplay(tutorCfg.rate, tutorCfg.base_duration);
@@ -184,6 +249,24 @@ export function StudentRateSettingsModal({
               );
             })
           )}
+
+          {otherSubjects.length > 0 && (
+            <Pressable
+              style={styles.showAllToggle}
+              onPress={() => setShowAllSubjects((prev) => !prev)}
+            >
+              <Ionicons
+                name={showAllSubjects ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={colors.piano.primary}
+              />
+              <Text style={styles.showAllToggleText}>
+                {showAllSubjects
+                  ? 'Show only this student’s subjects'
+                  : `Show all subjects (${otherSubjects.length} more)`}
+              </Text>
+            </Pressable>
+          )}
           <View style={{ height: spacing['2xl'] }} />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -213,6 +296,11 @@ const styles = StyleSheet.create({
   enableToggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   enableToggleText: { fontSize: typography.sizes.base, fontWeight: typography.weights.medium, color: colors.neutral.text },
   defaultHint: { fontSize: typography.sizes.xs, color: colors.neutral.textMuted, marginLeft: 28, marginTop: 2, marginBottom: spacing.sm },
+  showAllToggle: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    alignSelf: 'flex-start', paddingVertical: spacing.sm,
+  },
+  showAllToggleText: { fontSize: typography.sizes.sm, fontWeight: typography.weights.medium, color: colors.piano.primary },
   emptyState: { backgroundColor: colors.neutral.surface, borderRadius: borderRadius.lg, padding: spacing.xl, alignItems: 'center' },
   emptyText: { fontSize: typography.sizes.sm, color: colors.neutral.textMuted, marginTop: spacing.sm },
   emptySubtext: { fontSize: typography.sizes.xs, color: colors.neutral.border, marginTop: spacing.xs, textAlign: 'center' },

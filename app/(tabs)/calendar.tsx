@@ -748,10 +748,14 @@ export default function CalendarScreen() {
     await warnUncoveredPrepaid(billableLessons);
   };
 
-  const handleCancelLesson = async (reason?: string) => {
+  const handleCancelLesson = async (reason?: string, lessonIds?: string[]) => {
     if (!selectedGroupedLesson) return;
-    // Cancel all lessons in the group
-    for (const lesson of selectedGroupedLesson.lessons) {
+    // For a combined session the modal names the students to cancel; the rest of
+    // the session stays scheduled. No selection means cancel the whole group.
+    const targets = lessonIds
+      ? selectedGroupedLesson.lessons.filter((lesson) => lessonIds.includes(lesson.id))
+      : selectedGroupedLesson.lessons;
+    for (const lesson of targets) {
       await cancelLesson.mutate(lesson.id, reason);
     }
     await refetch();

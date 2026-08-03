@@ -124,16 +124,31 @@ export function useUpdateTutorSettings() {
 
       let result;
 
+      // Only write the fields the caller actually provided. Screens that edit a
+      // subset (e.g. Subjects & Rates saves subject_rates but has no group-rate
+      // UI) must not blank out the rest — an unconditional write here used to
+      // reset group_subject_rates to {} and lose every group price.
+      const patch: Record<string, unknown> = {};
+      if (input.default_rate !== undefined) patch.default_rate = input.default_rate;
+      if (input.default_base_duration !== undefined) {
+        patch.default_base_duration = input.default_base_duration;
+      }
+      if (input.subject_rates !== undefined) {
+        patch.subject_rates = input.subject_rates as unknown as Json;
+      }
+      if (input.group_subject_rates !== undefined) {
+        patch.group_subject_rates = input.group_subject_rates as unknown as Json;
+      }
+
+      if (existing && Object.keys(patch).length === 0) {
+        throw new Error('No settings were provided to update');
+      }
+
       if (existing) {
         // Update existing
         const { data: updated, error: updateError } = await supabase
           .from('tutor_settings')
-          .update({
-            default_rate: input.default_rate,
-            default_base_duration: input.default_base_duration,
-            subject_rates: (input.subject_rates || {}) as unknown as Json,
-            group_subject_rates: (input.group_subject_rates || {}) as unknown as Json,
-          })
+          .update(patch)
           .eq('tutor_id', user.id)
           .select()
           .single();
