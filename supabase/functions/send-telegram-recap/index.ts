@@ -17,6 +17,7 @@ import {
   localDateStartToUtcISO,
   type RecapLesson,
 } from './recap.ts';
+import { fetchGroupSessionIds } from '../_shared/groupSessions.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -177,6 +178,12 @@ serve(async (req: Request) => {
 
     const autoMarked = (lessonRows ?? []).filter((l: any) => l.auto_completed_at != null).length;
 
+    // Only sessions holding more than one student price as a group.
+    const groupSessionIds = await fetchGroupSessionIds(
+      supabase,
+      (lessonRows ?? []).map((l: any) => l.session_id ?? null),
+    );
+
     const expected = (lessonRows ?? [])
       .filter((l: any) => l.status !== 'cancelled')
       .reduce(
@@ -186,7 +193,7 @@ serve(async (req: Request) => {
             settings ?? null,
             l.subject,
             Number(l.duration_min) || 0,
-            l.session_id !== null,
+            l.session_id !== null && groupSessionIds.has(l.session_id),
             l.override_amount == null ? null : Number(l.override_amount),
             (l.student?.subject_rates as any) ?? null,
           ),

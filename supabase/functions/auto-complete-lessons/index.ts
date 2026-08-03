@@ -16,6 +16,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 import { calculateLessonAmount } from '../_shared/lessonAmount.ts';
+import { fetchGroupSessionIds } from '../_shared/groupSessions.ts';
 import { prepaidCoverage } from '../_shared/prepaidCoverage.ts';
 import {
   buildUncoveredPrepaidMessage,
@@ -316,6 +317,13 @@ async function generateInvoice(
   );
   if (uninvoiced.length === 0) return null;
 
+  // Session sizes come from a separate query: this run only sees one family's
+  // lessons, and a session spans families.
+  const groupSessionIds = await fetchGroupSessionIds(
+    supabase,
+    uninvoiced.map((l: { session_id: string | null }) => l.session_id),
+  );
+
   const lessonAmounts = uninvoiced.map((l: any) => ({
     lesson_id: l.id,
     // Raw, unrounded amount — matches useQuickInvoice (usePayments.ts:1902-1917).
@@ -324,7 +332,7 @@ async function generateInvoice(
       (settings as any) ?? null,
       l.subject,
       Number(l.duration_min) || 0,
-      l.session_id !== null,
+      l.session_id !== null && groupSessionIds.has(l.session_id),
       l.override_amount == null ? null : Number(l.override_amount),
       (studentRatesById.get(l.student_id) as any) ?? null,
     ),
