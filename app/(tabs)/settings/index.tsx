@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
 import { useSubscription } from '../../../src/hooks/useSubscription';
+import { SHOW_SUBSCRIPTION_UI } from '../../../src/config/subscription';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -121,21 +122,23 @@ export default function SettingsIndexScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Subscription & Billing Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Subscription & Billing</Text>
-          <View style={styles.card}>
-            <SettingsItem
-              icon="card"
-              iconColor={colors.secondary.main}
-              iconBgColor={colors.secondary.subtle}
-              label="Subscription"
-              description="Manage your plan, billing, and invoices"
-              badge={getSubscriptionBadge()}
-              onPress={() => router.push('/(tabs)/settings/subscription')}
-            />
+        {/* Subscription & Billing Section (web only — App Store 3.1.1) */}
+        {SHOW_SUBSCRIPTION_UI && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Subscription & Billing</Text>
+            <View style={styles.card}>
+              <SettingsItem
+                icon="card"
+                iconColor={colors.secondary.main}
+                iconBgColor={colors.secondary.subtle}
+                label="Subscription"
+                description="Manage your plan, billing, and invoices"
+                badge={getSubscriptionBadge()}
+                onPress={() => router.push('/(tabs)/settings/subscription')}
+              />
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Account Section */}
         <View style={styles.section}>

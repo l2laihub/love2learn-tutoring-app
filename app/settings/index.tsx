@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
+import { SHOW_SUBSCRIPTION_UI } from '../../src/config/subscription';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -28,7 +29,7 @@ interface SettingsItem {
   href: string;
 }
 
-const settingsItems: SettingsItem[] = [
+const allSettingsItems: SettingsItem[] = [
   {
     key: 'business',
     title: 'Business Profile',
@@ -57,6 +58,11 @@ const settingsItems: SettingsItem[] = [
     href: '/settings/subscription',
   },
 ];
+
+// Subscription/billing UI is web-only (App Store 3.1.1)
+const settingsItems = allSettingsItems.filter(
+  (item) => SHOW_SUBSCRIPTION_UI || item.key !== 'subscription'
+);
 
 function SettingsRow({ item, onPress }: { item: SettingsItem; onPress: () => void }) {
   return (

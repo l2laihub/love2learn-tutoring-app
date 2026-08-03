@@ -11,7 +11,7 @@ import { useTutorBranding } from '../../src/hooks/useTutorBranding';
 import { DesktopSidebar } from '../../src/components/layout/DesktopSidebar';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { SubscriptionGate } from '../../src/components/SubscriptionGate';
-import { PAYWALL_ENABLED } from '../../src/config/subscription';
+import { PAYWALL_ENABLED, SHOW_SUBSCRIPTION_UI } from '../../src/config/subscription';
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -66,8 +66,10 @@ export default function TabLayout() {
   // Paywall: when enforcement is enabled, tutors without an active subscription
   // or trial see the paywall instead of the app. Parents are never gated.
   // Disabled by default (EXPO_PUBLIC_ENABLE_PAYWALL) — see docs/PAYWALL_SETUP.md.
+  // Web only: the gate's Subscribe button opens Stripe checkout, which is a
+  // non-IAP purchase path and violates App Store Guideline 3.1.1 on native.
   const withGate = (node: ReactNode): ReactNode =>
-    PAYWALL_ENABLED && isTutor ? (
+    PAYWALL_ENABLED && SHOW_SUBSCRIPTION_UI && isTutor ? (
       <SubscriptionGate featureName="DaLesson">{node}</SubscriptionGate>
     ) : (
       node
