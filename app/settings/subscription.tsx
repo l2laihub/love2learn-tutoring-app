@@ -13,15 +13,21 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 import { useSubscription } from '../../src/hooks/useSubscription';
+import { SHOW_SUBSCRIPTION_UI } from '../../src/config/subscription';
 import { useResponsive } from '../../src/hooks/useResponsive';
 
 export default function SubscriptionSettingsScreen() {
   const { subscription, loading, error, refresh, isActive, isTrial, trialDaysRemaining } = useSubscription();
   const { isDesktop } = useResponsive();
+
+  // Subscription/billing UI is web-only (App Store 3.1.1)
+  if (!SHOW_SUBSCRIPTION_UI) {
+    return <Redirect href="/settings" />;
+  }
 
   if (loading) {
     return (

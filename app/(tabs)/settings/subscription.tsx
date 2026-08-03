@@ -19,7 +19,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
+import { Redirect } from 'expo-router';
 import { useSubscription } from '../../../src/hooks/useSubscription';
+import { SHOW_SUBSCRIPTION_UI } from '../../../src/config/subscription';
 import { TrialBanner } from '../../../src/components/TrialBanner';
 import { SubscriptionPlan } from '../../../src/lib/stripe';
 
@@ -244,6 +246,11 @@ export default function SubscriptionScreen() {
     await refresh();
     setRefreshing(false);
   }, [refresh]);
+
+  // Subscription/billing UI is web-only (App Store 3.1.1)
+  if (!SHOW_SUBSCRIPTION_UI) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
 
   const handleManageBilling = async () => {
     try {

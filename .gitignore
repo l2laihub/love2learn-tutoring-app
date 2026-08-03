@@ -63,6 +63,7 @@ build/
 # Temporary files
 *.tmp
 *.temp
+tmp/
 .cache/
 
 # Expo EAS
