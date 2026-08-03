@@ -53,7 +53,12 @@ interface LessonDetailModalProps {
   onEditSeries?: () => void; // Edit this and all future lessons in the recurring series
   onComplete: (notes?: string, cancelledLessonIds?: string[]) => Promise<void>;
   onCompleteAndPay?: (notes?: string, cancelledLessonIds?: string[]) => Promise<void>; // Complete and mark as paid
-  onCancel: (reason?: string) => Promise<void>;
+  /**
+   * Cancel the lesson. For a combined session, `lessonIds` names the individual
+   * student lessons to cancel — the rest of the session stays scheduled.
+   * Omitted (or undefined) means "cancel everything in this session".
+   */
+  onCancel: (reason?: string, lessonIds?: string[]) => Promise<void>;
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
   onDelete?: () => Promise<void>;
   onDeleteSeries?: () => Promise<void>;
@@ -93,6 +98,8 @@ export function LessonDetailModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  // Student lessons selected for cancellation in a combined session.
+  const [cancelLessonIds, setCancelLessonIds] = useState<string[]>([]);
   const [completeNotes, setCompleteNotes] = useState('');
   // Student lessons (by id) the tutor marked as canceled while completing a combined session.
   const [cancelledLessonIds, setCancelledLessonIds] = useState<string[]>([]);
@@ -256,12 +263,31 @@ export function LessonDetailModal({
     );
   };
 
+  // Open the cancel dialog with every still-scheduled student preselected, so
+  // the default stays "cancel the whole session".
+  const openCancelConfirm = () => {
+    setCancelLessonIds(pendingGroupLessons.map((l) => l.id));
+    setShowCancelConfirm(true);
+  };
+
+  const toggleCancelSelection = (lessonId: string) => {
+    setCancelLessonIds((prev) =>
+      prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
+    );
+  };
+
   const handleCancel = async () => {
+    // Non-grouped lessons keep the old behavior (undefined = cancel it all).
+    if (isGroupedSession && cancelLessonIds.length === 0) return;
     setLoading(true);
     try {
-      await onCancel(cancelReason.trim() || undefined);
+      await onCancel(
+        cancelReason.trim() || undefined,
+        isGroupedSession ? cancelLessonIds : undefined
+      );
       setShowCancelConfirm(false);
       setCancelReason('');
+      setCancelLessonIds([]);
       onClose();
     } catch (err) {
       console.error('Failed to cancel lesson:', err);
@@ -332,6 +358,7 @@ export function LessonDetailModal({
     setShowDeleteConfirm(false);
     setShowDeleteSeriesConfirm(false);
     setCancelReason('');
+    setCancelLessonIds([]);
     setCompleteNotes('');
     setCancelledLessonIds([]);
     setCompletingAction(null);
@@ -340,15 +367,53 @@ export function LessonDetailModal({
 
   // Confirmation dialogs
   if (showCancelConfirm) {
+    const cancellingAll = isGroupedSession && cancelLessonIds.length === pendingGroupLessons.length;
     return (
       <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
         <View style={styles.overlay}>
           <View style={styles.confirmDialog}>
             <Ionicons name="close-circle" size={48} color={colors.status.error} />
-            <Text style={styles.confirmTitle}>Cancel Lesson?</Text>
-            <Text style={styles.confirmSubtitle}>
-              This will notify {lesson.student?.parent?.name || 'the parent'} about the cancellation.
+            <Text style={styles.confirmTitle}>
+              {isGroupedSession
+                ? cancellingAll ? 'Cancel Session?' : 'Cancel Students?'
+                : 'Cancel Lesson?'}
             </Text>
+            <Text style={styles.confirmSubtitle}>
+              {isGroupedSession
+                ? 'Choose who is cancelling. Unselected students keep their lesson, and cancelled students are not charged.'
+                : `This will notify ${lesson.student?.parent?.name || 'the parent'} about the cancellation.`}
+            </Text>
+            {isGroupedSession && (
+              <View style={styles.attendanceList}>
+                {pendingGroupLessons.map((l) => {
+                  const isSelected = cancelLessonIds.includes(l.id);
+                  return (
+                    <Pressable
+                      key={l.id}
+                      style={styles.attendanceRow}
+                      onPress={() => toggleCancelSelection(l.id)}
+                      disabled={loading}
+                    >
+                      <Ionicons
+                        name={isSelected ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color={isSelected ? colors.status.error : colors.neutral.textMuted}
+                      />
+                      <Text style={[styles.attendanceIcon, styles.cancelRowIcon]}>
+                        {SUBJECT_EMOJI[l.subject]}
+                      </Text>
+                      <View style={styles.attendanceInfo}>
+                        <Text style={styles.attendanceName}>{l.student?.name || 'Student'}</Text>
+                        <Text style={styles.attendanceSubject}>{SUBJECT_NAMES[l.subject]}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            {isGroupedSession && cancelLessonIds.length === 0 && (
+              <Text style={styles.allCancelledHint}>Select at least one student to cancel.</Text>
+            )}
             <TextInput
               style={styles.confirmInput}
               value={cancelReason}
@@ -366,14 +431,24 @@ export function LessonDetailModal({
                 <Text style={styles.confirmButtonSecondaryText}>Go Back</Text>
               </Pressable>
               <Pressable
-                style={[styles.confirmButton, styles.confirmButtonDanger]}
+                style={[
+                  styles.confirmButton,
+                  styles.confirmButtonDanger,
+                  isGroupedSession && cancelLessonIds.length === 0 && styles.confirmButtonDisabled,
+                ]}
                 onPress={handleCancel}
-                disabled={loading}
+                disabled={loading || (isGroupedSession && cancelLessonIds.length === 0)}
               >
                 {loading ? (
                   <ActivityIndicator size="small" color={colors.neutral.white} />
                 ) : (
-                  <Text style={styles.confirmButtonText}>Cancel Lesson</Text>
+                  <Text style={styles.confirmButtonText}>
+                    {isGroupedSession
+                      ? cancellingAll
+                        ? 'Cancel Session'
+                        : `Cancel ${cancelLessonIds.length} Student${cancelLessonIds.length === 1 ? '' : 's'}`
+                      : 'Cancel Lesson'}
+                  </Text>
                 )}
               </Pressable>
             </View>
@@ -938,10 +1013,7 @@ export function LessonDetailModal({
                 <Text style={styles.editButtonText}>Edit Series ({seriesCount})</Text>
               </Pressable>
             )}
-            <Pressable
-              style={styles.cancelButton}
-              onPress={() => setShowCancelConfirm(true)}
-            >
+            <Pressable style={styles.cancelButton} onPress={openCancelConfirm}>
               <Ionicons name="close-circle-outline" size={20} color={colors.status.error} />
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
@@ -1205,6 +1277,9 @@ const styles = StyleSheet.create({
   attendanceIcon: {
     fontSize: 18,
     marginRight: spacing.sm,
+  },
+  cancelRowIcon: {
+    marginLeft: spacing.sm,
   },
   attendanceInfo: {
     flex: 1,

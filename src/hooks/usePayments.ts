@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { fetchPrepaidSessionsUsed, type PrepaidUsage } from '../lib/prepaidSessions';
+import { fetchGroupSessionIds } from '../lib/groupSessions';
 import {
   Payment,
   PaymentWithParent,
@@ -1549,6 +1550,11 @@ export function useMonthlyLessonSummary(month?: Date) {
 
       if (lessonsError) throw new Error(lessonsError.message);
 
+      // Which of those sessions hold more than one student, and so price as a group.
+      const groupSessionIds = await fetchGroupSessionIds(
+        (lessons || []).map((l: { session_id: string | null }) => l.session_id)
+      );
+
       // 4. Fetch all payments for this month with linked lessons
       const { data: payments, error: paymentsError } = await supabase
         .from('payments')
@@ -1637,7 +1643,8 @@ export function useMonthlyLessonSummary(month?: Date) {
         const summary = familySummaries.get(parentId);
         if (!summary) return;
 
-        const isCombinedSession = lesson.session_id !== null;
+        const isCombinedSession =
+          lesson.session_id !== null && groupSessionIds.has(lesson.session_id);
         const rateCalc = calculateLessonAmountWithDetails(
           tutorSettings as TutorSettings | null,
           lesson.subject,
@@ -1926,6 +1933,12 @@ export function useQuickInvoice() {
         throw new Error(`All ${lessons.length} completed lesson(s) are already invoiced for parent ${parentId}`);
       }
 
+      // Session sizes come from a separate query: this run only sees one
+      // family's lessons, and a session spans families.
+      const groupSessionIds = await fetchGroupSessionIds(
+        uninvoicedLessons.map((l: { session_id: string | null }) => l.session_id)
+      );
+
       const lessonAmounts = uninvoicedLessons.map((lesson: {
         id: string;
         student_id: string;
@@ -1939,7 +1952,7 @@ export function useQuickInvoice() {
           tutorSettings as TutorSettings | null,
           lesson.subject,
           lesson.duration_min,
-          lesson.session_id !== null,
+          lesson.session_id !== null && groupSessionIds.has(lesson.session_id),
           lesson.override_amount,
           studentRatesById.get(lesson.student_id) || null
         ),

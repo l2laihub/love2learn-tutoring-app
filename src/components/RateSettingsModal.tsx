@@ -45,6 +45,22 @@ const SUBJECTS: { key: TutoringSubject; label: string; emoji: string; defaultDur
 // Duration options for picker
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 
+const EDITABLE_KEYS = new Set<string>(SUBJECTS.map(s => s.key));
+
+/**
+ * Entries of a stored rate map that this editor does not render (custom
+ * subjects and anything added later). They're returned verbatim so a save here
+ * rewrites only the subjects the tutor can actually see.
+ */
+function preservedRates(rates: SubjectRates | null | undefined): SubjectRates {
+  if (!rates) return {};
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rates)) {
+    if (!EDITABLE_KEYS.has(key)) kept[key] = value;
+  }
+  return kept as SubjectRates;
+}
+
 export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModalProps) {
   const { data: settings, loading, refetch } = useTutorSettings();
   const updateSettings = useUpdateTutorSettings();
@@ -215,15 +231,20 @@ export function RateSettingsModal({ visible, onClose, onSave }: RateSettingsModa
       return;
     }
 
-    // Build subject rates object (only include enabled subjects with valid rates)
-    const parsedSubjectRates: SubjectRates = {};
+    // Build subject rates object (only include enabled subjects with valid rates).
+    // Entries this editor doesn't render — custom subjects, which live in
+    // subject_rates under `custom_*` keys along with their name/color metadata —
+    // are carried over untouched so saving here can't delete them.
+    const parsedSubjectRates: SubjectRates = { ...preservedRates(settings?.subject_rates) };
     for (const subject of SUBJECTS) {
       const cfg = buildSubjectRateConfig(subjectRates[subject.key]);
       if (cfg) parsedSubjectRates[subject.key] = cfg;
+      else delete parsedSubjectRates[subject.key];
     }
 
-    const parsedGroupRates: SubjectRates = {};
+    const parsedGroupRates: SubjectRates = { ...preservedRates(settings?.group_subject_rates) };
     for (const subject of SUBJECTS) {
+      delete parsedGroupRates[subject.key];
       const formState = groupRates[subject.key];
       if (formState?.enabled && formState.rate.trim() !== '') {
         const parsed = parseFloat(formState.rate);
