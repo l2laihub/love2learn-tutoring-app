@@ -60,6 +60,11 @@ interface LessonDetailModalProps {
    */
   onCancel: (reason?: string, lessonIds?: string[]) => Promise<void>;
   onUncomplete?: () => Promise<void>; // Undo a completed lesson (admin only)
+  /**
+   * Put cancelled lessons back to scheduled. For a combined session, `lessonIds`
+   * names the students to restore; omitted means every cancelled lesson here.
+   */
+  onUncancel?: (lessonIds?: string[]) => Promise<void>;
   onDelete?: () => Promise<void>;
   onDeleteSeries?: () => Promise<void>;
   onRequestReschedule?: () => void; // For parents to request reschedule
@@ -82,6 +87,7 @@ export function LessonDetailModal({
   onCompleteAndPay,
   onCancel,
   onUncomplete,
+  onUncancel,
   onDelete,
   onDeleteSeries,
   onRequestReschedule,
@@ -95,6 +101,9 @@ export function LessonDetailModal({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [showUncompleteConfirm, setShowUncompleteConfirm] = useState(false);
+  const [showUncancelConfirm, setShowUncancelConfirm] = useState(false);
+  // Student lessons selected for restoring in a combined session.
+  const [uncancelLessonIds, setUncancelLessonIds] = useState<string[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDeleteSeriesConfirm, setShowDeleteSeriesConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -216,6 +225,8 @@ export function LessonDetailModal({
   // Students still pending completion in this session, and whether the tutor has
   // marked every one of them as canceled (which is a full cancel, not a completion).
   const pendingGroupLessons = displayData.lessons.filter((l) => l.status === 'scheduled');
+  // Students already cancelled out of this session — restorable one by one.
+  const cancelledGroupLessons = displayData.lessons.filter((l) => l.status === 'cancelled');
   const allStudentsCancelled =
     isGroupedSession &&
     pendingGroupLessons.length > 0 &&
@@ -274,6 +285,33 @@ export function LessonDetailModal({
     setCancelLessonIds((prev) =>
       prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
     );
+  };
+
+  // Open the restore dialog with every cancelled student preselected.
+  const openUncancelConfirm = () => {
+    setUncancelLessonIds(cancelledGroupLessons.map((l) => l.id));
+    setShowUncancelConfirm(true);
+  };
+
+  const toggleUncancelSelection = (lessonId: string) => {
+    setUncancelLessonIds((prev) =>
+      prev.includes(lessonId) ? prev.filter((id) => id !== lessonId) : [...prev, lessonId]
+    );
+  };
+
+  const handleUncancel = async () => {
+    if (!onUncancel || uncancelLessonIds.length === 0) return;
+    setLoading(true);
+    try {
+      await onUncancel(uncancelLessonIds);
+      setShowUncancelConfirm(false);
+      setUncancelLessonIds([]);
+      onClose();
+    } catch (err) {
+      console.error('Failed to restore lesson:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancel = async () => {
@@ -355,6 +393,8 @@ export function LessonDetailModal({
     setShowCancelConfirm(false);
     setShowCompleteConfirm(false);
     setShowUncompleteConfirm(false);
+    setShowUncancelConfirm(false);
+    setUncancelLessonIds([]);
     setShowDeleteConfirm(false);
     setShowDeleteSeriesConfirm(false);
     setCancelReason('');
@@ -639,6 +679,79 @@ export function LessonDetailModal({
                   <ActivityIndicator size="small" color={colors.neutral.white} />
                 ) : (
                   <Text style={styles.confirmButtonText}>Delete All</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  if (showUncancelConfirm) {
+    return (
+      <Modal visible={visible} animationType="fade" transparent onRequestClose={handleClose}>
+        <View style={styles.overlay}>
+          <View style={styles.confirmDialog}>
+            <Ionicons name="arrow-undo-circle" size={48} color={colors.status.warning} />
+            <Text style={styles.confirmTitle}>Undo Cancellation?</Text>
+            <Text style={styles.confirmSubtitle}>
+              {isGroupedSession
+                ? 'Selected students go back to Scheduled for this session.'
+                : 'This will change the lesson status back to "Scheduled".'}
+            </Text>
+            {isGroupedSession && (
+              <View style={styles.attendanceList}>
+                {cancelledGroupLessons.map((l) => {
+                  const isSelected = uncancelLessonIds.includes(l.id);
+                  return (
+                    <Pressable
+                      key={l.id}
+                      style={styles.attendanceRow}
+                      onPress={() => toggleUncancelSelection(l.id)}
+                      disabled={loading}
+                    >
+                      <Ionicons
+                        name={isSelected ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color={isSelected ? colors.status.warning : colors.neutral.textMuted}
+                      />
+                      <Text style={[styles.attendanceIcon, styles.cancelRowIcon]}>
+                        {SUBJECT_EMOJI[l.subject]}
+                      </Text>
+                      <View style={styles.attendanceInfo}>
+                        <Text style={styles.attendanceName}>{l.student?.name || 'Student'}</Text>
+                        <Text style={styles.attendanceSubject}>{SUBJECT_NAMES[l.subject]}</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            {uncancelLessonIds.length === 0 && (
+              <Text style={styles.allCancelledHint}>Select at least one student to restore.</Text>
+            )}
+            <View style={styles.confirmActions}>
+              <Pressable
+                style={[styles.confirmButton, styles.confirmButtonSecondary]}
+                onPress={() => setShowUncancelConfirm(false)}
+                disabled={loading}
+              >
+                <Text style={styles.confirmButtonSecondaryText}>Go Back</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.confirmButton,
+                  styles.confirmButtonWarning,
+                  uncancelLessonIds.length === 0 && styles.confirmButtonDisabled,
+                ]}
+                onPress={handleUncancel}
+                disabled={loading || uncancelLessonIds.length === 0}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={colors.neutral.white} />
+                ) : (
+                  <Text style={styles.confirmButtonText}>Restore</Text>
                 )}
               </Pressable>
             </View>
@@ -1017,6 +1130,12 @@ export function LessonDetailModal({
               <Ionicons name="close-circle-outline" size={20} color={colors.status.error} />
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </Pressable>
+            {onUncancel && cancelledGroupLessons.length > 0 && (
+              <Pressable style={styles.uncompleteButton} onPress={openUncancelConfirm}>
+                <Ionicons name="arrow-undo-circle-outline" size={20} color={colors.status.warning} />
+                <Text style={styles.uncompleteButtonText}>Undo Cancel</Text>
+              </Pressable>
+            )}
             <Pressable
               style={styles.completeButton}
               onPress={() => setShowCompleteConfirm(true)}
@@ -1043,6 +1162,16 @@ export function LessonDetailModal({
                 </Text>
               </View>
             )}
+          </View>
+        )}
+
+        {/* Cancelled lesson actions (tutor/admin only): restore students to scheduled */}
+        {displayData.status === 'cancelled' && isTutor && onUncancel && (
+          <View style={styles.actions}>
+            <Pressable style={styles.uncompleteButton} onPress={openUncancelConfirm}>
+              <Ionicons name="arrow-undo-circle-outline" size={20} color={colors.status.warning} />
+              <Text style={styles.uncompleteButtonText}>Undo Cancel</Text>
+            </Pressable>
           </View>
         )}
 

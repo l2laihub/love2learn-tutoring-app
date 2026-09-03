@@ -610,9 +610,14 @@ export default function CalendarScreen() {
   const handleCompleteLesson = async (notes?: string, cancelledLessonIds: string[] = []) => {
     if (!selectedGroupedLesson) return;
 
+    // Only students still pending are resolved here. A student cancelled earlier
+    // (per-student cancel on a combined session) stays cancelled — completing the
+    // session must never revive and bill a no-show.
+    const pendingLessons = selectedGroupedLesson.lessons.filter((l) => l.status === 'scheduled');
+
     // Complete attending students; cancel (no charge) any the tutor marked canceled.
     // Cancelled lessons keep status 'cancelled', so they're excluded from invoicing and prepaid.
-    for (const lesson of selectedGroupedLesson.lessons) {
+    for (const lesson of pendingLessons) {
       if (cancelledLessonIds.includes(lesson.id)) {
         await cancelLesson.mutate(lesson.id);
       } else {
@@ -622,7 +627,7 @@ export default function CalendarScreen() {
     await refetch();
 
     // Only attending (non-cancelled) students drive invoice/prepaid logic.
-    const billableLessons = selectedGroupedLesson.lessons.filter(
+    const billableLessons = pendingLessons.filter(
       (lesson) => !cancelledLessonIds.includes(lesson.id)
     );
 
@@ -682,8 +687,11 @@ export default function CalendarScreen() {
   const handleCompleteLessonAndPay = async (notes?: string, cancelledLessonIds: string[] = []) => {
     if (!selectedGroupedLesson) return;
 
+    // Only students still pending are resolved here — see handleCompleteLesson.
+    const pendingLessons = selectedGroupedLesson.lessons.filter((l) => l.status === 'scheduled');
+
     // Complete attending students; cancel (no charge) any the tutor marked canceled.
-    for (const lesson of selectedGroupedLesson.lessons) {
+    for (const lesson of pendingLessons) {
       if (cancelledLessonIds.includes(lesson.id)) {
         await cancelLesson.mutate(lesson.id);
       } else {
@@ -693,7 +701,7 @@ export default function CalendarScreen() {
     await refetch();
 
     // Only attending (non-cancelled) students drive invoice/prepaid logic.
-    const billableLessons = selectedGroupedLesson.lessons.filter(
+    const billableLessons = pendingLessons.filter(
       (lesson) => !cancelledLessonIds.includes(lesson.id)
     );
 
@@ -761,10 +769,25 @@ export default function CalendarScreen() {
     await refetch();
   };
 
+  // Put cancelled students back to scheduled. `lessonIds` names them for a
+  // combined session; without it every cancelled lesson in the group is restored.
+  const handleUncancelLesson = async (lessonIds?: string[]) => {
+    if (!selectedGroupedLesson) return;
+    const targets = selectedGroupedLesson.lessons.filter(
+      (lesson) =>
+        lesson.status === 'cancelled' && (!lessonIds || lessonIds.includes(lesson.id))
+    );
+    for (const lesson of targets) {
+      await uncompleteLesson.mutate(lesson.id);
+    }
+    await refetch();
+  };
+
   const handleUncompleteLesson = async () => {
     if (!selectedGroupedLesson) return;
-    // Uncomplete all lessons in the group (revert to scheduled)
-    for (const lesson of selectedGroupedLesson.lessons) {
+    // Revert the completed lessons only — a student cancelled for this session
+    // stays cancelled.
+    for (const lesson of selectedGroupedLesson.lessons.filter((l) => l.status === 'completed')) {
       await uncompleteLesson.mutate(lesson.id);
     }
     await refetch();
@@ -1417,6 +1440,7 @@ export default function CalendarScreen() {
         onComplete={handleCompleteLesson}
         onCompleteAndPay={isTutor ? handleCompleteLessonAndPay : undefined}
         onCancel={handleCancelLesson}
+        onUncancel={isTutor ? handleUncancelLesson : undefined}
         onUncomplete={isTutor ? handleUncompleteLesson : undefined}
         onDelete={isTutor ? handleDeleteLesson : undefined}
         onDeleteSeries={
