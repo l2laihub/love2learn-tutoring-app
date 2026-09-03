@@ -756,11 +756,6 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
         .eq('tutor_id', user.id)
         .maybeSingle();
 
-      // Default rates if no tutor settings exist
-      const defaultRate = tutorSettings?.default_rate || 45;
-      const defaultBaseDuration = tutorSettings?.default_base_duration || 60;
-      const tutorSubjectRates = (tutorSettings?.subject_rates as SubjectRates) || {};
-
       // Get completed lessons for these students in the month (include session_id and override_amount)
       const { data: lessons, error: lessonsError } = await supabase
         .from('scheduled_lessons')
@@ -793,87 +788,27 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
 
       const invoicedLessonIds = new Set((invoicedLessons || []).map(il => il.lesson_id));
 
-      // Helper to format rate display
-      const formatRateDisplay = (rate: number, baseDuration: number): string => {
-        if (baseDuration === 60) {
-          return `$${rate}/hr`;
-        }
-        return `$${rate}/${baseDuration}min`;
-      };
+      // A session only prices as a group when it actually holds more than one student,
+      // and the price has to come from the same calculator the invoice writers use
+      // (useQuickInvoice / auto-complete-lessons) — a second copy of the rate maths here
+      // is how the preview and the charge ended up quoting different amounts.
+      const groupSessionIds = await fetchGroupSessionIds(
+        lessons.map(l => l.session_id)
+      );
 
-      // Filter out already invoiced lessons and calculate amounts
-      // Combined sessions now use duration-based subject rates (same as regular lessons)
       const uninvoicedLessons: LessonForInvoice[] = lessons
         .filter(lesson => !invoicedLessonIds.has(lesson.id))
         .map(lesson => {
           const student = studentMap.get(lesson.student_id);
-          const isCombinedSession = lesson.session_id !== null;
-
-          // If override_amount is set, use it directly
-          if (lesson.override_amount !== null && lesson.override_amount !== undefined) {
-            return {
-              id: lesson.id,
-              student_id: lesson.student_id,
-              student_name: student?.name || 'Unknown',
-              subject: lesson.subject as TutoringSubject,
-              scheduled_at: lesson.scheduled_at,
-              duration_min: lesson.duration_min,
-              rate: 0,
-              base_duration: 0,
-              rate_display: 'Override',
-              calculated_amount: lesson.override_amount,
-              session_id: lesson.session_id,
-              is_combined_session: isCombinedSession,
-              override_amount: lesson.override_amount,
-            };
-          }
-
-          // Use duration-based subject rates for ALL lessons (including combined sessions)
-          let rate: number;
-          let baseDuration: number;
-          let calculatedAmount: number;
-          let rateDisplay: string;
-
-          const studentSubjectRates = (student?.subject_rates as SubjectRates | undefined) || {};
-          const studentRateConfig = studentSubjectRates[lesson.subject as keyof SubjectRates];
-          const subjectRateConfig =
-            studentRateConfig && studentRateConfig.rate > 0 && studentRateConfig.base_duration > 0
-              ? studentRateConfig
-              : tutorSubjectRates[lesson.subject as keyof SubjectRates];
-          if (subjectRateConfig && subjectRateConfig.rate > 0 && subjectRateConfig.base_duration > 0) {
-            // Check for explicit duration price tier first
-            // JSON from database has string keys, so we must use string key for lookup
-            const durationPricesRaw = subjectRateConfig.duration_prices;
-            if (durationPricesRaw && typeof durationPricesRaw === 'object') {
-              const durationKey = String(lesson.duration_min);
-              const explicitPrice = (durationPricesRaw as Record<string, number>)[durationKey];
-
-              if (typeof explicitPrice === 'number' && explicitPrice > 0) {
-                // Use explicit tier pricing
-                rate = explicitPrice;
-                baseDuration = lesson.duration_min;
-                calculatedAmount = explicitPrice;
-                rateDisplay = `$${explicitPrice}/${lesson.duration_min}min`;
-              } else {
-                // Fall back to linear calculation
-                rate = subjectRateConfig.rate;
-                baseDuration = subjectRateConfig.base_duration;
-                calculatedAmount = (lesson.duration_min / baseDuration) * rate;
-                rateDisplay = formatRateDisplay(rate, baseDuration);
-              }
-            } else {
-              // No tier pricing, use linear calculation
-              rate = subjectRateConfig.rate;
-              baseDuration = subjectRateConfig.base_duration;
-              calculatedAmount = (lesson.duration_min / baseDuration) * rate;
-              rateDisplay = formatRateDisplay(rate, baseDuration);
-            }
-          } else {
-            rate = defaultRate;
-            baseDuration = defaultBaseDuration;
-            calculatedAmount = (lesson.duration_min / baseDuration) * rate;
-            rateDisplay = formatRateDisplay(rate, baseDuration);
-          }
+          const isGroupSession = lesson.session_id !== null && groupSessionIds.has(lesson.session_id);
+          const calc = calculateLessonAmountWithDetails(
+            tutorSettings as TutorSettings | null,
+            lesson.subject as TutoringSubject,
+            lesson.duration_min,
+            isGroupSession,
+            lesson.override_amount,
+            (student?.subject_rates as SubjectRates | null) || null
+          );
 
           return {
             id: lesson.id,
@@ -882,13 +817,13 @@ export function useUninvoicedLessons(parentId: string | null, month?: Date) {
             subject: lesson.subject as TutoringSubject,
             scheduled_at: lesson.scheduled_at,
             duration_min: lesson.duration_min,
-            rate: rate,
-            base_duration: baseDuration,
-            rate_display: rateDisplay,
-            calculated_amount: Math.round(calculatedAmount * 100) / 100, // Round to 2 decimal places
+            rate: calc.rate,
+            base_duration: calc.baseDuration,
+            rate_display: calc.rateDisplay,
+            calculated_amount: Math.round(calc.amount * 100) / 100, // Round to 2 decimal places
             session_id: lesson.session_id,
-            is_combined_session: isCombinedSession,
-            override_amount: null,
+            is_combined_session: lesson.session_id !== null,
+            override_amount: lesson.override_amount ?? null,
           };
         });
 
@@ -1112,25 +1047,28 @@ export function usePaymentWithLessons(paymentId: string | null): QueryState<Paym
       );
 
       if (cancelledLinks.length > 0) {
-        const cancelledAmount = cancelledLinks.reduce((sum: number, pl: any) => sum + (pl.amount || 0), 0);
         const cancelledIds = cancelledLinks.map((pl: any) => pl.id);
 
-        // Remove cancelled lesson links
+        // Remove cancelled lesson links. The recompute_payment_from_lessons trigger
+        // rolls amount_due / amount_paid / status up from the remaining links, so re-read
+        // the payment instead of subtracting here (two screens doing that subtraction
+        // concurrently is how amount_due drifted below the checklist total).
         await supabase
           .from('payment_lessons')
           .delete()
           .in('id', cancelledIds);
 
-        // Adjust the payment's amount_due
-        const newAmountDue = Math.max(0, Math.round((payment.amount_due - cancelledAmount) * 100) / 100);
-        const newStatus = newAmountDue <= payment.amount_paid ? 'paid' : 'unpaid';
-        await supabase
+        const { data: refreshed } = await supabase
           .from('payments')
-          .update({ amount_due: newAmountDue, status: newStatus })
-          .eq('id', paymentId);
+          .select('amount_due, amount_paid, status')
+          .eq('id', paymentId)
+          .single();
 
-        payment.amount_due = newAmountDue;
-        payment.status = newStatus;
+        if (refreshed) {
+          payment.amount_due = refreshed.amount_due;
+          payment.amount_paid = refreshed.amount_paid;
+          payment.status = refreshed.status;
+        }
       }
 
       const activePaymentLessons = allLessons.filter(
@@ -1198,6 +1136,51 @@ export function useToggleLessonPaid() {
   }, []);
 
   return { toggleLessonPaid, loading, error };
+}
+
+/**
+ * Hook to correct the billed amount of a single linked lesson.
+ * payment_lessons is the invoice: the recompute_payment_from_lessons trigger rolls the
+ * payment's amount_due / amount_paid / status up from these rows, so fixing a lesson
+ * that was priced under an old rate here fixes the whole invoice.
+ */
+export function useUpdateLessonAmount() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const updateLessonAmount = useCallback(async (
+    paymentLessonId: string,
+    amount: number
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw new Error('Amount must be zero or more');
+      }
+
+      const { error: updateError } = await supabase
+        .from('payment_lessons')
+        .update({ amount: Math.round(amount * 100) / 100 })
+        .eq('id', paymentLessonId);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update lesson amount';
+      setError(new Error(errorMessage));
+      console.error('useUpdateLessonAmount error:', errorMessage);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { updateLessonAmount, loading, error };
 }
 
 /**
@@ -1964,17 +1947,12 @@ export function useQuickInvoice() {
       let payment;
 
       if (existingPayment) {
-        // Update existing invoice payment by adding new lessons to it
-        const newAmountDue = Math.round((existingPayment.amount_due + roundedTotal) * 100) / 100;
-
-        // If payment was already paid, reset to unpaid since we're adding new uninvoiced lessons
-        const newStatus = existingPayment.status === 'paid' ? 'unpaid' : existingPayment.status;
-
+        // Only the note is set here: amount_due / amount_paid / status are recomputed
+        // from the linked lessons by the recompute_payment_from_lessons trigger once the
+        // links below land. Adding the new total by hand is what let amount_due drift.
         const { data: updatedPayment, error: updateError } = await supabase
           .from('payments')
           .update({
-            amount_due: newAmountDue,
-            status: newStatus,
             notes: `Updated: added ${uninvoicedLessons.length} new lesson(s)`,
           })
           .eq('id', existingPayment.id)
