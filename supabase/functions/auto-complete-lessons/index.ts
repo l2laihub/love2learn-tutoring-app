@@ -341,11 +341,12 @@ async function generateInvoice(
 
   let payment;
   if (existingPayment) {
-    const newAmountDue = Math.round((existingPayment.amount_due + roundedTotal) * 100) / 100;
-    const newStatus = existingPayment.status === 'paid' ? 'unpaid' : existingPayment.status;
+    // Only the note is set here: amount_due / amount_paid / status are recomputed from
+    // the linked lessons by the recompute_payment_from_lessons trigger once the links
+    // below land (see migration 20260903000001).
     const { data: updatedPayment, error: updateError } = await supabase
       .from('payments')
-      .update({ amount_due: newAmountDue, status: newStatus, notes: `Updated: added ${uninvoiced.length} new lesson(s)` })
+      .update({ notes: `Updated: added ${uninvoiced.length} new lesson(s)` })
       .eq('id', existingPayment.id)
       .select()
       .single();

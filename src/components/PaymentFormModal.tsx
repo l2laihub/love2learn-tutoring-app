@@ -20,10 +20,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { ParentWithStudents, PaymentWithParent, TutoringSubject } from '../types/database';
 import { supabase } from '../lib/supabase';
-import { useToggleLessonPaid } from '../hooks/usePayments';
+import { useToggleLessonPaid, useUpdateLessonAmount } from '../hooks/usePayments';
 
-// Amount Paid is the sum of the checked (paid) linked lessons — the checklist is the
-// source of truth whenever lessons are linked, so the top-line total can't drift from it.
+// Amount Due is the sum of the linked lessons and Amount Paid the sum of the checked
+// ones — the checklist is the source of truth whenever lessons are linked (the
+// recompute_payment_from_lessons trigger keeps the stored row on the same numbers), so
+// neither top-line total can drift from it.
+function sumLessons(lessons: PaymentLessonDisplay[]): number {
+  return Math.round(lessons.reduce((sum, pl) => sum + pl.amount, 0) * 100) / 100;
+}
+
 function sumPaidLessons(lessons: PaymentLessonDisplay[]): number {
   return Math.round(
     lessons.filter((pl) => pl.paid).reduce((sum, pl) => sum + pl.amount, 0) * 100
@@ -99,10 +105,15 @@ export function PaymentFormModal({
   // payments row is handled by a DB trigger (recompute_payment_from_lessons), so every
   // screen that reads payments.amount_paid stays in sync — no client-side write needed.
   const { toggleLessonPaid } = useToggleLessonPaid();
+  const { updateLessonAmount } = useUpdateLessonAmount();
 
-  // Whenever lessons are linked, the checklist drives Amount Paid — the manual input
-  // and quick-fill buttons are disabled to keep a single source of truth.
-  const lessonsDrivePaid = mode === 'edit' && paymentLessons.length > 0;
+  // Per-row amount drafts, keyed by payment_lessons.id, while the tutor is typing.
+  const [amountDrafts, setAmountDrafts] = useState<Record<string, string>>({});
+
+  // Whenever lessons are linked, the checklist drives both Amount Due and Amount Paid —
+  // the manual inputs and quick-fill buttons are disabled to keep a single source of truth.
+  // A wrong total is fixed by correcting the offending lesson's price in the checklist.
+  const lessonsDriveAmounts = mode === 'edit' && paymentLessons.length > 0;
 
   // Initialize form
   useEffect(() => {
@@ -166,34 +177,15 @@ export function PaymentFormModal({
 
       // If cancelled lessons are found, clean up the database
       if (cancelledLinks.length > 0) {
-        const cancelledAmount = cancelledLinks.reduce((sum, pl) => sum + pl.amount, 0);
         const cancelledIds = cancelledLinks.map((pl) => pl.id);
 
-        // Remove cancelled lesson links from payment_lessons
+        // Remove cancelled lesson links from payment_lessons. The
+        // recompute_payment_from_lessons trigger rolls the payment totals up from the
+        // remaining links, so nothing is subtracted here.
         await supabase
           .from('payment_lessons')
           .delete()
           .in('id', cancelledIds);
-
-        // Fetch the current payment to get latest amount_due
-        const { data: currentPayment } = await supabase
-          .from('payments')
-          .select('id, amount_due, amount_paid')
-          .eq('id', paymentId)
-          .single();
-
-        if (currentPayment) {
-          const newAmountDue = Math.max(0, Math.round((currentPayment.amount_due - cancelledAmount) * 100) / 100);
-          const newStatus = newAmountDue <= currentPayment.amount_paid ? 'paid' : 'unpaid';
-
-          await supabase
-            .from('payments')
-            .update({ amount_due: newAmountDue, status: newStatus })
-            .eq('id', paymentId);
-
-          // Update the displayed amount in the form
-          setAmountDue(newAmountDue.toString());
-        }
 
         // Notify parent to refresh payment list
         onRefresh?.();
@@ -206,9 +198,10 @@ export function PaymentFormModal({
       );
       setPaymentLessons(sorted);
 
-      // Checklist is the source of truth for Amount Paid — seed it from the paid lessons
-      // so an already-drifted stored amount_paid is corrected on open.
+      // Checklist is the source of truth — seed both totals from it so an already-drifted
+      // stored amount_due / amount_paid is shown corrected on open.
       if (sorted.length > 0) {
+        setAmountDue(sumLessons(sorted).toFixed(2));
         setAmountPaid(sumPaidLessons(sorted).toFixed(2));
       }
     } catch (err) {
@@ -256,6 +249,49 @@ export function PaymentFormModal({
       onRefresh?.();
     }
   }, [toggleLessonPaid, onRefresh, paymentLessons]);
+
+  // Commit an edited lesson price. A lesson invoiced under an old rate keeps that stale
+  // price in payment_lessons forever otherwise — and since the checklist is what drives
+  // the payment totals, correcting it here is what corrects the invoice.
+  const handleCommitLessonAmount = useCallback(async (paymentLesson: PaymentLessonDisplay) => {
+    const draft = amountDrafts[paymentLesson.id];
+    setAmountDrafts(prev => {
+      const next = { ...prev };
+      delete next[paymentLesson.id];
+      return next;
+    });
+
+    const parsed = parseFloat(draft ?? '');
+    if (draft === undefined || !Number.isFinite(parsed) || parsed < 0) return;
+
+    const rounded = Math.round(parsed * 100) / 100;
+    if (rounded === paymentLesson.amount) return;
+
+    const updatedLessons = paymentLessons.map(pl =>
+      pl.id === paymentLesson.id ? { ...pl, amount: rounded } : pl
+    );
+    setPaymentLessons(updatedLessons);
+    setAmountDue(sumLessons(updatedLessons).toFixed(2));
+    setAmountPaid(sumPaidLessons(updatedLessons).toFixed(2));
+
+    const result = await updateLessonAmount(paymentLesson.id, rounded);
+
+    if (!result.success) {
+      // Revert on failure
+      setPaymentLessons(paymentLessons);
+      setAmountDue(sumLessons(paymentLessons).toFixed(2));
+      setAmountPaid(sumPaidLessons(paymentLessons).toFixed(2));
+      const message = result.error || 'Failed to update lesson amount';
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Error', message);
+      }
+    } else {
+      // The DB trigger has already rolled amount_due/amount_paid/status up from the checklist.
+      onRefresh?.();
+    }
+  }, [amountDrafts, paymentLessons, updateLessonAmount, onRefresh]);
 
   // Format lesson date for display
   const formatLessonDate = (dateStr: string): string => {
@@ -405,7 +441,7 @@ export function PaymentFormModal({
           {/* Amount Due */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Amount Due</Text>
-            <View style={styles.amountContainer}>
+            <View style={[styles.amountContainer, lessonsDriveAmounts && styles.amountContainerDisabled]}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
                 style={styles.amountInput}
@@ -414,14 +450,20 @@ export function PaymentFormModal({
                 placeholder="0.00"
                 placeholderTextColor={colors.neutral.textMuted}
                 keyboardType="decimal-pad"
+                editable={!lessonsDriveAmounts}
               />
             </View>
+            {lessonsDriveAmounts && (
+              <Text style={styles.sectionHint}>
+                Set automatically from the lessons linked below.
+              </Text>
+            )}
           </View>
 
           {/* Amount Paid */}
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Amount Paid</Text>
-            <View style={[styles.amountContainer, lessonsDrivePaid && styles.amountContainerDisabled]}>
+            <View style={[styles.amountContainer, lessonsDriveAmounts && styles.amountContainerDisabled]}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
                 style={styles.amountInput}
@@ -430,10 +472,10 @@ export function PaymentFormModal({
                 placeholder="0.00"
                 placeholderTextColor={colors.neutral.textMuted}
                 keyboardType="decimal-pad"
-                editable={!lessonsDrivePaid}
+                editable={!lessonsDriveAmounts}
               />
             </View>
-            {lessonsDrivePaid ? (
+            {lessonsDriveAmounts ? (
               <Text style={styles.sectionHint}>
                 Set automatically from the lessons checked as paid below.
               </Text>
@@ -490,7 +532,7 @@ export function PaymentFormModal({
                 Linked Lessons ({paymentLessons.length})
               </Text>
               <Text style={styles.sectionHint}>
-                Check the box to mark a lesson as paid
+                Check the box to mark a lesson as paid. Tap an amount to correct a price.
               </Text>
               {loadingLessons ? (
                 <ActivityIndicator size="small" color={colors.piano.primary} />
@@ -499,49 +541,66 @@ export function PaymentFormModal({
                   {paymentLessons.map((pl) => {
                     const isToggling = togglingLessons.has(pl.id);
                     return (
-                      <Pressable
+                      <View
                         key={pl.id}
                         style={[
                           styles.lessonRow,
                           pl.paid && styles.lessonRowPaid,
                         ]}
-                        onPress={() => handleToggleLessonPaid(pl)}
-                        disabled={isToggling}
                       >
-                        <View style={styles.lessonCheckbox}>
-                          {isToggling ? (
-                            <ActivityIndicator size="small" color={colors.math.primary} />
-                          ) : (
-                            <Ionicons
-                              name={pl.paid ? 'checkbox' : 'square-outline'}
-                              size={22}
-                              color={pl.paid ? colors.math.primary : colors.neutral.textMuted}
-                            />
-                          )}
-                        </View>
-                        <View style={styles.lessonInfo}>
-                          <View style={styles.lessonTopRow}>
-                            <Text style={[styles.lessonDate, pl.paid && styles.lessonTextPaid]}>
-                              {formatLessonDate(pl.lesson.scheduled_at)}
-                            </Text>
-                            {pl.paid && (
-                              <View style={styles.paidBadge}>
-                                <Ionicons name="checkmark" size={10} color={colors.math.primary} />
-                                <Text style={styles.paidBadgeText}>Paid</Text>
-                              </View>
+                        <Pressable
+                          style={styles.lessonToggle}
+                          onPress={() => handleToggleLessonPaid(pl)}
+                          disabled={isToggling}
+                        >
+                          <View style={styles.lessonCheckbox}>
+                            {isToggling ? (
+                              <ActivityIndicator size="small" color={colors.math.primary} />
+                            ) : (
+                              <Ionicons
+                                name={pl.paid ? 'checkbox' : 'square-outline'}
+                                size={22}
+                                color={pl.paid ? colors.math.primary : colors.neutral.textMuted}
+                              />
                             )}
                           </View>
-                          <Text style={[styles.lessonStudent, pl.paid && styles.lessonTextPaid]}>
-                            {pl.lesson.student.name}
-                          </Text>
-                          <Text style={[styles.lessonMeta, pl.paid && styles.lessonTextPaid]}>
-                            {SUBJECT_NAMES[pl.lesson.subject]} • {pl.lesson.duration_min}min
-                          </Text>
+                          <View style={styles.lessonInfo}>
+                            <View style={styles.lessonTopRow}>
+                              <Text style={[styles.lessonDate, pl.paid && styles.lessonTextPaid]}>
+                                {formatLessonDate(pl.lesson.scheduled_at)}
+                              </Text>
+                              {pl.paid && (
+                                <View style={styles.paidBadge}>
+                                  <Ionicons name="checkmark" size={10} color={colors.math.primary} />
+                                  <Text style={styles.paidBadgeText}>Paid</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.lessonStudent, pl.paid && styles.lessonTextPaid]}>
+                              {pl.lesson.student.name}
+                            </Text>
+                            <Text style={[styles.lessonMeta, pl.paid && styles.lessonTextPaid]}>
+                              {SUBJECT_NAMES[pl.lesson.subject]} • {pl.lesson.duration_min}min
+                            </Text>
+                          </View>
+                        </Pressable>
+                        <View style={styles.lessonAmountField}>
+                          <Text style={[styles.lessonAmount, pl.paid && styles.lessonTextPaid]}>$</Text>
+                          <TextInput
+                            style={[styles.lessonAmount, styles.lessonAmountInput, pl.paid && styles.lessonTextPaid]}
+                            value={amountDrafts[pl.id] ?? pl.amount.toFixed(2)}
+                            onChangeText={(v) =>
+                              handleAmountChange(v, (cleaned) =>
+                                setAmountDrafts(prev => ({ ...prev, [pl.id]: cleaned }))
+                              )
+                            }
+                            onBlur={() => handleCommitLessonAmount(pl)}
+                            onSubmitEditing={() => handleCommitLessonAmount(pl)}
+                            keyboardType="decimal-pad"
+                            selectTextOnFocus
+                          />
                         </View>
-                        <Text style={[styles.lessonAmount, pl.paid && styles.lessonTextPaid]}>
-                          ${pl.amount.toFixed(2)}
-                        </Text>
-                      </Pressable>
+                      </View>
                     );
                   })}
                 </View>
@@ -892,6 +951,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  lessonToggle: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   lessonInfo: {
     flex: 1,
   },
@@ -920,6 +984,21 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.neutral.text,
+  },
+  lessonAmountField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: spacing.sm,
+  },
+  lessonAmountInput: {
+    minWidth: 56,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.neutral.border,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.neutral.white,
+    textAlign: 'right',
   },
   lessonTextPaid: {
     textDecorationLine: 'line-through',
