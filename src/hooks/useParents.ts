@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { parentSaveErrorMessage } from '../lib/parentSaveError';
 import {
   Parent,
   ParentWithStudents,
@@ -139,16 +140,19 @@ export function useCreateParent() {
         .single();
 
       if (createError) {
-        throw new Error(createError.message);
+        // Rethrow as-is: .code is what tells a duplicate email (23505) apart
+        // from an RLS refusal, and new Error(message) would drop it.
+        throw createError;
       }
 
       setData(parent);
       return parent;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err : new Error('Failed to create parent');
-      setError(errorMessage);
-      console.error('useCreateParent error:', errorMessage);
-      return null;
+      setError(err instanceof Error ? err : new Error(parentSaveErrorMessage(err)));
+      console.error('useCreateParent error:', err);
+      // Swallowing this returned null, which every caller rendered as "the
+      // button did nothing". The caller shows the message instead.
+      throw err;
     } finally {
       setLoading(false);
     }
@@ -188,16 +192,15 @@ export function useUpdateParent() {
         .single();
 
       if (updateError) {
-        throw new Error(updateError.message);
+        throw updateError;
       }
 
       setData(parent);
       return parent;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err : new Error('Failed to update parent');
-      setError(errorMessage);
-      console.error('useUpdateParent error:', errorMessage);
-      return null;
+      setError(err instanceof Error ? err : new Error(parentSaveErrorMessage(err)));
+      console.error('useUpdateParent error:', err);
+      throw err;
     } finally {
       setLoading(false);
     }
