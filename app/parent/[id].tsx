@@ -10,6 +10,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useParent, useUpdateParent, useDeleteParent } from '../../src/hooks/useParents';
 import { ParentFormModal } from '../../src/components/ParentFormModal';
+import { parentSaveErrorMessage } from '../../src/lib/parentSaveError';
 import { colors, spacing, typography, borderRadius } from '../../src/theme';
 import { Student, UpdateParentInput } from '../../src/types/database';
 
@@ -36,12 +37,23 @@ export default function ParentDetailScreen() {
 
   const handleSaveParent = async (data: UpdateParentInput): Promise<boolean> => {
     if (!id) return false;
-    const result = await updateParent(id, data);
-    if (result) {
-      await refetch();
-      return true;
+    try {
+      const result = await updateParent(id, data);
+      if (result) {
+        await refetch();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Save parent error:', error);
+      const message = parentSaveErrorMessage(error);
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Could not save parent', message);
+      }
+      return false;
     }
-    return false;
   };
 
   const handleViewStudent = (studentId: string) => {

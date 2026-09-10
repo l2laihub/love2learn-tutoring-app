@@ -24,6 +24,7 @@ import { router } from 'expo-router';
 import { StudentCard } from '../../src/components/StudentCard';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { ParentFormModal } from '../../src/components/ParentFormModal';
+import { parentSaveErrorMessage } from '../../src/lib/parentSaveError';
 import { ImportDataModal } from '../../src/components/ImportDataModal';
 import { EmptyState } from '../../src/components/ui/EmptyState';
 import { SearchInput } from '../../src/components/ui/Input';
@@ -588,7 +589,14 @@ export default function StudentsScreen() {
       return false;
     } catch (error) {
       console.error('Save parent error:', error);
-      Alert.alert('Error', 'Failed to save parent. Please try again.');
+      const message = parentSaveErrorMessage(error);
+      // Alert.alert is a no-op in react-native-web, so on web this screen has
+      // to use window.alert or the failure stays invisible.
+      if (Platform.OS === 'web') {
+        window.alert(message);
+      } else {
+        Alert.alert('Could not save parent', message);
+      }
       return false;
     }
   };
