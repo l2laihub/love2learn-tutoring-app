@@ -145,13 +145,15 @@ export function useStudent(id: string | null): QueryState<StudentWithParent> & {
           parent:parents!parent_id(*)
         `)
         .eq('id', id)
-        .single();
+        // maybeSingle: same reason as useParent - a row deleted from the detail
+        // screen leaves a stale list row that can still be tapped.
+        .maybeSingle();
 
       if (fetchError) {
         throw new Error(fetchError.message);
       }
 
-      setData(student as StudentWithParent);
+      setData(student as StudentWithParent | null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch student');
       setError(errorMessage);

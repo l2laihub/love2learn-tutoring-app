@@ -96,13 +96,16 @@ export function useParent(id: string | null): QueryState<ParentWithStudents> & {
           students!parent_id(*)
         `)
         .eq('id', id)
-        .single();
+        // maybeSingle, not single: a deleted (or RLS-invisible) row is a normal
+        // outcome here, and single() surfaces PGRST116 "Cannot coerce the result
+        // to a single JSON object" straight into the screen's error text.
+        .maybeSingle();
 
       if (fetchError) {
         throw new Error(fetchError.message);
       }
 
-      setData(parent as ParentWithStudents);
+      setData(parent as ParentWithStudents | null);
     } catch (err) {
       const errorMessage = err instanceof Error ? err : new Error('Failed to fetch parent');
       setError(errorMessage);
@@ -231,13 +234,24 @@ export function useDeleteParent() {
       setError(null);
       setSuccess(false);
 
-      const { error: deleteError } = await supabase
+      // .select() so a delete that matched no row is distinguishable from a
+      // real one: under RLS a DELETE matching nothing returns success with no
+      // error, which is how "Delete Parent" once reported success and did
+      // nothing (see 20260520000002_add_parents_delete_policy.sql).
+      const { data: deleted, error: deleteError } = await supabase
         .from('parents')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select('id');
 
       if (deleteError) {
         throw new Error(deleteError.message);
+      }
+
+      if (!deleted || deleted.length === 0) {
+        throw new Error(
+          'Nothing was deleted - this parent may already be gone, or may belong to another tutor.'
+        );
       }
 
       setSuccess(true);
