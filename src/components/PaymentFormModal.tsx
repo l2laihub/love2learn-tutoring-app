@@ -138,17 +138,8 @@ export function PaymentFormModal({
     }
   }, [visible, initialData, mode]);
 
-  // Fetch payment lessons when in edit mode
-  useEffect(() => {
-    if (visible && mode === 'edit' && initialData?.id) {
-      fetchPaymentLessons(initialData.id);
-    } else {
-      setPaymentLessons([]);
-    }
-  }, [visible, mode, initialData?.id]);
-
   // Fetch linked lessons for this payment (cleans up cancelled lessons)
-  const fetchPaymentLessons = async (paymentId: string) => {
+  const fetchPaymentLessons = useCallback(async (paymentId: string) => {
     setLoadingLessons(true);
     try {
       const { data, error: fetchError } = await supabase
@@ -209,7 +200,18 @@ export function PaymentFormModal({
     } finally {
       setLoadingLessons(false);
     }
-  };
+    // onRefresh is the payments list refetch, itself a useCallback, so this
+    // stays stable across renders and the effect below does not loop.
+  }, [onRefresh]);
+
+  // Fetch payment lessons when in edit mode
+  useEffect(() => {
+    if (visible && mode === 'edit' && initialData?.id) {
+      fetchPaymentLessons(initialData.id);
+    } else {
+      setPaymentLessons([]);
+    }
+  }, [visible, mode, initialData?.id, fetchPaymentLessons]);
 
   // Handle toggling a lesson's paid status
   const handleToggleLessonPaid = useCallback(async (paymentLesson: PaymentLessonDisplay) => {

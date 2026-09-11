@@ -2153,7 +2153,11 @@ export function useParentPaymentSummary(parentId: string | null) {
       const overdueMonths = (overduePayments || []).length;
 
       // Format month for display
-      const monthDisplay = currentDate.toLocaleDateString('en-US', {
+      // Derived from monthStart, not a render-time `new Date()`: that would be
+      // a fresh object every render, and adding it to the deps below would
+      // refetch in a loop. The T00:00:00 keeps this in local time - parsing a
+      // bare 'YYYY-MM-DD' is UTC, which renders the previous month west of UTC.
+      const monthDisplay = new Date(`${monthStart}T00:00:00`).toLocaleDateString('en-US', {
         month: 'long',
         year: 'numeric',
       });
@@ -2777,7 +2781,11 @@ export function useParentPaymentSummaryWithPrepaid(parentId: string | null) {
       const overdueMonths = (overduePayments || []).length;
 
       // Format month for display
-      const monthDisplay = currentDate.toLocaleDateString('en-US', {
+      // Derived from monthStart, not a render-time `new Date()`: that would be
+      // a fresh object every render, and adding it to the deps below would
+      // refetch in a loop. The T00:00:00 keeps this in local time - parsing a
+      // bare 'YYYY-MM-DD' is UTC, which renders the previous month west of UTC.
+      const monthDisplay = new Date(`${monthStart}T00:00:00`).toLocaleDateString('en-US', {
         month: 'long',
         year: 'numeric',
       });

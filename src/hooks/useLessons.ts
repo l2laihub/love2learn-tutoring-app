@@ -491,7 +491,7 @@ export function useUpdateLessonSeries(timezone: string = 'America/Los_Angeles') 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [timezone]);
 
   const reset = useCallback(() => {
     setError(null);

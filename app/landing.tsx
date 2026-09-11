@@ -176,7 +176,7 @@ const useFadeIn = (delay: number = 0) => {
       ]).start();
     }, delay);
     return () => clearTimeout(timer);
-  }, []);
+  }, [delay, opacity, translateY]);
 
   return { opacity, transform: [{ translateY }] };
 };
