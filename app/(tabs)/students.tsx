@@ -20,6 +20,7 @@ import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { StudentCard } from '../../src/components/StudentCard';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
@@ -130,6 +131,16 @@ export default function StudentsScreen() {
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [editingParent, setEditingParent] = useState<Parent | null>(null);
+
+  // Deleting from a detail screen ends in router.back(), and this tab stays
+  // mounted the whole time - without this the deleted row lingers in the list
+  // and tapping it opens a detail screen for a row that no longer exists.
+  useFocusEffect(
+    useCallback(() => {
+      refetchStudents();
+      refetchParents();
+    }, [refetchStudents, refetchParents])
+  );
 
   // Refresh handler
   const onRefresh = useCallback(async () => {
