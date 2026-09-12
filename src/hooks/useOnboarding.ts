@@ -107,7 +107,7 @@ export function useOnboarding(): UseOnboardingReturn {
     } finally {
       setLoading(false);
     }
-  }, [parent?.id]);
+  }, [parent?.id, refreshParent]);
 
   return {
     needsOnboarding,

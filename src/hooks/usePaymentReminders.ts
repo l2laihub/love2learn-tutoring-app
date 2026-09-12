@@ -77,8 +77,14 @@ export function usePaymentRemindersBatch(paymentIds: string[]): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // Joined to a string so the dep is a stable value rather than a fresh array
+  // identity, and so it is statically checkable (a .join() inside the dep array
+  // is not). The ids are UUIDs, so the round-trip through split is lossless.
+  const paymentIdsKey = paymentIds.join(',');
+
   const fetchReminders = useCallback(async () => {
-    if (paymentIds.length === 0) {
+    const ids = paymentIdsKey ? paymentIdsKey.split(',') : [];
+    if (ids.length === 0) {
       setData(new Map());
       setLoading(false);
       return;
@@ -91,7 +97,7 @@ export function usePaymentRemindersBatch(paymentIds: string[]): {
       const { data: reminders, error: fetchError } = await supabase
         .from('payment_reminders')
         .select('*')
-        .in('payment_id', paymentIds)
+        .in('payment_id', ids)
         .order('sent_at', { ascending: false });
 
       if (fetchError) {
@@ -114,7 +120,7 @@ export function usePaymentRemindersBatch(paymentIds: string[]): {
     } finally {
       setLoading(false);
     }
-  }, [paymentIds.join(',')]);
+  }, [paymentIdsKey]);
 
   useEffect(() => {
     fetchReminders();
