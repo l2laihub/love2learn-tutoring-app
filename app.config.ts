@@ -158,7 +158,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supabasePublishableKey:
       process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-    openaiApiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY,
     eas: {
       projectId: '80057121-e849-408e-bd31-10d40bb4934f',
     },

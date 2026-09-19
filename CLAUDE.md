@@ -142,8 +142,12 @@ EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
 
 Optional:
 ```env
-EXPO_PUBLIC_OPENAI_API_KEY=sk-proj-xxx  # AI worksheet generation
 RESEND_API_KEY=re_xxx                   # Email notifications
+```
+
+Server-side only (Supabase edge function secrets, never `EXPO_PUBLIC_*`):
+```env
+OPENAI_API_KEY=sk-proj-xxx              # AI worksheet generation
 ```
 
 ## Platform Considerations
