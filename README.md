@@ -49,7 +49,6 @@ Edit `.env` with your Supabase credentials:
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-EXPO_PUBLIC_OPENAI_API_KEY=your-openai-key  # Optional, for worksheet generation
 ```
 
 ### 3. Start Development Server
@@ -291,7 +290,7 @@ open -a Simulator
 |----------|----------|-------------|
 | `EXPO_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anonymous key |
-| `EXPO_PUBLIC_OPENAI_API_KEY` | No | OpenAI API key for worksheets |
+| `OPENAI_API_KEY` | No | OpenAI key for worksheets. Edge function secret only - never `EXPO_PUBLIC_*` |
 
 ## Contributing
 

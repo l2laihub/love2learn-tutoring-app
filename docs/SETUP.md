@@ -89,9 +89,6 @@ Edit `.env` with your values:
 # Required - Supabase Configuration
 EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# Optional - OpenAI for worksheet generation
-EXPO_PUBLIC_OPENAI_API_KEY=sk-...
 ```
 
 ---
