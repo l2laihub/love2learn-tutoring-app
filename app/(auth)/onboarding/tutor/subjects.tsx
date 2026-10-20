@@ -24,6 +24,7 @@ import { supabase } from '../../../../src/lib/supabase';
 import { useAuthContext } from '../../../../src/contexts/AuthContext';
 import { Button } from '../../../../src/components/ui/Button';
 import { colors, typography, spacing, borderRadius, shadows, getSubjectColor } from '../../../../src/theme';
+import { SHOW_SUBSCRIPTION_UI } from '../../../../src/config/subscription';
 import type { TutoringSubject, SubjectRates, SubjectRateConfig, Json } from '../../../../src/types/database';
 
 // Default subjects with their colors
@@ -235,8 +236,12 @@ export default function SubjectsScreen() {
         }
       }
 
-      // Navigate to next step
-      router.push('/(auth)/onboarding/tutor/subscription');
+      // Navigate to next step (plan selection is web-only — App Store 3.1.1)
+      router.push(
+        SHOW_SUBSCRIPTION_UI
+          ? '/(auth)/onboarding/tutor/subscription'
+          : '/(auth)/onboarding/tutor/complete'
+      );
     } catch (err) {
       console.error('Error saving subjects:', err);
       setError('An unexpected error occurred. Please try again.');

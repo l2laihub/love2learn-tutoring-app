@@ -14,11 +14,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../../src/lib/supabase';
 import { Button } from '../../../../src/components/ui/Button';
 import { colors, typography, spacing, borderRadius, shadows } from '../../../../src/theme';
+import { SHOW_SUBSCRIPTION_UI } from '../../../../src/config/subscription';
 
 interface PlanFeature {
   text: string;
@@ -79,6 +80,11 @@ export default function SubscriptionScreen() {
   const [selectedPlan, setSelectedPlan] = useState<'solo' | 'pro'>('solo');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Plan selection is web-only (App Store 3.1.1) — deep links skip to completion
+  if (!SHOW_SUBSCRIPTION_UI) {
+    return <Redirect href="/(auth)/onboarding/tutor/complete" />;
+  }
 
   const handleStartTrial = async () => {
     setError(null);

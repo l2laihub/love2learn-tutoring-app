@@ -5,7 +5,17 @@
  * plan tier allows. See docs/PAYWALL_SETUP.md for the full setup guide.
  */
 
+import { Platform } from 'react-native';
 import type { SubscriptionPlan } from '../lib/stripe';
+
+/**
+ * Whether subscription/billing UI (plan selection, Stripe checkout, billing
+ * portal) may be shown at all. Web only: exposing a non-IAP purchase path for
+ * digital subscriptions inside the iOS binary violates App Store Guideline
+ * 3.1.1 even when the paywall itself is disabled. Flip to include native once
+ * the RevenueCat IAP flow ships (docs/PAYWALL_SETUP.md Part E).
+ */
+export const SHOW_SUBSCRIPTION_UI = Platform.OS === 'web';
 
 /**
  * Master switch for paywall enforcement.
