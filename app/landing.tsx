@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, shadows } from '../src/theme';
 import { useResponsive } from '../src/hooks/useResponsive';
 import { DaLessonMark } from '../src/components/ui';
+import { BILLING_UI_ENABLED } from '../src/config/subscription';
 
 // Quick benefits
 const quickBenefits = [
@@ -23,6 +24,12 @@ const quickBenefits = [
   { icon: 'timer-outline' as const, label: 'Setup in 5 minutes' },
   { icon: 'card-outline' as const, label: 'No credit card needed' },
 ];
+
+// Store builds (iOS/Android) sell nothing in v1, so pricing, trial and
+// subscription wording is web-only (App Store Guideline 3.1.1).
+const visibleBenefits = BILLING_UI_ENABLED
+  ? quickBenefits
+  : quickBenefits.filter((b) => b.icon !== 'card-outline');
 
 // Feature data
 const features = [
@@ -52,8 +59,8 @@ const features = [
   },
   {
     icon: 'sparkles' as const,
-    title: 'AI Worksheets',
-    description: 'Generate custom piano and math worksheets with AI. Personalized learning materials in seconds.',
+    title: 'Printable Worksheets',
+    description: 'Generate custom piano and math practice worksheets in seconds, ready to print or share with families.',
     isPro: true,
     color: colors.accent.main,
   },
@@ -100,7 +107,7 @@ const plans = [
     features: [
       'Unlimited students',
       'Everything in Solo',
-      'AI worksheet generation',
+      'Worksheet generator',
       'Priority support',
       'Advanced analytics',
       'Custom branding (coming soon)',
@@ -153,6 +160,9 @@ const faqs = [
     answer: 'Absolutely. Cancel your subscription at any time with no penalties or hidden fees. Your data remains accessible for 30 days after cancellation.',
   },
 ];
+
+const BILLING_FAQS = new Set(['Is it really free to start?', 'Can I cancel anytime?']);
+const visibleFaqs = BILLING_UI_ENABLED ? faqs : faqs.filter((f) => !BILLING_FAQS.has(f.question));
 
 // Animation hook for fade-in effect
 const useFadeIn = (delay: number = 0) => {
@@ -226,9 +236,11 @@ export default function LandingPage() {
                   <Pressable style={styles.navLink}>
                     <Text style={styles.navLinkText}>Features</Text>
                   </Pressable>
-                  <Pressable style={styles.navLink}>
-                    <Text style={styles.navLinkText}>Pricing</Text>
-                  </Pressable>
+                  {BILLING_UI_ENABLED && (
+                    <Pressable style={styles.navLink}>
+                      <Text style={styles.navLinkText}>Pricing</Text>
+                    </Pressable>
+                  )}
                   <Pressable style={styles.navLink}>
                     <Text style={styles.navLinkText}>FAQ</Text>
                   </Pressable>
@@ -284,7 +296,9 @@ export default function LandingPage() {
                   <Text style={styles.ctaButtonSecondaryText}>See How It Works</Text>
                 </Pressable>
               </View>
-              <Text style={styles.trialNote}>Free for 14 days. No credit card required.</Text>
+              {BILLING_UI_ENABLED && (
+                <Text style={styles.trialNote}>Free for 14 days. No credit card required.</Text>
+              )}
             </Animated.View>
 
             {/* Phone Mockup Frame */}
@@ -340,7 +354,7 @@ export default function LandingPage() {
         <View style={styles.benefitsSection}>
           <View style={[styles.benefitsContent, { maxWidth: containerMaxWidth }]}>
             <View style={[styles.benefitsGrid, isDesktop && styles.benefitsGridDesktop]}>
-              {quickBenefits.map((benefit, index) => (
+              {visibleBenefits.map((benefit, index) => (
                 <View key={index} style={styles.benefitItem}>
                   <View style={styles.benefitIconCircle}>
                     <Ionicons name={benefit.icon} size={20} color={colors.primary.main} />
@@ -432,154 +446,158 @@ export default function LandingPage() {
           </View>
         </View>
 
-        {/* Pricing Section */}
-        <View style={styles.pricingSection}>
-          <View style={[styles.sectionContent, { maxWidth: containerMaxWidth }]}>
-            <Text style={styles.sectionTitle}>Simple, Transparent Pricing</Text>
-            <Text style={styles.sectionSubtitle}>
-              Start free, upgrade when you're ready
-            </Text>
+        {/* Pricing Section (web only, App Store 3.1.1) */}
+        {BILLING_UI_ENABLED && (
+          <View style={styles.pricingSection}>
+            <View style={[styles.sectionContent, { maxWidth: containerMaxWidth }]}>
+              <Text style={styles.sectionTitle}>Simple, Transparent Pricing</Text>
+              <Text style={styles.sectionSubtitle}>
+                Start free, upgrade when you're ready
+              </Text>
 
-            {/* Billing Period Toggle */}
-            <View style={styles.billingToggleContainer}>
-              <Pressable
-                style={[
-                  styles.billingToggleOption,
-                  billingPeriod === 'monthly' && styles.billingToggleOptionActive,
-                ]}
-                onPress={() => setBillingPeriod('monthly')}
-              >
-                <Text style={[
-                  styles.billingToggleText,
-                  billingPeriod === 'monthly' && styles.billingToggleTextActive,
-                ]}>Monthly</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.billingToggleOption,
-                  billingPeriod === 'yearly' && styles.billingToggleOptionActive,
-                ]}
-                onPress={() => setBillingPeriod('yearly')}
-              >
-                <Text style={[
-                  styles.billingToggleText,
-                  billingPeriod === 'yearly' && styles.billingToggleTextActive,
-                ]}>Yearly</Text>
-                <View style={styles.savingsBadge}>
-                  <Text style={styles.savingsBadgeText}>2 months free</Text>
-                </View>
-              </Pressable>
-            </View>
-
-            <View style={[styles.pricingGrid, isDesktop && styles.pricingGridDesktop]}>
-              {plans.map((plan, index) => {
-                const displayPrice = billingPeriod === 'monthly'
-                  ? plan.monthlyPrice
-                  : Math.round(plan.yearlyPrice / 12);
-                const totalYearlyPrice = plan.yearlyPrice;
-
-                return (
-                <View
-                  key={index}
+              {/* Billing Period Toggle */}
+              <View style={styles.billingToggleContainer}>
+                <Pressable
                   style={[
-                    styles.pricingCard,
-                    plan.highlighted && styles.pricingCardHighlighted,
-                    isDesktop && styles.pricingCardDesktop,
+                    styles.billingToggleOption,
+                    billingPeriod === 'monthly' && styles.billingToggleOptionActive,
                   ]}
+                  onPress={() => setBillingPeriod('monthly')}
                 >
-                  {plan.highlighted && (
-                    <>
-                      <View style={styles.pricingCardDecor} />
-                      <View style={styles.popularBadge}>
-                        <Ionicons name="star" size={12} color={colors.neutral.white} style={{ marginRight: 4 }} />
-                        <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
-                      </View>
-                    </>
-                  )}
-                  <Text style={styles.planName}>{plan.name}</Text>
-                  <View style={styles.priceRow}>
-                    <Text style={[styles.priceCurrency, plan.highlighted && styles.priceHighlighted]}>$</Text>
-                    <Text style={[styles.priceAmount, plan.highlighted && styles.priceHighlighted]}>{displayPrice}</Text>
-                    <Text style={styles.pricePeriod}>/month</Text>
+                  <Text style={[
+                    styles.billingToggleText,
+                    billingPeriod === 'monthly' && styles.billingToggleTextActive,
+                  ]}>Monthly</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.billingToggleOption,
+                    billingPeriod === 'yearly' && styles.billingToggleOptionActive,
+                  ]}
+                  onPress={() => setBillingPeriod('yearly')}
+                >
+                  <Text style={[
+                    styles.billingToggleText,
+                    billingPeriod === 'yearly' && styles.billingToggleTextActive,
+                  ]}>Yearly</Text>
+                  <View style={styles.savingsBadge}>
+                    <Text style={styles.savingsBadgeText}>2 months free</Text>
                   </View>
-                  {billingPeriod === 'yearly' && (
-                    <Text style={styles.yearlyTotal}>
-                      ${totalYearlyPrice}/year billed annually
-                    </Text>
-                  )}
-                  <Text style={styles.planDescription}>{plan.description}</Text>
+                </Pressable>
+              </View>
 
-                  <View style={styles.planFeatures}>
-                    {plan.features.map((feature, fIndex) => (
-                      <View key={fIndex} style={styles.planFeatureRow}>
-                        <View style={[
-                          styles.planFeatureCheck,
-                          plan.highlighted && styles.planFeatureCheckHighlighted,
-                        ]}>
-                          <Ionicons name="checkmark" size={14} color={plan.highlighted ? colors.neutral.white : colors.secondary.main} />
-                        </View>
-                        <Text style={styles.planFeatureText}>{feature}</Text>
-                      </View>
-                    ))}
-                  </View>
+              <View style={[styles.pricingGrid, isDesktop && styles.pricingGridDesktop]}>
+                {plans.map((plan, index) => {
+                  const displayPrice = billingPeriod === 'monthly'
+                    ? plan.monthlyPrice
+                    : Math.round(plan.yearlyPrice / 12);
+                  const totalYearlyPrice = plan.yearlyPrice;
 
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.planButton,
-                      plan.highlighted && styles.planButtonHighlighted,
-                      pressed && styles.buttonPressed,
+                  return (
+                  <View
+                    key={index}
+                    style={[
+                      styles.pricingCard,
+                      plan.highlighted && styles.pricingCardHighlighted,
+                      isDesktop && styles.pricingCardDesktop,
                     ]}
-                    onPress={handleStartTrial}
                   >
-                    <Text style={[
-                      styles.planButtonText,
-                      plan.highlighted && styles.planButtonTextHighlighted,
-                    ]}>
-                      Get Started Free
-                    </Text>
-                  </Pressable>
-                  <Text style={styles.planTrialNote}>Free for 14 days, cancel anytime</Text>
-                </View>
-              );
-              })}
+                    {plan.highlighted && (
+                      <>
+                        <View style={styles.pricingCardDecor} />
+                        <View style={styles.popularBadge}>
+                          <Ionicons name="star" size={12} color={colors.neutral.white} style={{ marginRight: 4 }} />
+                          <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
+                        </View>
+                      </>
+                    )}
+                    <Text style={styles.planName}>{plan.name}</Text>
+                    <View style={styles.priceRow}>
+                      <Text style={[styles.priceCurrency, plan.highlighted && styles.priceHighlighted]}>$</Text>
+                      <Text style={[styles.priceAmount, plan.highlighted && styles.priceHighlighted]}>{displayPrice}</Text>
+                      <Text style={styles.pricePeriod}>/month</Text>
+                    </View>
+                    {billingPeriod === 'yearly' && (
+                      <Text style={styles.yearlyTotal}>
+                        ${totalYearlyPrice}/year billed annually
+                      </Text>
+                    )}
+                    <Text style={styles.planDescription}>{plan.description}</Text>
+
+                    <View style={styles.planFeatures}>
+                      {plan.features.map((feature, fIndex) => (
+                        <View key={fIndex} style={styles.planFeatureRow}>
+                          <View style={[
+                            styles.planFeatureCheck,
+                            plan.highlighted && styles.planFeatureCheckHighlighted,
+                          ]}>
+                            <Ionicons name="checkmark" size={14} color={plan.highlighted ? colors.neutral.white : colors.secondary.main} />
+                          </View>
+                          <Text style={styles.planFeatureText}>{feature}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.planButton,
+                        plan.highlighted && styles.planButtonHighlighted,
+                        pressed && styles.buttonPressed,
+                      ]}
+                      onPress={handleStartTrial}
+                    >
+                      <Text style={[
+                        styles.planButtonText,
+                        plan.highlighted && styles.planButtonTextHighlighted,
+                      ]}>
+                        Get Started Free
+                      </Text>
+                    </Pressable>
+                    <Text style={styles.planTrialNote}>Free for 14 days, cancel anytime</Text>
+                  </View>
+                );
+                })}
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
-        {/* Testimonials Section */}
-        <View style={styles.testimonialsSection}>
-          <View style={[styles.sectionContent, { maxWidth: containerMaxWidth }]}>
-            <Text style={styles.sectionTitle}>Loved by Tutors Everywhere</Text>
-            <Text style={styles.sectionSubtitle}>
-              See what educators are saying about DaLesson
-            </Text>
+        {/* Testimonials Section (web only until quotes are verified) */}
+        {BILLING_UI_ENABLED && (
+          <View style={styles.testimonialsSection}>
+            <View style={[styles.sectionContent, { maxWidth: containerMaxWidth }]}>
+              <Text style={styles.sectionTitle}>Loved by Tutors Everywhere</Text>
+              <Text style={styles.sectionSubtitle}>
+                See what educators are saying about DaLesson
+              </Text>
 
-            <View style={[styles.testimonialsGrid, isDesktop && styles.testimonialsGridDesktop]}>
-              {testimonials.map((testimonial, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.testimonialCard,
-                    isDesktop && styles.testimonialCardDesktop,
-                    { borderTopColor: testimonial.accentColor },
-                  ]}
-                >
-                  <Text style={styles.testimonialQuoteMark}>"</Text>
-                  <Text style={styles.testimonialText}>{testimonial.quote}</Text>
-                  <View style={styles.testimonialAuthor}>
-                    <View style={[styles.testimonialAvatar, { backgroundColor: testimonial.accentColor }]}>
-                      <Text style={styles.testimonialAvatarText}>{testimonial.avatar}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.testimonialName}>{testimonial.name}</Text>
-                      <Text style={styles.testimonialRole}>{testimonial.role}</Text>
+              <View style={[styles.testimonialsGrid, isDesktop && styles.testimonialsGridDesktop]}>
+                {testimonials.map((testimonial, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.testimonialCard,
+                      isDesktop && styles.testimonialCardDesktop,
+                      { borderTopColor: testimonial.accentColor },
+                    ]}
+                  >
+                    <Text style={styles.testimonialQuoteMark}>"</Text>
+                    <Text style={styles.testimonialText}>{testimonial.quote}</Text>
+                    <View style={styles.testimonialAuthor}>
+                      <View style={[styles.testimonialAvatar, { backgroundColor: testimonial.accentColor }]}>
+                        <Text style={styles.testimonialAvatarText}>{testimonial.avatar}</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.testimonialName}>{testimonial.name}</Text>
+                        <Text style={styles.testimonialRole}>{testimonial.role}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* FAQ Section */}
         <View style={styles.faqSection}>
@@ -590,7 +608,7 @@ export default function LandingPage() {
             </Text>
 
             <View style={styles.faqList}>
-              {faqs.map((faq, index) => (
+              {visibleFaqs.map((faq, index) => (
                 <Pressable
                   key={index}
                   style={[
@@ -663,9 +681,11 @@ export default function LandingPage() {
                 <Ionicons name="arrow-forward" size={18} color={colors.neutral.white} />
               </Pressable>
             </View>
-            <Text style={styles.ctaNote}>
-              Free for 14 days. No credit card needed. Cancel anytime.
-            </Text>
+            {BILLING_UI_ENABLED && (
+              <Text style={styles.ctaNote}>
+                Free for 14 days. No credit card needed. Cancel anytime.
+              </Text>
+            )}
           </View>
         </View>
 

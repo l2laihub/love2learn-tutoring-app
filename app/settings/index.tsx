@@ -12,6 +12,7 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BILLING_UI_ENABLED } from '../../src/config/subscription';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
@@ -28,7 +29,7 @@ interface SettingsItem {
   href: string;
 }
 
-const settingsItems: SettingsItem[] = [
+const allSettingsItems: SettingsItem[] = [
   {
     key: 'business',
     title: 'Business Profile',
@@ -57,6 +58,11 @@ const settingsItems: SettingsItem[] = [
     href: '/settings/subscription',
   },
 ];
+
+// Billing is web-only (App Store Guideline 3.1.1).
+const settingsItems = allSettingsItems.filter(
+  (item) => BILLING_UI_ENABLED || item.key !== 'subscription'
+);
 
 function SettingsRow({ item, onPress }: { item: SettingsItem; onPress: () => void }) {
   return (

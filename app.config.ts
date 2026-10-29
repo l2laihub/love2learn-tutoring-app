@@ -36,6 +36,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
 
   // iOS-specific configuration
   ios: {
+    // Full-bleed, no-alpha icon: iOS applies its own rounded mask and renders
+    // transparent pixels as black. App Store Connect rejects icons with alpha.
+    icon: './assets/icon-ios.png',
     supportsTablet: true,
     bundleIdentifier: 'app.huybuilds.dalesson',
     buildNumber: '2',
@@ -60,8 +63,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         NSAllowsArbitraryLoads: false,
       },
     },
-    // Associate with your domain for universal links (update with your domain)
-    associatedDomains: ['applinks:love2learn.app'],
+    // Universal links. dalesson.app must serve
+    // /.well-known/apple-app-site-association (see public/.well-known/).
+    associatedDomains: ['applinks:dalesson.app'],
   },
 
   // Android-specific configuration
@@ -93,7 +97,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         data: [
           {
             scheme: 'https',
-            host: 'love2learn.app',
+            host: 'dalesson.app',
             pathPrefix: '/',
           },
           {

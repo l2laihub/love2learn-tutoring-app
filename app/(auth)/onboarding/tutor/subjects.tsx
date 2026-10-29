@@ -21,6 +21,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../../src/lib/supabase';
+import { startTutorTrial } from '../../../../src/lib/trial';
+import { BILLING_UI_ENABLED } from '../../../../src/config/subscription';
 import { useAuthContext } from '../../../../src/contexts/AuthContext';
 import { Button } from '../../../../src/components/ui/Button';
 import { colors, typography, spacing, borderRadius, shadows, getSubjectColor } from '../../../../src/theme';
@@ -235,8 +237,19 @@ export default function SubjectsScreen() {
         }
       }
 
-      // Navigate to next step
-      router.push('/(auth)/onboarding/tutor/subscription');
+      // Navigate to next step. Store builds can't show plans or prices
+      // (App Store 3.1.1), so native skips the plan picker and starts the
+      // free trial directly.
+      if (BILLING_UI_ENABLED) {
+        router.push('/(auth)/onboarding/tutor/subscription');
+      } else {
+        const { error: trialError } = await startTutorTrial();
+        if (trialError) {
+          setError(trialError);
+          return;
+        }
+        router.push('/(auth)/onboarding/tutor/complete');
+      }
     } catch (err) {
       console.error('Error saving subjects:', err);
       setError('An unexpected error occurred. Please try again.');

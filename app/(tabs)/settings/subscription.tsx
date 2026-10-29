@@ -17,6 +17,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BILLING_UI_ENABLED } from '../../../src/config/subscription';
+import { Redirect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../../src/theme';
 import { useSubscription } from '../../../src/hooks/useSubscription';
@@ -43,7 +45,7 @@ const PLAN_FEATURES = {
     students: 'Unlimited students',
     features: [
       'Everything in Solo',
-      'AI worksheet generation',
+      'Worksheet generator',
       'Advanced analytics',
       'Priority support',
       'Custom branding',
@@ -174,7 +176,7 @@ function CancelConfirmationModal({
           <View style={styles.modalWarningList}>
             <View style={styles.modalWarningItem}>
               <Ionicons name="close-circle" size={16} color={colors.status.error} />
-              <Text style={styles.modalWarningText}>AI worksheet generation</Text>
+              <Text style={styles.modalWarningText}>Worksheet generator</Text>
             </View>
             <View style={styles.modalWarningItem}>
               <Ionicons name="close-circle" size={16} color={colors.status.error} />
@@ -220,7 +222,7 @@ function CancelConfirmationModal({
   );
 }
 
-export default function SubscriptionScreen() {
+function SubscriptionScreenContent() {
   const {
     subscription,
     loading,
@@ -456,11 +458,11 @@ export default function SubscriptionScreen() {
               </View>
 
               <Text style={styles.upgradeDescription}>
-                Unlock unlimited students, AI worksheets, and priority support.
+                Unlock unlimited students, advanced analytics, and priority support.
               </Text>
 
               <View style={styles.upgradeFeatures}>
-                {['AI worksheet generation', 'Unlimited students', 'Priority support'].map(
+                {['Unlimited students', 'Advanced analytics', 'Priority support'].map(
                   (feature, index) => (
                     <View key={index} style={styles.upgradeFeatureItem}>
                       <Ionicons
@@ -1054,3 +1056,14 @@ const styles = StyleSheet.create({
     color: colors.neutral.textInverse,
   },
 });
+
+/**
+ * Billing is web-only: store builds can't show prices or link to Stripe
+ * (App Store Guideline 3.1.1). This guard covers deep links on native.
+ */
+export default function SubscriptionScreen() {
+  if (!BILLING_UI_ENABLED) {
+    return <Redirect href="/(tabs)/settings" />;
+  }
+  return <SubscriptionScreenContent />;
+}

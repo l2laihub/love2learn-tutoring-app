@@ -10,6 +10,7 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { BILLING_UI_ENABLED } from '../../../../src/config/subscription';
 import { supabase } from '../../../../src/lib/supabase';
 import { useAuthContext } from '../../../../src/contexts/AuthContext';
 import { Button } from '../../../../src/components/ui/Button';
@@ -163,13 +164,15 @@ export default function OnboardingCompleteScreen() {
         {/* Spacer */}
         <View style={styles.spacer} />
 
-        {/* Trial Reminder */}
-        <Animated.View style={[styles.trialReminder, { opacity: contentOpacity }]}>
-          <Ionicons name="time-outline" size={18} color={colors.secondary.dark} />
-          <Text style={styles.trialReminderText}>
-            Your 14-day free trial has started. Explore all features!
-          </Text>
-        </Animated.View>
+        {/* Trial Reminder (web only: store builds sell nothing, App Store 3.1.1) */}
+        {BILLING_UI_ENABLED && (
+          <Animated.View style={[styles.trialReminder, { opacity: contentOpacity }]}>
+            <Ionicons name="time-outline" size={18} color={colors.secondary.dark} />
+            <Text style={styles.trialReminderText}>
+              Your 14-day free trial has started. Explore all features!
+            </Text>
+          </Animated.View>
+        )}
       </View>
 
       {/* Footer */}

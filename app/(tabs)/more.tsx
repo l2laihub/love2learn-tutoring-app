@@ -31,7 +31,7 @@ const menuItems: MenuItem[] = [
     label: 'Worksheets',
     icon: 'document-text',
     href: '/worksheets',
-    description: 'AI-generated worksheets and assignments',
+    description: 'Printable worksheets and assignments',
   },
   {
     key: 'resources',

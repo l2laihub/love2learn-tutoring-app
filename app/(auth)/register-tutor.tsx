@@ -23,6 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/lib/supabase';
+import { BILLING_UI_ENABLED } from '../../src/config/subscription';
 import { colors, typography, spacing, borderRadius, shadows } from '../../src/theme';
 
 type MessageType = 'error' | 'success' | 'info';
@@ -455,13 +456,15 @@ export default function RegisterTutorScreen() {
               )}
             </TouchableOpacity>
 
-            {/* Trial info */}
-            <View style={styles.trialInfo}>
-              <Ionicons name="gift-outline" size={18} color={colors.secondary.main} />
-              <Text style={styles.trialInfoText}>
-                Start with a 14-day free trial. No credit card required.
-              </Text>
-            </View>
+            {/* Trial info (web only: store builds sell nothing, App Store 3.1.1) */}
+            {BILLING_UI_ENABLED && (
+              <View style={styles.trialInfo}>
+                <Ionicons name="gift-outline" size={18} color={colors.secondary.main} />
+                <Text style={styles.trialInfoText}>
+                  Start with a 14-day free trial. No credit card required.
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.footer}>

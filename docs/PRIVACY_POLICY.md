@@ -2,7 +2,7 @@
 
 **DaLesson Tutoring Management Platform**
 
-**Last Updated: January 31, 2026**
+**Last Updated: October 29, 2026**
 
 **Effective Date: January 31, 2026**
 
@@ -197,9 +197,27 @@ If you download our Android app, Google may collect certain information as descr
 
 - Privacy Policy: https://policies.google.com/privacy
 
-### 4.5 Analytics Services
+### 4.5 Resend (Email Delivery)
 
-We may use analytics services to understand how users interact with our Service. These services may collect anonymized usage data.
+We use Resend to send transactional emails, such as parent invitations, lesson reschedule notices, and payment reminders. Resend receives the recipient's email address and the content of the email.
+
+- Privacy Policy: https://resend.com/legal/privacy-policy
+
+### 4.6 Expo and Apple/Google Push Services (Push Notifications)
+
+If you allow notifications, we use Expo's push notification service, which relays notifications through Apple Push Notification service and Firebase Cloud Messaging. These services receive a device push token and the notification content.
+
+- Privacy Policy: https://expo.dev/privacy
+
+### 4.7 Telegram (Optional Weekly Recap)
+
+If a tutor chooses to link a Telegram account, we send that tutor a weekly summary of their lessons and payments through Telegram. Nothing is sent to Telegram unless the tutor turns this feature on, and it can be turned off at any time.
+
+- Privacy Policy: https://telegram.org/privacy
+
+### 4.8 Analytics and Advertising
+
+We do not currently use third-party analytics, advertising, or tracking SDKs in our apps, and we do not track you across other companies' apps or websites. If we add analytics in the future, we will update this policy first.
 
 ---
 
@@ -220,6 +238,8 @@ We retain your personal information for as long as necessary to fulfill the purp
 | Security logs | 1 year |
 
 ### 5.2 Account Deletion
+
+You can delete your account at any time from inside the app (**More → Profile → Delete Account**) or by emailing privacy@dalesson.app.
 
 When you request account deletion:
 - Your account will be deactivated immediately
