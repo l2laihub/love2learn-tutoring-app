@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["X6P6XG7GPP.app.huybuilds.dalesson"],
+        "components": [
+          { "/": "/register*", "comment": "Parent invitation links (register?token=...)" },
+          { "/": "/calendar*" },
+          { "/": "/notifications*" },
+          { "/": "/requests*" },
+          { "/": "/payments*" }
+        ]
+      }
+    ]
+  }
+}

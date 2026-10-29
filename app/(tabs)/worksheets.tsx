@@ -1,6 +1,6 @@
 /**
  * Worksheets Screen
- * AI-powered worksheet generation for piano and math lessons
+ * Printable worksheet generation for piano and math lessons
  * Tutors: Generate worksheets, view assigned, and manage shared resource library
  * Parents: View assigned worksheets
  */
@@ -1070,13 +1070,13 @@ export default function WorksheetsScreen() {
               <View style={styles.generateButtonGradient}>
                 <View style={styles.generateButtonContent}>
                   <View style={styles.generateIconContainer}>
-                    <Ionicons name="sparkles" size={32} color={colors.neutral.white} />
+                    <Ionicons name="document-text" size={32} color={colors.neutral.white} />
                   </View>
                   <Text style={styles.generateButtonTitle}>
                     Generate New Worksheet
                   </Text>
                   <Text style={styles.generateButtonSubtitle}>
-                    AI-powered worksheets for piano & math
+                    Printable worksheets for piano & math
                   </Text>
                 </View>
               </View>
@@ -1214,7 +1214,7 @@ export default function WorksheetsScreen() {
                   <View style={styles.stepContent}>
                     <Text style={styles.stepTitle}>Generate & Assign</Text>
                     <Text style={styles.stepDescription}>
-                      AI creates a personalized worksheet PDF
+                      DaLesson builds a printable worksheet PDF
                     </Text>
                   </View>
                 </View>

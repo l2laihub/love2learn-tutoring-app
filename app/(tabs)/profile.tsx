@@ -23,6 +23,7 @@ import { useUpdateParent } from '../../src/hooks/useParents';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../../src/theme';
 import { Student, UpdateStudentInput } from '../../src/types/database';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
+import { DeleteAccountSection } from '../../src/components/DeleteAccountSection';
 import { parseBirthday } from '../../src/utils/dateUtils';
 import { AvatarUpload, AvatarDisplay } from '../../src/components/AvatarUpload';
 
@@ -353,6 +354,7 @@ export default function ProfileTabScreen() {
             <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
             <Text style={styles.signOutText}>Sign Out</Text>
           </Pressable>
+          <DeleteAccountSection />
         </View>
 
         {/* Account Info */}

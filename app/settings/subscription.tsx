@@ -13,13 +13,14 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { BILLING_UI_ENABLED } from '../../src/config/subscription';
+import { Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../../src/theme';
 import { useSubscription } from '../../src/hooks/useSubscription';
 import { useResponsive } from '../../src/hooks/useResponsive';
 
-export default function SubscriptionSettingsScreen() {
+function SubscriptionSettingsScreenContent() {
   const { subscription, loading, error, refresh, isActive, isTrial, trialDaysRemaining } = useSubscription();
   const { isDesktop } = useResponsive();
 
@@ -390,3 +391,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
+
+/**
+ * Billing is web-only: store builds can't show prices or link to Stripe
+ * (App Store Guideline 3.1.1). This guard covers deep links on native.
+ */
+export default function SubscriptionSettingsScreen() {
+  if (!BILLING_UI_ENABLED) {
+    return <Redirect href="/settings" />;
+  }
+  return <SubscriptionSettingsScreenContent />;
+}

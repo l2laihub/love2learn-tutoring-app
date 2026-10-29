@@ -14,9 +14,10 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../../../../src/lib/supabase';
+import { startTutorTrial } from '../../../../src/lib/trial';
+import { BILLING_UI_ENABLED } from '../../../../src/config/subscription';
 import { Button } from '../../../../src/components/ui/Button';
 import { colors, typography, spacing, borderRadius, shadows } from '../../../../src/theme';
 
@@ -75,7 +76,7 @@ const PLANS: Plan[] = [
   },
 ];
 
-export default function SubscriptionScreen() {
+function SubscriptionScreenContent() {
   const [selectedPlan, setSelectedPlan] = useState<'solo' | 'pro'>('solo');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,28 +86,9 @@ export default function SubscriptionScreen() {
     setIsLoading(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError('Authentication error. Please try again.');
-        return;
-      }
-
-      // Calculate trial end date (14 days from now)
-      const trialEndsAt = new Date();
-      trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-
-      // Save selected plan to user metadata
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: {
-          subscription_plan: selectedPlan,
-          subscription_status: 'trialing',
-          trial_ends_at: trialEndsAt.toISOString(),
-        },
-      });
-
-      if (updateError) {
-        console.error('Error saving subscription:', updateError);
-        setError('Failed to save subscription. Please try again.');
+      const { error: trialError } = await startTutorTrial(selectedPlan);
+      if (trialError) {
+        setError(trialError);
         return;
       }
 
@@ -476,3 +458,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+/**
+ * Store builds can't show plans or prices (App Store Guideline 3.1.1).
+ * Native onboarding skips this screen; this guard covers deep links.
+ */
+export default function SubscriptionScreen() {
+  if (!BILLING_UI_ENABLED) {
+    return <Redirect href="/(auth)/onboarding/tutor/complete" />;
+  }
+  return <SubscriptionScreenContent />;
+}

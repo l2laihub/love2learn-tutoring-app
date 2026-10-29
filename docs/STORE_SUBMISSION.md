@@ -1,13 +1,56 @@
 # DaLesson — App Store & Play Store Submission Pack
 
 **Single source of truth for submitting DaLesson to the Apple App Store and Google Play.**
-Everything below is copy‑paste ready. Sections marked **⚠️ DECISION / ACTION** need a one‑time setup before you submit.
+Everything below is copy‑paste ready. Last reviewed **October 29, 2026** against Apple's current requirements and the actual code on `main` (`5929d46`).
 
 - App: **DaLesson** (tutoring management, formerly "Love2Learn")
 - Version: **1.1.0** · iOS build **2** · Android versionCode **2** (EAS auto‑increments from here)
-- This pack reflects two decisions: **brand on the new `dalesson.app` domain**, and **iOS ships free with the paywall OFF for v1** (native IAP comes in a later release).
+- Decisions this pack assumes: brand on the new **`dalesson.app`** domain, and **iOS v1 ships free with no purchases** (native IAP comes in a later release).
 
-> Older docs `APP_STORE_ASSETS.md` and `APP_STORE_DEPLOYMENT_GUIDE.md` are **stale** (old "Love2Learn" name, wrong bundle ID `com.love2learn.app`, v1.0.0). Use **this** file.
+> `APP_STORE_ASSETS.md` and `APP_STORE_DEPLOYMENT_GUIDE.md` are **stale** (old "Love2Learn" name, wrong bundle ID `com.love2learn.app`, v1.0.0). Use **this** file.
+
+---
+
+## 🚨 Rejection risks found in the code (fix before you submit)
+
+A code review on Oct 29, 2026 found these. The first three are very likely to get the build rejected.
+
+| # | Issue | Guideline | What to do |
+|---|-------|-----------|------------|
+| 1 | ✅ **Fixed Oct 29: in‑app account deletion.** Profile screen → **Delete Account** (tutors and parents; reached from More → Profile). The user types DELETE to confirm. The `delete-account` edge function cancels any Stripe subscription, calls `delete_user_account()` (migration `20261029000001`), then deletes the auth user. Tutors: all their business data is deleted. Parents: the login is removed, and the tutor keeps the family's lesson and payment records. | 5.1.1(v) | **Deploy before submitting:** `npx supabase db push` and `npx supabase functions deploy delete-account`. Then test with a throwaway tutor and a throwaway parent account. |
+| 2 | ✅ **Fixed Oct 29: no prices, plans, trials or Stripe on native.** `BILLING_UI_ENABLED` (`src/config/subscription.ts`) is true on web only. On iOS and Android: the landing page hides pricing, trial notes, billing FAQs and testimonials. Onboarding skips the plan picker and starts the trial quietly. Registration and the onboarding finish screen hide trial wording. Settings hides the Subscription row, and both subscription screens redirect away. The web app is unchanged. | 3.1.1, 3.1.3 | Nothing left to do. Before you submit, check a native build once: landing, tutor sign up, onboarding, Settings. |
+| 3 | **App icon has transparent rounded corners.** `assets/icon.png` is RGBA with alpha 0 in the corners. iOS renders transparent icon pixels as black, and App Store Connect rejects a 1024 icon with alpha. | 2.3 / asset validation | **Done in this pass:** new full‑bleed, no‑alpha `assets/icon-ios.png`. `app.config.ts` now sets `ios.icon` to it. Apple applies the rounded mask itself. Needs a new native build. |
+| 4 | ✅ **Fixed Oct 29: no more "AI" claims.** The tab header, More menu, worksheet screen, landing page and plan lists now say "Worksheets", "Printable worksheets" or "Worksheet generator". The worksheet hero icon is no longer sparkles. | 2.3.1 | When real AI generation ships, bring the wording back **and** disclose the AI provider in the privacy policy and App Privacy (Guideline 5.1.2(i) requires consent before sending personal data to a third‑party AI). |
+| 5 | ✅ **Fixed Oct 29: links now point to `dalesson.app`.** `ios.associatedDomains` is `applinks:dalesson.app` and the Android intent filter host is `dalesson.app`. `public/.well-known/apple-app-site-association` (copied into `dist/` by `expo export`) opens `/register*` (parent invites), `/calendar*`, `/notifications*`, `/requests*` and `/payments*` in the app. `netlify.toml` serves it as JSON. | 2.1 | **To make links open the app:** (1) serve the web app on `https://dalesson.app` (Netlify custom domain). (2) Set the `APP_URL` edge function secret to `https://dalesson.app`. Today the emails fall back to `https://app.lovetolearn.site`, which the app does not claim. (3) Android, optional: add `public/.well-known/assetlinks.json` with your Play app‑signing SHA‑256, from Play Console → App integrity. Until then, Android shows a "open with" chooser. None of this blocks App Review. |
+| 6 | Minor: 1:1 parent threads show a "Group" badge (`src/components/messages/MessageThreadCard.tsx:127` falls back to `'Group'` when `recipient_type === 'parent'`). | — | Show the parent's name instead. Not a rejection risk, just polish. |
+
+---
+
+## ✅ Apple requirements in force as of Oct 2026 (checked)
+
+| Requirement | Since | DaLesson status |
+|-------------|-------|-----------------|
+| Builds must use **Xcode 26 / iOS 26 SDK** | Apr 28, 2026 | ✅ Expo SDK 54's default EAS image uses Xcode 26. No `image` override needed in `eas.json`. |
+| **New age rating questionnaire** (ratings are now 4+, 9+, 13+, 16+, 18+). New questions cover in‑app controls, capabilities, medical/wellness and violence. Unanswered = submissions blocked. | Jan 31, 2026 | ⚠️ Answer it in App Store Connect → App Information → Age Rating (see §1). |
+| **Screenshots:** one iPhone set (6.9" or 6.5") plus one **13" iPad** set if the app runs on iPad. Apple scales down for smaller devices. | 2025– | ✅ Generated in this pass (§5). `supportsTablet: true`, so the iPad set is required. |
+| **Privacy manifest** / required‑reason APIs | May 1, 2024 | ✅ Expo SDK 54 merges the manifests from its modules at build time. If App Store Connect emails an `ITMS-91053` warning after upload, add the listed reasons under `ios.privacyManifests` in `app.config.ts`. |
+| **In‑app account deletion** | 2022 | ❌ Missing. See risk #1. |
+| **Updated guidelines + Program License Agreement** | Jun 8, 2026 | ⚠️ The Account Holder must accept the latest agreement in App Store Connect before submitting. The update put more weight on minors' safety and apps with chat or uploads. Our review notes (§7) explain that messaging is private, tutor ↔ parent only. |
+| **EU trader status** (Digital Services Act) | Feb 17, 2025 | ⚠️ Only if you distribute in the EU. Either declare trader status, or untick EU storefronts in Pricing & Availability for v1. |
+
+---
+
+## ⚠️ DECISION / ACTION — do these first
+
+1. **Deploy the account deletion backend** (`npx supabase db push`, `npx supabase functions deploy delete-account`). Then follow the domain steps in risk #5 and run a new production build. Icon and deep‑link changes are native, so OTA will not cover them.
+2. **Register & host `dalesson.app`** with three live pages (stores reject dead links):
+   - Privacy Policy → `https://dalesson.app/privacy` (content in `docs/PRIVACY_POLICY.md`. Updated Oct 29, 2026 to list Resend, Expo push and Telegram, and to name the in‑app delete path.)
+   - Terms of Service → `https://dalesson.app/terms` (`docs/TERMS_OF_SERVICE.md`)
+   - Support page → `https://dalesson.app/support`. It should include a contact email and a "How to delete your account" section.
+   - Set up `support@dalesson.app` and `privacy@dalesson.app` as working inboxes.
+3. **Confirm `EXPO_PUBLIC_ENABLE_PAYWALL=false`** in the EAS production environment.
+4. **Create the reviewer demo accounts** in Supabase with sample data (see §7).
+5. **Accept the latest Apple Developer Program License Agreement** (Account Holder).
 
 ---
 
@@ -28,25 +71,8 @@ Everything below is copy‑paste ready. Sections marked **⚠️ DECISION / ACTI
 | iOS buildNumber / Android versionCode | `2` / `2` (auto‑increment on) |
 | Primary category | Education |
 | Secondary category (iOS) | Business |
-| Price | Free (with optional web/Android subscription — see §8) |
-
----
-
-## ⚠️ DECISION / ACTION — do these first
-
-These are prerequisites; the listing references them.
-
-1. **Register & host `dalesson.app`** with three live pages (stores reject dead links):
-   - Privacy Policy → `https://dalesson.app/privacy`  (content already drafted in `docs/PRIVACY_POLICY.md`)
-   - Terms of Service → `https://dalesson.app/terms`  (content in `docs/TERMS_OF_SERVICE.md`)
-   - Support page → `https://dalesson.app/support`  (or just a support email, see below)
-   - Set up `support@dalesson.app` as a working inbox.
-2. **Update legal docs branding**: `docs/PRIVACY_POLICY.md` and `docs/TERMS_OF_SERVICE.md` still say "Love2Learn". Find/replace → "DaLesson" and update the contact email before publishing.
-3. **Update deep‑link config** in `app.config.ts` to the new domain, then rebuild (native change, not OTA):
-   - `ios.associatedDomains`: `applinks:love2learn.app` → `applinks:dalesson.app`
-   - `android.intentFilters[].data.host`: `love2learn.app` → `dalesson.app`
-4. **Confirm `EXPO_PUBLIC_ENABLE_PAYWALL=false`** in the production build env (iOS v1 ships with no purchases — see §8).
-5. **Create the reviewer demo accounts** in Supabase (see §7).
+| Price | Free (no in‑app purchases in v1) |
+| Encryption | `usesNonExemptEncryption: false` is already set (HTTPS only), so no export compliance prompt |
 
 ---
 
@@ -62,81 +88,82 @@ DaLesson – Tutoring Manager
 Run your tutoring business
 ```
 
-### Promotional Text  *(max 170 — editable anytime without review)*
+### Promotional Text  *(max 170, editable anytime without review)*
 ```
-Schedule lessons, track every student's progress, and invoice in seconds. The all‑in‑one app built for independent tutors. Free to start.
+Schedule lessons, keep notes for every student, and track who has paid. The all‑in‑one app for independent tutors and the families they teach.
 ```
 
-### Keywords  *(max 100, comma‑separated, NO spaces after commas; don't repeat words already in the title)*
+### Keywords  *(max 100, comma‑separated, no spaces after commas, don't repeat words already in the name)*
 ```
 tutor,lessons,scheduling,students,private lessons,invoice,progress,lesson planner,music teacher
 ```
+(95 characters)
 
 ### Description  *(max 4000)*
+> Every feature listed here exists in v1.1.0. The old draft promised "goals and milestones" and "AI worksheets", and neither exists, so they were removed (Guideline 2.3.1).
 ```
-DaLesson is the all‑in‑one tutoring management app built specifically for independent tutors and small tutoring practices.
+DaLesson is the all‑in‑one tutoring management app built for independent tutors and small tutoring studios.
 
-DESIGNED FOR SOLO TUTORS
-Whether you teach piano, math, reading, speech, or any subject, DaLesson helps you run your tutoring business professionally — without the complexity of enterprise software.
+Whether you teach piano, math, reading, speech, English or any other subject, DaLesson helps you run your tutoring business professionally, without the complexity of enterprise software.
 
 SCHEDULE WITH EASE
 • Create one‑time or recurring lessons
-• Weekly, bi‑weekly, and monthly schedules
-• Color‑coded subjects for quick visual reference
-• Combined sessions with multiple students
-• Handle cancellations and reschedules effortlessly
+• Weekly, bi‑weekly and monthly schedules
+• Color‑coded subjects for a quick visual of your week
+• Combined sessions with several students at once
+• Handle cancellations and reschedule requests from parents
+• Set your availability and share open slots
 
-TRACK STUDENT PROGRESS
-• Record detailed session notes after each lesson
-• Track goals and milestones for every student
-• Monitor progress across subjects and over time
-• Share progress updates with parents automatically
+KEEP EVERY STUDENT ORGANIZED
+• Student profiles with grade, subjects and custom rates
+• Session notes after each lesson
+• Full lesson history for every student
+• Parent contact details one tap away
 
-SIMPLIFY PAYMENTS
-• Generate professional invoices in seconds
-• Track paid and unpaid sessions
-• Support for prepaid lesson packages
-• Send payment reminders with one tap
-• Clear payment history for your records
+TRACK PAYMENTS
+• Monthly invoices built from completed lessons
+• Prepaid lesson packages with sessions used and remaining
+• See paid, partial and unpaid families at a glance
+• Send payment reminders by email
 
-KEEP PARENTS INFORMED
-• A dedicated parent portal for each family
-• Parents view schedules and progress
-• Easy in‑app communication
-• Session notes shared automatically
-• Transparent booking and payment tracking
+A PORTAL FOR EVERY FAMILY
+• Parents get their own login to see the lesson schedule
+• Payment status and history for their family
+• Worksheets and assignments from their tutor
+• Request a reschedule or an extra session
+
+MESSAGE PARENTS
+• Private messaging between you and each family
+• Announcements to all parents at once
+• Push notifications so nothing gets missed
 
 SHARE LEARNING MATERIALS
-• Upload worksheets, PDFs, and resources
-• Organize materials by student or subject
-• Parents can access shared materials anytime
-• Keep all teaching resources in one place
+• Create printable piano and math worksheets
+• Share PDFs, images and videos with families
+• Assign practice and see when it's done
 
 WORKS EVERYWHERE
-• iPhone, iPad, Android, and web browser
-• Your data syncs across all devices instantly
-• Access your schedule from anywhere
+• iPhone, iPad, Android and the web
+• Your data syncs across all your devices
 
-PRIVACY FOCUSED
-• Your data is encrypted and secure
-• Student information is protected
-• You control what parents can see
-• No ads, no data selling
+PRIVACY FIRST
+• No ads and no tracking
+• We never sell your data or your students' data
+• You control what each family can see
 
-DaLesson was built by a tutor, for tutors. Every feature is designed to save you time so you can focus on what matters most: teaching.
-
-Download now and transform how you manage your tutoring business.
+DaLesson was built for tutors, by someone who works with tutors. Every feature is designed to save you time so you can focus on teaching.
 
 Questions? Contact us at support@dalesson.app
 ```
 
 ### What's New  *(version 1.1.0)*
 ```
-• Rebranded to DaLesson with a fresh new look
-• Improved scheduling and recurring lesson handling
-• Parent portal enhancements
+• Welcome to DaLesson, with a fresh new look
+• Improved scheduling and recurring lessons
+• Parent portal improvements
 • Performance and reliability fixes
 ```
+> If 1.1.0 is the **first** App Store release, App Store Connect hides "What's New". Keep this text for the next update.
 
 ### URLs
 | Field | Value |
@@ -149,8 +176,14 @@ Questions? Contact us at support@dalesson.app
 - **Primary:** Education
 - **Secondary:** Business
 
-### Age Rating
-Answer the questionnaire honestly → expected rating **4+** (no objectionable content, no user‑generated public content, no gambling). The app has private tutor↔parent messaging only (not public social), so it stays 4+.
+### Age Rating (new 2026 questionnaire)
+App Store Connect → App Information → Age Rating. Answer honestly. These are the facts to answer from:
+- Violence, sexual content, profanity, horror, gambling, contests, alcohol/drugs, medical or wellness content: **None**.
+- **Messaging / user‑generated content:** **Yes, private.** Tutor ↔ parent messages and file sharing inside a tutor's own studio only. No public profiles, no discovery of strangers, no public posting.
+- **Unrestricted web access:** **No.** The app opens YouTube embeds that tutors share, not a general browser.
+- **In‑app controls:** tutors control which families see what. Parents can only message their own tutor.
+- **Made for Kids:** **No.** Account holders are adults (tutors and parents). Children don't use the app directly.
+- Apple computes the rating from these answers. Because messaging exists it may come out above 4+. That's fine, and there is no reason to override it upward.
 
 ---
 
@@ -163,34 +196,37 @@ DaLesson – Tutoring Manager
 
 ### Short Description  *(max 80)*
 ```
-All-in-one app for independent tutors: schedule, track progress, invoice.
+All-in-one app for independent tutors: schedule, track lessons, get paid.
 ```
 
 ### Full Description  *(max 4000)*
 ```
-DaLesson is the complete tutoring management solution built for independent tutors and small tutoring practices.
+DaLesson is the complete tutoring management app built for independent tutors and small tutoring studios.
 
-Juggling schedules, student progress, and payments across spreadsheets and notebooks? DaLesson brings everything together in one simple app.
+Juggling schedules, lesson notes and payments across spreadsheets and notebooks? DaLesson brings everything together in one simple app.
 
 KEY FEATURES
 
 Effortless Scheduling
-Create one‑time lessons or recurring schedules — weekly, bi‑weekly, or monthly. Color‑coded subjects let you see your week at a glance.
+Create one‑time lessons or recurring schedules (weekly, bi‑weekly or monthly). Color‑coded subjects let you see your week at a glance.
 
 Student Management
-Keep all student information organized in one place: contact details, subjects, rates, and notes. Never lose track of a student again.
+Keep every student organized in one place: grade, subjects, rates, parent contacts and lesson history.
 
-Progress Tracking
-Record session notes and track milestones. See progress over time with clear visualizations and help students reach their goals.
+Session Notes
+Record notes after each lesson and keep a full history for every student.
 
-Professional Invoicing
-Generate invoices automatically from completed sessions. Track payments, send reminders, and support prepaid lesson packages.
+Payments and Invoicing
+Monthly invoices built from completed lessons, prepaid lesson packages, and a clear view of who has paid.
 
-Parent Communication
-Give parents their own portal to view schedules and progress. Share session notes automatically and build trust through transparency.
+Parent Portal
+Give each family their own login to see the schedule, payment status and assignments, and to request reschedules.
 
-Resource Sharing
-Upload and share worksheets, PDFs, and learning materials. Organize by student or subject. Parents can access materials anytime.
+Messaging
+Private messaging with each family, plus announcements to all parents.
+
+Learning Materials
+Create printable piano and math worksheets and share PDFs, images and videos with families.
 
 PERFECT FOR
 • Piano and music teachers
@@ -200,12 +236,9 @@ PERFECT FOR
 • Test‑prep tutors
 • Any independent educator
 
-WHY DALESSON?
-Built by a tutor who understands your needs — no complex enterprise features you'll never use. Just the tools to run your tutoring business professionally.
+Works on phone, tablet and web, with your data synced across all your devices.
 
-Works on phone, tablet, and web, with instant sync across all your devices.
-
-Download DaLesson today and spend less time on admin, more time teaching.
+No ads. No tracking. We never sell your data.
 
 Support: support@dalesson.app
 Website: https://dalesson.app
@@ -219,36 +252,37 @@ Website: https://dalesson.app
 | Email *(required)* | `support@dalesson.app` |
 | Website | `https://dalesson.app` |
 | Privacy Policy URL *(required)* | `https://dalesson.app/privacy` |
-| Phone | optional |
 
 ### Content rating (IARC questionnaire)
-Category: **Utility, Productivity, Communication or Other**. No violence/sexual/profane content. Expected rating: **Everyone**.
+Category: **Utility, Productivity, Communication or Other**. No violence, sexual or profane content. Users can communicate privately (tutor ↔ parent). Expected rating: **Everyone**.
 
 ### Target audience
-- Target age group: **18 and over** (the *account holder* — tutors/parents — is an adult). The app stores info *about* children but is not designed for children to use directly, so it is **not** in the "Designed for Families" program and you answer **No** to "appeals to children."
+- Target age group: **18 and over**. Account holders are adults. The app stores information *about* children but isn't designed for children to use, so it's **not** in "Designed for Families". Answer **No** to "appeals to children."
+
+### Play‑specific note
+- `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` in `app.config.ts` are deprecated on Android 13+. Play may ask why you need them. `expo-image-picker` and `expo-document-picker` use the system pickers, so you can likely remove both.
 
 ---
 
 ## 3. App Privacy — Apple "Nutrition Label" answers
 
-App Store Connect → App Privacy. Declare the following (based on the actual data flows: Supabase, OpenAI worksheet generation, Stripe web payments, Resend email).
+App Store Connect → App Privacy. Based on the actual data flows in v1.1.0: Supabase (database, auth, storage), Resend (email), Expo push, optional Telegram recap. **No OpenAI.** It isn't wired up, so don't declare it. **No Stripe on iOS** once risk #2 is fixed.
 
-| Data type | Collected? | Linked to user? | Used for tracking? | Purpose |
-|-----------|-----------|-----------------|--------------------|---------|
-| Name | Yes | Yes | No | App Functionality |
-| Email Address | Yes | Yes | No | App Functionality |
-| Phone Number | Yes (optional) | Yes | No | App Functionality |
-| Photos | Yes | Yes | No | App Functionality (profile/material uploads) |
-| Sensitive Info (student learning notes) | Yes | Yes | No | App Functionality |
-| Payment Info | Yes | Yes | No | Purchases (handled by processor; card data not stored by us) |
-| Customer Support content | Yes | Yes | No | App Functionality |
-| User Content (messages, notes, files) | Yes | Yes | No | App Functionality |
-| Crash/Performance data | No* | — | — | — |
+| Data type (Apple's category) | Collected? | Linked to user? | Tracking? | Purpose |
+|------------------------------|-----------|-----------------|-----------|---------|
+| Contact Info → Name | Yes | Yes | No | App Functionality |
+| Contact Info → Email Address | Yes | Yes | No | App Functionality |
+| Contact Info → Phone Number | Yes (optional) | Yes | No | App Functionality |
+| User Content → Photos or Videos | Yes | Yes | No | App Functionality (avatars, shared materials) |
+| User Content → Emails or Text Messages | Yes | Yes | No | App Functionality (in‑app messages) |
+| User Content → Other User Content | Yes | Yes | No | App Functionality (student names, ages, grades, lesson notes, files) |
+| Financial Info → Other Financial Info | Yes | Yes | No | App Functionality (lesson payment records the tutor enters. No card data.) |
+| Identifiers → Device ID | Yes | Yes | No | App Functionality (push notification token) |
+| User ID | Yes | Yes | No | App Functionality (account ID) |
+| Diagnostics / Usage Data | **No** | — | — | — |
 
-\* Only declare crash/diagnostics if you add Sentry/analytics later.
-
-- **Tracking:** None. The app does **not** track users across other companies' apps/sites. (No ad SDKs, no IDFA.)
-- **Third‑party data sharing:** Data is processed by Supabase (hosting/database), Stripe (payments, web), and OpenAI (only the prompt text you submit for AI worksheet generation). None of these is used for advertising.
+- **Tracking:** None. No ad SDKs, no IDFA, no App Tracking Transparency prompt needed.
+- If you add Sentry or analytics later, add Crash Data / Performance Data / Product Interaction and update the privacy policy first.
 
 ---
 
@@ -256,167 +290,166 @@ App Store Connect → App Privacy. Declare the following (based on the actual da
 
 Play Console → App content → Data safety. Mirror the Apple answers:
 
-**Data collected and linked to the user:**
 | Category | Data | Collected | Shared | Purpose |
 |----------|------|-----------|--------|---------|
 | Personal info | Name, Email, Phone (optional) | Yes | No | App functionality, Account management |
-| Personal info | Other (student names/ages) | Yes | No | App functionality |
+| Personal info | Other (student names, ages, grades) | Yes | No | App functionality |
 | Photos and videos | Photos | Yes | No | App functionality |
-| Financial info | Purchase history | Yes | No | App functionality |
-| Messages | In‑app messages | Yes | No | App functionality |
+| Financial info | Other financial info (lesson payment records) | Yes | No | App functionality |
+| Messages | Other in‑app messages | Yes | No | App functionality |
 | Files and docs | Uploaded worksheets/PDFs | Yes | No | App functionality |
-| App activity | In‑app actions | Yes | No | App functionality |
+| Device or other IDs | Push token | Yes | No | App functionality |
 
 **Security practices to declare:**
-- Data is encrypted in transit (HTTPS / TLS). ✅
-- Users can request data deletion → provide `support@dalesson.app` (and/or in‑app account deletion if available).
-- No data sold to third parties. ✅
-- Committed to Play **Families Policy**: N/A (not a Families app).
-
-> **Account deletion (required by both stores):** Apple Guideline 5.1.1(v) and Google both require an in‑app or web path to delete the account. Provide either an in‑app "Delete account" action or a documented request flow at `https://dalesson.app/support`. Confirm this exists before submitting.
+- Data is encrypted in transit (HTTPS/TLS). ✅
+- Users can request deletion: in‑app (More → Profile → Delete Account) **and** a web URL. Play requires the web URL: use `https://dalesson.app/support#delete-account`.
+- No data sold. ✅
 
 ---
 
-## 5. Assets checklist (sizes)
+## 5. Assets — generated and ready
 
-Current source assets live in `/assets/` (`icon.png`, `adaptive-icon-foreground.png`, `adaptive-icon-monochrome.png`, `splash.png`, `favicon.png`).
+All files are in **`store-assets/`** in the repo. Sizes are checked: exact pixels, RGB, no alpha.
 
-### iOS
-- [ ] **App Store icon** 1024×1024 PNG, **no alpha/transparency**, no rounded corners
-- [ ] **iPhone 6.9"** screenshots 1320×2868 — **min 3, max 10** (required)
-- [ ] **iPhone 6.7"** screenshots 1290×2796 (can auto‑fill 6.5"/5.5")
-- [ ] **iPad 13"/12.9"** screenshots 2048×2732 (required — `supportsTablet: true`)
-- [ ] App Preview video (optional) 1080×1920, 15–30s
+### iOS (upload these)
+| Asset | File(s) | Size |
+|-------|---------|------|
+| App Store icon | `store-assets/app-store/AppStore-Icon-1024.png` | 1024×1024, RGB, no alpha, square (Apple rounds it) |
+| iPhone 6.9" screenshots | `store-assets/app-store/iphone-6.9/iphone-01…06.png` | 1320×2868 ×6 |
+| iPad 13" screenshots | `store-assets/app-store/ipad-13/ipad-01…06.png` | 2064×2752 ×6 |
+| In‑app icon (binary) | `assets/icon-ios.png` (wired via `ios.icon`) | 1024×1024, no alpha |
 
-### Android
-- [ ] **Hi‑res icon** 512×512 PNG (32‑bit, alpha allowed)
-- [ ] **Feature graphic** 1024×500 PNG/JPEG (required)
-- [ ] **Phone screenshots** min 2, max 8 — 1080×1920 recommended (9:16)
-- [ ] **Tablet screenshots** (recommended if listing as tablet‑supported)
-- [ ] Promo video (optional, YouTube link)
+Only the 6.9" iPhone and 13" iPad sets are needed. Apple scales them for every smaller device.
 
-### Screenshot content order + captions (both stores)
+### Screenshot order and captions
 | # | Screen | Caption |
 |---|--------|---------|
-| 1 | Dashboard | Your tutoring business at a glance |
-| 2 | Calendar / sessions | Schedule lessons in seconds |
-| 3 | Student progress | Track every student's progress |
-| 4 | Invoicing / payments | Get paid faster with simple invoicing |
-| 5 | Parent portal | Keep parents in the loop |
-| 6 | Materials | Share resources effortlessly |
+| 1 | Tutor home dashboard | Your tutoring business at a glance |
+| 2 | Lesson calendar | Schedule lessons in seconds |
+| 3 | Students & Parents | Every student, organized |
+| 4 | Payments | Know who has paid, and who has not |
+| 5 | Messages | Keep parents in the loop |
+| 6 | Parent dashboard | A portal for every family |
+
+**How they were made:** the real DaLesson UI (web build in `dist/`) was rendered against a mocked backend filled with fictional demo data ("Harmony Studio", tutor "Sarah Nguyen", families like Park, Tran and Chen). No real student data appears. The app UI was then framed with a caption. To regenerate after UI changes:
+```bash
+npx expo export --platform web      # refresh dist/
+cd scripts/store-screenshots && node server.js &   # serves dist/ on :8090
+node generate.js                         # writes out/iphone and out/ipad
+```
+
+### Android (still to do)
+- [ ] Hi‑res icon 512×512 (scale down `AppStore-Icon-1024.png`)
+- [ ] Feature graphic 1024×500
+- [ ] Phone screenshots, 2–8 at 1080×1920. You can reuse the iPhone set resized to 9:16.
 
 ---
 
 ## 6. Build & submit (EAS commands)
 
-Pre‑built config is in `eas.json` (production = app‑bundle for Android, autoIncrement on; iOS submit credentials already filled).
-
 ```bash
-# One‑time
+# One-time
 npm install -g eas-cli
 eas login                       # account: huybuilds
 
-# Set production env (ensure paywall stays OFF for iOS v1)
+# Keep the paywall off for v1
 eas env:create --environment production --name EXPO_PUBLIC_ENABLE_PAYWALL --value false
-# (Supabase URL/key should already be set as production env or secrets)
 
-# Build
+# Build (Expo SDK 54 => Xcode 26 / iOS 26 SDK by default)
 eas build --profile production --platform ios
-eas build --profile production --platform android
-# or both:
-eas build --profile production --platform all
 
-# Submit (iOS creds are in eas.json: appleId / ascAppId / appleTeamId)
+# Submit (credentials are in eas.json)
 eas submit --platform ios --latest
-
-# Android: requires a Google Play service-account JSON the first time.
-# Add it under submit.production.android.serviceAccountKeyPath in eas.json, then:
-eas submit --platform android --latest
 ```
+Then in App Store Connect: attach the build to version 1.1.0, upload screenshots and icon, fill §1, App Privacy (§3), Age Rating, App Review info (§7), and **Submit for Review**.
 
-> **Android service account:** create one in Google Cloud, grant Play Console access, download the JSON, and reference it in `eas.json` (`submit.production.android`). EAS will guide you on first run.
-
-> **First Google Play submission gotcha:** brand‑new personal Play accounts may require **20 testers for 14 days on a closed track** before you can promote to production. Plan for this — start a closed test early.
+> **Android:** add a Google Play service‑account JSON under `submit.production.android.serviceAccountKeyPath`, then `eas submit --platform android --latest`. New personal Play accounts need **12 testers for 14 days** on a closed track before production. Start that early.
 
 ---
 
 ## 7. Reviewer demo accounts + review notes
 
-Both stores test behind the login wall, so you must provide working credentials.
-
 ### Create in Supabase before submitting
-- **Tutor account** (primary — reviewers should land here): seed it with sample students, a few scheduled lessons, and one invoice so the app isn't empty.
-  - Email: `reviewer.tutor@dalesson.app`
-  - Password: `<set a strong password>`
-- **Parent account** (optional, to show the parent portal):
-  - Email: `reviewer.parent@dalesson.app`
-  - Password: `<set a strong password>`
+- **Tutor account** (main one): seed it with about 8 students across 5–6 families, recurring lessons this week, a few session notes, one paid and one unpaid invoice, and two message threads. The screenshot demo data is a good template.
+  - Email: `reviewer.tutor@dalesson.app` · Password: `<strong password>`
+- **Parent account**, linked to one family of the tutor above:
+  - Email: `reviewer.parent@dalesson.app` · Password: `<strong password>`
+- Make sure neither account hits onboarding (`onboarding_completed_at` set) or an agreement prompt.
 
-### App Store Connect → App Review Information → Sign‑In Information
-```
-Username: reviewer.tutor@dalesson.app
-Password: <the password you set>
-```
-Notes field:
-```
-DaLesson is a tutoring management app. Sign in with the tutor account above to see scheduling, student management, progress notes, and invoicing. This version does not include in‑app purchases. A parent demo account is available on request. Support: support@dalesson.app
-```
+### App Store Connect → App Review Information
+Sign‑in: `reviewer.tutor@dalesson.app` / `<password>`
 
-### Google Play → App content → App access
-Provide the same tutor credentials and a one‑line instruction ("Sign in with the provided tutor account to access all features; no purchase required").
+Notes:
+```
+DaLesson is a tutoring management app for independent tutors and the parents of their students.
+
+Tutor demo: reviewer.tutor@dalesson.app / <password>
+Shows scheduling, students, session notes, payments tracking and messaging.
+
+Parent demo: reviewer.parent@dalesson.app / <password>
+Shows the parent portal for one family.
+
+• This version has no in-app purchases and no paid features.
+• Messaging is private and only between a tutor and the families in their own studio. There are no public profiles or discovery.
+• Account deletion: More > Profile > Delete Account (scroll to the bottom).
+• Children do not use the app. Accounts are for adult tutors and parents.
+
+Support: support@dalesson.app
+```
 
 ---
 
 ## 8. Subscriptions / paywall — status & later setup
 
-**For v1 you are NOT enabling in‑app purchases on the stores.** `EXPO_PUBLIC_ENABLE_PAYWALL=false`, so:
-- The app ships **free**; no IAP products are declared in App Store Connect / Play for this release.
-- Do **not** check the "in‑app purchases" boxes or attach subscription products on the store listing for v1.
-- The web app keeps Stripe Checkout for tutors who subscribe on the web — that's outside the mobile stores and allowed.
+**v1 ships with no purchases on iOS.** After risk #2 is fixed:
+- No IAP products in App Store Connect for this release.
+- iOS shows no prices, plans, trials or Stripe links.
+- The web app keeps Stripe Checkout. That's outside the App Store and allowed.
 
-**When you add native subscriptions later** (full blueprint in `docs/PAYWALL_SETUP.md`):
+**When you add native subscriptions** (full blueprint in `docs/PAYWALL_SETUP.md`):
 
-| Plan | Price/mo | Limit | iOS/Android product ID | Entitlement |
-|------|----------|-------|------------------------|-------------|
+| Plan | Price/mo | Limit | Product ID | Entitlement |
+|------|----------|-------|------------|-------------|
 | Solo | $29 | 25 students | `dalesson_solo_monthly` | `pro_access` |
 | Pro | $49 | Unlimited | `dalesson_pro_monthly` | `pro_access` |
 
-- 14‑day free trial as an **Introductory Offer** (iOS) / **free‑trial offer** (Android).
-- iOS digital subscriptions **must** use Apple IAP (Guideline 3.1.1) via RevenueCat — Stripe web checkout will be **rejected** inside the iOS app. RevenueCat wiring (`revenuecat-webhook` edge fn + native purchase flow) is **not yet built**; finish Parts D–E of `PAYWALL_SETUP.md` first.
-- Required when IAP is live: a **Restore Purchases** action and links to manage/cancel.
+- 14‑day free trial as an Introductory Offer.
+- Digital subscriptions sold inside the iOS app must use Apple IAP (3.1.1) via RevenueCat. Only the US storefront may also link out to the web.
+- Needed when IAP is live: Restore Purchases, manage/cancel link, and price, term and auto‑renew text on the paywall plus links to Terms and Privacy (3.1.2).
 
 ---
 
-## 9. Final pre‑submission checklist
+## 9. Final pre‑submission checklist (iOS)
 
-### Shared
-- [ ] `dalesson.app` registered; `/privacy`, `/terms`, `/support` pages live
-- [ ] `support@dalesson.app` inbox working
-- [ ] Legal docs re‑branded (Love2Learn → DaLesson) and published
-- [ ] `app.config.ts` deep‑link domain updated to `dalesson.app`; rebuilt
-- [ ] Account‑deletion path exists (in‑app or documented)
-- [ ] Reviewer demo accounts seeded with sample data
-- [ ] `EXPO_PUBLIC_ENABLE_PAYWALL=false` in production build
+### Code / build
+- [x] In‑app **Delete Account** built (risk #1)
+- [ ] Migration pushed + `delete-account` function deployed, then tested with throwaway tutor and parent accounts
+- [x] No prices, plans, trials or Stripe links on iOS (risk #2)
+- [x] Full‑bleed no‑alpha icon wired via `ios.icon` (risk #3)
+- [x] "AI" wording removed from worksheet screens (risk #4)
+- [x] Associated domain → `dalesson.app` + AASA file (risk #5)
+- [ ] Web app live on `dalesson.app`, `APP_URL` secret set to `https://dalesson.app`
+- [ ] `EXPO_PUBLIC_ENABLE_PAYWALL=false` in production env
+- [ ] New production build uploaded (Xcode 26 via EAS default image)
+- [ ] Tested on a real iPhone **and** an iPad or iPad simulator (iPad is required because `supportsTablet: true`)
 
-### iOS
-- [ ] Apple Developer account active; app `6760299534` exists in App Store Connect
-- [ ] Icon 1024² (no alpha); iPhone 6.9" + iPad 13" screenshots uploaded
-- [ ] Name / subtitle / promo / keywords / description filled (§1)
-- [ ] Support + Privacy URLs set
-- [ ] App Privacy questionnaire completed (§3) — **No tracking**
-- [ ] Sign‑in info + review notes provided (§7)
-- [ ] Production build uploaded via `eas submit`
+### Web / accounts
+- [ ] `dalesson.app/privacy`, `/terms`, `/support` live (support page has deletion steps)
+- [ ] `support@` and `privacy@dalesson.app` inboxes working
+- [ ] Reviewer tutor and parent accounts seeded, onboarding already done
+- [ ] Latest Program License Agreement accepted
 
-### Android
-- [ ] Google Play Developer account active; app created (package `app.huybuilds.dalesson`)
-- [ ] 512² icon + 1024×500 feature graphic + ≥2 phone screenshots
-- [ ] Title / short / full description filled (§2)
-- [ ] Content rating (IARC) completed
-- [ ] Data safety form completed (§4)
-- [ ] App access (test credentials) provided
-- [ ] Target audience set (18+; not a Families app)
-- [ ] Service‑account JSON wired for `eas submit`; `.aab` uploaded
+### App Store Connect
+- [ ] Icon + 6 iPhone 6.9" + 6 iPad 13" screenshots uploaded
+- [ ] Name, subtitle, promo text, keywords, description (§1)
+- [ ] Support + Privacy URLs
+- [ ] Category: Education / Business
+- [ ] Age Rating questionnaire (2026 version) completed
+- [ ] App Privacy (§3) completed: **no tracking**
+- [ ] Pricing: Free. Availability: decide on EU (trader status)
+- [ ] Review sign‑in + notes (§7)
+- [ ] Submit for Review
 
 ---
 
-*Generated for DaLesson v1.1.0 · Expo SDK 54 · supersedes the stale APP_STORE_*.md docs.*
+*DaLesson v1.1.0 · Expo SDK 54 · reviewed Oct 29, 2026. Supersedes the stale APP_STORE_*.md docs.*

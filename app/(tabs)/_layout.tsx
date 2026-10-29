@@ -123,7 +123,7 @@ export default function TabLayout() {
             name="worksheets"
             options={{
               title: 'Worksheets',
-              headerTitle: isParent ? 'My Worksheets' : 'AI Worksheets',
+              headerTitle: isParent ? 'My Worksheets' : 'Worksheets',
             }}
           />
           <Tabs.Screen
@@ -268,7 +268,7 @@ export default function TabLayout() {
         name="worksheets"
         options={{
           title: 'Worksheets',
-          headerTitle: isParent ? 'My Worksheets' : 'AI Worksheets',
+          headerTitle: isParent ? 'My Worksheets' : 'Worksheets',
           tabBarActiveTintColor: colors.secondary.main,
           tabBarIcon: ({ color, size }) => (
             <TabIcon name="document-text" color={color} size={size} />

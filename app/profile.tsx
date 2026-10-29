@@ -22,6 +22,7 @@ import { useStudents, useUpdateStudent } from '../src/hooks/useStudents';
 import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Subject } from '../src/theme';
 import { Student, UpdateStudentInput } from '../src/types/database';
 import { StudentFormModal } from '../src/components/StudentFormModal';
+import { DeleteAccountSection } from '../src/components/DeleteAccountSection';
 import { parseBirthday } from '../src/utils/dateUtils';
 
 // Subject display names
@@ -317,6 +318,7 @@ export default function ProfileScreen() {
               <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
               <Text style={styles.signOutText}>Sign Out</Text>
             </Pressable>
+            <DeleteAccountSection />
           </View>
 
           {/* Account Info */}

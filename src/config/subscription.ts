@@ -5,7 +5,19 @@
  * plan tier allows. See docs/PAYWALL_SETUP.md for the full setup guide.
  */
 
+import { Platform } from 'react-native';
 import type { SubscriptionPlan } from '../lib/stripe';
+
+/**
+ * Whether any pricing, plan picker, trial upsell or Stripe link may be shown.
+ *
+ * Web only. The iOS and Android builds sell nothing in v1, and showing prices
+ * or linking to Stripe Checkout from a store build breaks App Store Review
+ * Guideline 3.1.1 (digital goods must use In-App Purchase) and Google Play's
+ * billing policy. When native IAP ships (RevenueCat, docs/PAYWALL_SETUP.md),
+ * replace this with a check for the native purchase flow.
+ */
+export const BILLING_UI_ENABLED = Platform.OS === 'web';
 
 /**
  * Master switch for paywall enforcement.
