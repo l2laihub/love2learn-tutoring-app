@@ -64,11 +64,19 @@ function RootLayoutNav() {
 
     const inLanding = segments[0] === 'landing';
     const inInquire = segments[0] === 'inquire';
+    // Public pages anyone can open, signed in or out (also the store's
+    // Privacy Policy / Support URLs on the web build).
+    const inPublicPage = ['privacy', 'terms', 'support'].includes(segments[0] as string);
 
     // Helper to check if user needs onboarding
     const needsOnboarding = parent && !parent.onboarding_completed_at;
     const tutorNeedsOnboarding = isTutor && needsOnboarding;
     const parentNeedsOnboarding = isParent && needsOnboarding;
+
+    if (inPublicPage) {
+      // Never redirect away from Privacy / Terms / Support.
+      return;
+    }
 
     if (!isAuthenticated && !inAuthGroup && !inLanding && !inInquire) {
       // Redirect to landing page if not authenticated and not already on auth/landing/inquire screens
@@ -137,6 +145,18 @@ function RootLayoutNav() {
           // to avoid a duplicate header bar.
           headerShown: false,
         }}
+      />
+      <Stack.Screen
+        name="privacy"
+        options={{ headerShown: true, headerTitle: 'Privacy Policy', headerBackTitle: 'Back' }}
+      />
+      <Stack.Screen
+        name="terms"
+        options={{ headerShown: true, headerTitle: 'Terms of Service', headerBackTitle: 'Back' }}
+      />
+      <Stack.Screen
+        name="support"
+        options={{ headerShown: true, headerTitle: 'Help & Support', headerBackTitle: 'Back' }}
       />
       <Stack.Screen
         name="agreement"

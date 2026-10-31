@@ -2,7 +2,7 @@
 
 **DaLesson Tutoring Management Platform**
 
-**Last Updated: January 31, 2026**
+**Last Updated: October 30, 2026**
 
 **Effective Date: January 31, 2026**
 
@@ -20,7 +20,7 @@ Please read these Terms carefully before using the Service. By accessing or usin
 
 ### 1.1 Agreement to Terms
 
-By creating an account, accessing, or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms, as well as our [Privacy Policy](/docs/PRIVACY_POLICY.md), which is incorporated herein by reference.
+By creating an account, accessing, or using the Service, you acknowledge that you have read, understood, and agree to be bound by these Terms, as well as our [Privacy Policy](https://dalesson.app/privacy), which is incorporated herein by reference.
 
 ### 1.2 Eligibility
 
@@ -455,7 +455,7 @@ We may provide notices to you by:
 - In-app notifications
 - Posting on the Service
 
-You may provide notices to us by email at support@dalesson.app or by mail to our address below.
+You may provide notices to us by email at support@dalesson.app.
 
 ### 14.7 Relationship of the Parties
 
@@ -487,10 +487,6 @@ If you have any questions, concerns, or feedback about these Terms or the Servic
 **Legal Inquiries:**
 - Email: legal@dalesson.app
 
-**Mailing Address:**
-DaLesson
-[Address to be provided]
-
 ---
 
-*These Terms of Service were last updated on January 31, 2026.*
+*These Terms of Service were last updated on October 30, 2026.*

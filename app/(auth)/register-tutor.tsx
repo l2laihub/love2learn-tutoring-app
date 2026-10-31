@@ -17,7 +17,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
@@ -179,11 +178,11 @@ export default function RegisterTutorScreen() {
   };
 
   const openTermsOfService = () => {
-    Linking.openURL('https://dalesson.app/terms');
+    router.push('/terms');
   };
 
   const openPrivacyPolicy = () => {
-    Linking.openURL('https://dalesson.app/privacy');
+    router.push('/privacy');
   };
 
   // Show success state after registration

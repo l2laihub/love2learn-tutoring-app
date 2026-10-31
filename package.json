@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "legal": "node scripts/build-legal-content.js",
     "update:production": "eas update --channel production",
     "update:preview": "eas update --channel preview"
   },

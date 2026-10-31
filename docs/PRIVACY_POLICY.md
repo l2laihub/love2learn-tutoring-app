@@ -2,7 +2,7 @@
 
 **DaLesson Tutoring Management Platform**
 
-**Last Updated: October 29, 2026**
+**Last Updated: October 30, 2026**
 
 **Effective Date: January 31, 2026**
 
@@ -425,11 +425,6 @@ If you have questions, concerns, or requests regarding this Privacy Policy or ou
 
 **Email:** privacy@dalesson.app
 
-**Mailing Address:**
-DaLesson
-Privacy Inquiries
-[Address to be provided]
-
 **Response Time:** We will respond to your inquiry within 30 days.
 
 ---
@@ -440,4 +435,4 @@ This Privacy Policy is governed by and construed in accordance with the laws of 
 
 ---
 
-*This Privacy Policy was last updated on January 31, 2026.*
+*This Privacy Policy was last updated on October 30, 2026.*
