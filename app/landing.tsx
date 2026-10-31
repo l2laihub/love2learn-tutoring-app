@@ -705,13 +705,25 @@ export default function LandingPage() {
                 <Text style={styles.footerBrandName}>DaLesson</Text>
               </View>
               <View style={styles.footerLinks}>
-                <Pressable style={styles.footerLink}>
+                <Pressable
+                  style={styles.footerLink}
+                  onPress={() => router.push('/privacy')}
+                  accessibilityRole="link"
+                >
                   <Text style={styles.footerLinkText}>Privacy Policy</Text>
                 </Pressable>
-                <Pressable style={styles.footerLink}>
+                <Pressable
+                  style={styles.footerLink}
+                  onPress={() => router.push('/terms')}
+                  accessibilityRole="link"
+                >
                   <Text style={styles.footerLinkText}>Terms of Service</Text>
                 </Pressable>
-                <Pressable style={styles.footerLink}>
+                <Pressable
+                  style={styles.footerLink}
+                  onPress={() => router.push('/support')}
+                  accessibilityRole="link"
+                >
                   <Text style={styles.footerLinkText}>Contact</Text>
                 </Pressable>
               </View>

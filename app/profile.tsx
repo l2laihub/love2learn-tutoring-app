@@ -23,6 +23,7 @@ import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Su
 import { Student, UpdateStudentInput } from '../src/types/database';
 import { StudentFormModal } from '../src/components/StudentFormModal';
 import { DeleteAccountSection } from '../src/components/DeleteAccountSection';
+import { LegalLinks } from '../src/components/LegalLinks';
 import { parseBirthday } from '../src/utils/dateUtils';
 
 // Subject display names
@@ -319,6 +320,7 @@ export default function ProfileScreen() {
               <Text style={styles.signOutText}>Sign Out</Text>
             </Pressable>
             <DeleteAccountSection />
+            <LegalLinks />
           </View>
 
           {/* Account Info */}

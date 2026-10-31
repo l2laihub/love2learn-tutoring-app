@@ -32,7 +32,9 @@ A code review on Oct 29, 2026 found these. The first three are very likely to ge
 |-------------|-------|-----------------|
 | Builds must use **Xcode 26 / iOS 26 SDK** | Apr 28, 2026 | ✅ Expo SDK 54's default EAS image uses Xcode 26. No `image` override needed in `eas.json`. |
 | **New age rating questionnaire** (ratings are now 4+, 9+, 13+, 16+, 18+). New questions cover in‑app controls, capabilities, medical/wellness and violence. Unanswered = submissions blocked. | Jan 31, 2026 | ⚠️ Answer it in App Store Connect → App Information → Age Rating (see §1). |
-| **Screenshots:** one iPhone set (6.9" or 6.5") plus one **13" iPad** set if the app runs on iPad. Apple scales down for smaller devices. | 2025– | ✅ Generated in this pass (§5). `supportsTablet: true`, so the iPad set is required. |
+| **Screenshots:** App Store Connect's default required iPhone set is now **"iPhone with Dynamic Island (medium display)"** (6.1"/6.3", e.g. 1206×2622), plus one **13" iPad** set. The 6.9" large‑display set is still accepted under "View All Sizes in Media Manager". | Oct 2026 | ✅ Both iPhone sets and the iPad set are generated (§5). `supportsTablet: true`, so the iPad set is required. |
+| **Creative assets** (product page header + search results, Asset Library, preview tool). Optional. They show on iOS/iPadOS 27+. Must suit a 4+ audience. No pricing, URLs or copyright symbols. Keep key content in the centre safe area. | Oct 5, 2026 | ✅ Header, search and universal images generated (§5). |
+| **iPhone Duo** screenshots (outer 1398×2034, inner 2007×2853). Uploading them adds an "optimized for iPhone Duo" badge. Required from April 2027 only for apps built with the iOS 27.1 SDK. | Oct 2026 | ⏸ **Skip for v1.1.0.** The build uses the iOS 26 SDK and the app hasn't been tested on Duo. See §5. |
 | **Privacy manifest** / required‑reason APIs | May 1, 2024 | ✅ Expo SDK 54 merges the manifests from its modules at build time. If App Store Connect emails an `ITMS-91053` warning after upload, add the listed reasons under `ios.privacyManifests` in `app.config.ts`. |
 | **In‑app account deletion** | 2022 | ❌ Missing. See risk #1. |
 | **Updated guidelines + Program License Agreement** | Jun 8, 2026 | ⚠️ The Account Holder must accept the latest agreement in App Store Connect before submitting. The update put more weight on minors' safety and apps with chat or uploads. Our review notes (§7) explain that messaging is private, tutor ↔ parent only. |
@@ -43,10 +45,11 @@ A code review on Oct 29, 2026 found these. The first three are very likely to ge
 ## ⚠️ DECISION / ACTION — do these first
 
 1. **Deploy the account deletion backend** (`npx supabase db push`, `npx supabase functions deploy delete-account`). Then follow the domain steps in risk #5 and run a new production build. Icon and deep‑link changes are native, so OTA will not cover them.
-2. **Register & host `dalesson.app`** with three live pages (stores reject dead links):
-   - Privacy Policy → `https://dalesson.app/privacy` (content in `docs/PRIVACY_POLICY.md`. Updated Oct 29, 2026 to list Resend, Expo push and Telegram, and to name the in‑app delete path.)
-   - Terms of Service → `https://dalesson.app/terms` (`docs/TERMS_OF_SERVICE.md`)
-   - Support page → `https://dalesson.app/support`. It should include a contact email and a "How to delete your account" section.
+2. **Serve the web app on `dalesson.app`.** The Privacy, Terms and Support pages are now built into the app as `/privacy`, `/terms` and `/support`. The web build serves them, so once the Netlify `dalesson` site is on the `dalesson.app` domain these URLs are live:
+   - Privacy Policy → `https://dalesson.app/privacy` (from `docs/PRIVACY_POLICY.md`)
+   - Terms of Service → `https://dalesson.app/terms` (from `docs/TERMS_OF_SERVICE.md`)
+   - Support → `https://dalesson.app/support` (contact emails, plus account deletion steps at `#delete-account`)
+   - After editing either legal doc, run `npm run legal` to refresh `src/content/legal.ts`.
    - Set up `support@dalesson.app` and `privacy@dalesson.app` as working inboxes.
 3. **Confirm `EXPO_PUBLIC_ENABLE_PAYWALL=false`** in the EAS production environment.
 4. **Create the reviewer demo accounts** in Supabase with sample data (see §7).
@@ -315,11 +318,27 @@ All files are in **`store-assets/`** in the repo. Sizes are checked: exact pixel
 | Asset | File(s) | Size |
 |-------|---------|------|
 | App Store icon | `store-assets/app-store/AppStore-Icon-1024.png` | 1024×1024, RGB, no alpha, square (Apple rounds it) |
-| iPhone 6.9" screenshots | `store-assets/app-store/iphone-6.9/iphone-01…06.png` | 1320×2868 ×6 |
+| iPhone 6.3" screenshots (**required**: "iPhone with Dynamic Island (medium display)" tab) | `store-assets/app-store/iphone-6.3/iphone63-01…06.png` | 1206×2622 ×6 |
+| iPhone 6.9" screenshots (optional: large display, in Media Manager) | `store-assets/app-store/iphone-6.9/iphone-01…06.png` | 1320×2868 ×6 |
 | iPad 13" screenshots | `store-assets/app-store/ipad-13/ipad-01…06.png` | 2064×2752 ×6 |
 | In‑app icon (binary) | `assets/icon-ios.png` (wired via `ios.icon`) | 1024×1024, no alpha |
 
-Only the 6.9" iPhone and 13" iPad sets are needed. Apple scales them for every smaller device.
+Upload the 6.3" set in the default iPhone tab and the iPad set in "iPad 13" display". The 6.9" set is optional. Apple scales screenshots for every other size.
+
+### Header and Search Results (optional, Oct 2026)
+Upload under **Product Page Information → Header and Search Results**, or once in **Asset Library**. Approved assets can then be swapped later without a new app version, and reused on Custom Product Pages and Product Page Optimization tests.
+
+| Placement | File | Size |
+|-----------|------|------|
+| Header (21:9) | `store-assets/app-store/creative/header-21x9-3840x1646.png` | 3840×1646 PNG, no alpha |
+| Search results (3:2) | `store-assets/app-store/creative/search-3x2-3840x2560.png` | 3840×2560 PNG, no alpha |
+| Universal (16:9, either slot) | `store-assets/app-store/creative/universal-16x9-5244x2950.png` | 5244×2950 PNG, no alpha |
+
+Use the dedicated header and search files. Keep the universal one as a fallback or as a Product Page Optimization variant. All three use real app screens and short text with no prices, URLs or "free" claims. Key content sits inside the centre area that survives both the 21:9 and 3:2 crops. Check them in the **Preview** button before submitting. Regenerate with `node scripts/store-screenshots/creative.js` after `generate.js`.
+
+### iPhone Duo: not for this release
+Duo screenshots must show the app actually running on iPhone Duo, and uploading them puts an "optimized for iPhone Duo" badge on the product page. v1.1.0 is built with the iOS 26 SDK and hasn't been laid out or tested for Duo's two displays. Stretched iPhone screenshots would misrepresent that (Guideline 2.3). Leave the iPhone Duo tab empty. Duo owners still get the app in iPhone compatibility mode.
+When you move to Xcode 27.1 / the iOS 27.1 SDK, test on the iPhone Duo simulator, then capture real outer (1398×2034) and inner (2007×2853) screenshots. Duo screenshots become required in April 2027 for apps built with the 27.1 SDK.
 
 ### Screenshot order and captions
 | # | Screen | Caption |
@@ -369,12 +388,18 @@ Then in App Store Connect: attach the build to version 1.1.0, upload screenshots
 
 ## 7. Reviewer demo accounts + review notes
 
-### Create in Supabase before submitting
-- **Tutor account** (main one): seed it with about 8 students across 5–6 families, recurring lessons this week, a few session notes, one paid and one unpaid invoice, and two message threads. The screenshot demo data is a good template.
-  - Email: `reviewer.tutor@dalesson.app` · Password: `<strong password>`
-- **Parent account**, linked to one family of the tutor above:
-  - Email: `reviewer.parent@dalesson.app` · Password: `<strong password>`
-- Make sure neither account hits onboarding (`onboarding_completed_at` set) or an agreement prompt.
+### Create them with one command
+```bash
+npx supabase db push                                   # once (adds delete_user_account, used by --reset)
+npx tsx scripts/seed-reviewer-accounts.ts --dry-run    # preview, no writes
+npx tsx scripts/seed-reviewer-accounts.ts              # create; prints both passwords once
+npx tsx scripts/seed-reviewer-accounts.ts --reset      # wipe and recreate (new passwords)
+```
+- **Tutor** `reviewer.tutor@dalesson.app`: "Sarah Nguyen, Harmony Studio". It has 7 families, 9 students and about 14 weeks of recurring lessons (some with session notes), with invoice and prepaid payments in mixed states and 3 message threads. Onboarding is done.
+- **Parent** `reviewer.parent@dalesson.app`: "Jennifer Park", one of that tutor's families (Emma and Lucas). Onboarding and the agreement are done, and there's one unread message.
+- Passwords are generated, printed once and never saved. Store them in your password manager. All other names are fictional, and the other families use `.review@example.com` emails, so no real emails are sent.
+- Lessons are generated around the run date. Re-run with `--reset` if review happens weeks later, so the calendar isn't empty. Remember to update the password in App Store Connect afterwards.
+- Don't delete these accounts with the in-app Delete Account button before review is finished.
 
 ### App Store Connect → App Review Information
 Sign‑in: `reviewer.tutor@dalesson.app` / `<password>`
@@ -434,13 +459,18 @@ Support: support@dalesson.app
 - [ ] Tested on a real iPhone **and** an iPad or iPad simulator (iPad is required because `supportsTablet: true`)
 
 ### Web / accounts
-- [ ] `dalesson.app/privacy`, `/terms`, `/support` live (support page has deletion steps)
+- [x] Privacy, Terms and Support pages built (`/privacy`, `/terms`, `/support`)
+- [ ] `dalesson.app` serves the web build, so those URLs open
+- [ ] Confirm the governing law (Delaware) and the legal entity name in both legal docs
+- [ ] `legal@dalesson.app` inbox working (listed in the Terms)
 - [ ] `support@` and `privacy@dalesson.app` inboxes working
 - [ ] Reviewer tutor and parent accounts seeded, onboarding already done
 - [ ] Latest Program License Agreement accepted
 
 ### App Store Connect
-- [ ] Icon + 6 iPhone 6.9" + 6 iPad 13" screenshots uploaded
+- [ ] Icon + 6 iPhone 6.3" (medium display tab) + 6 iPad 13" screenshots uploaded (6.9" optional)
+- [ ] Optional: header + search results assets uploaded and checked in Preview
+- [ ] Promotional text replaced with the §1 version (App Store Connect still shows the old "track every student's progress… Free to start" text)
 - [ ] Name, subtitle, promo text, keywords, description (§1)
 - [ ] Support + Privacy URLs
 - [ ] Category: Education / Business
