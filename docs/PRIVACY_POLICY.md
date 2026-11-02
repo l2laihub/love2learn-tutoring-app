@@ -2,7 +2,7 @@
 
 **DaLesson Tutoring Management Platform**
 
-**Last Updated: October 30, 2026**
+**Last Updated: November 2, 2026**
 
 **Effective Date: January 31, 2026**
 
@@ -52,6 +52,7 @@ When you register for an account or use our Service, we may collect the followin
 
 **Communication Data:**
 - Messages between tutors and parents
+- Reports you file about a message (the reason, any details you add, and a copy of the reported message) and the list of people you block
 - Lesson notes and feedback
 - Notification preferences
 
@@ -118,6 +119,7 @@ We use the information we collect for the following purposes:
 ### 2.3 Safety and Security
 
 - Detect, prevent, and address fraud, abuse, or security issues
+- Review reports of objectionable messages, which are emailed to our support team through Resend
 - Enforce our Terms of Service
 - Protect the rights, property, and safety of our users and the public
 - Comply with legal obligations
@@ -234,6 +236,7 @@ We retain your personal information for as long as necessary to fulfill the purp
 | Lesson history | 7 years (for tax and legal purposes) |
 | Payment records | 7 years (for tax and legal purposes) |
 | Messages | 3 years or until account deletion |
+| Content reports | 2 years, so we can act on repeat abuse |
 | Usage logs | 90 days |
 | Security logs | 1 year |
 

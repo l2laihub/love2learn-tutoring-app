@@ -3,7 +3,7 @@
  * Shows all messages in a thread with ability to reply
  */
 
-import React, { useCallback, useRef, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useEffect, useMemo, useState } from 'react';
 import {
   View,
   FlatList,
@@ -27,9 +27,10 @@ import {
   useDeleteMessage,
   useDeleteThread,
   useBulkDeleteMessages,
+  useBlockedUsers,
 } from '../../../src/hooks';
 import { useFileUpload } from '../../../src/hooks/useFileUpload';
-import { MessageBubble, MessageComposer } from '../../../src/components/messages';
+import { MessageBubble, MessageComposer, ReportMessageModal } from '../../../src/components/messages';
 import { MessageWithDetails } from '../../../src/types/messages';
 
 export default function ThreadDetailScreen() {
@@ -43,6 +44,8 @@ export default function ThreadDetailScreen() {
   const { mutate: deleteThread } = useDeleteThread();
   const { mutate: bulkDeleteMessages, loading: bulkDeleting } = useBulkDeleteMessages();
   const { uploadFile } = useFileUpload();
+  const { blocked, refetch: refetchBlocked } = useBlockedUsers();
+  const [reportTarget, setReportTarget] = useState<{ id: string; senderName: string } | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const [showMenu, setShowMenu] = useState(false);
 
@@ -313,11 +316,24 @@ export default function ThreadDetailScreen() {
     }
   }, [selectedMessageIds, bulkDeleteMessages, handleExitSelectionMode, refetch]);
 
+  // Hide messages from people this user blocked (App Store Guideline 1.2)
+  const blockedIds = useMemo(() => new Set(blocked.map((b) => b.blocked_id)), [blocked]);
+  const visibleMessages = useMemo(
+    () => (thread?.messages ?? []).filter((m) => !blockedIds.has(m.sender_id)),
+    [thread?.messages, blockedIds]
+  );
+  const hiddenCount = (thread?.messages.length ?? 0) - visibleMessages.length;
+
   const renderMessage = ({ item }: { item: MessageWithDetails }) => (
     <MessageBubble
       message={item}
       onToggleReaction={(emoji) => handleToggleReaction(item.id, emoji)}
       onDelete={canDeleteMessage(item) ? () => handleDeleteMessage(item.id) : undefined}
+      onReport={
+        item.sender_id !== parent?.id
+          ? () => setReportTarget({ id: item.id, senderName: item.sender?.name || 'this person' })
+          : undefined
+      }
       isSelectionMode={isSelectionMode}
       isSelected={selectedMessageIds.has(item.id)}
       onToggleSelect={handleToggleMessageSelect}
@@ -450,10 +466,20 @@ export default function ThreadDetailScreen() {
           </View>
         </View>
 
+        {hiddenCount > 0 && (
+          <View style={styles.hiddenNotice}>
+            <Ionicons name="eye-off-outline" size={16} color={colors.neutral.textSecondary} />
+            <Text style={styles.hiddenNoticeText}>
+              {hiddenCount} message{hiddenCount !== 1 ? 's' : ''} from people you blocked{' '}
+              {hiddenCount !== 1 ? 'are' : 'is'} hidden. Manage blocked people in your profile.
+            </Text>
+          </View>
+        )}
+
         {/* Messages */}
         <FlatList
           ref={flatListRef}
-          data={thread.messages}
+          data={visibleMessages}
           renderItem={renderMessage}
           keyExtractor={(item) => item.id}
           style={styles.messageList}
@@ -471,6 +497,16 @@ export default function ThreadDetailScreen() {
           disabled={sending}
         />
       </KeyboardAvoidingView>
+
+      <ReportMessageModal
+        visible={reportTarget !== null}
+        messageId={reportTarget?.id ?? null}
+        senderName={reportTarget?.senderName ?? 'this person'}
+        onClose={() => setReportTarget(null)}
+        onReported={(didBlock) => {
+          if (didBlock) refetchBlocked();
+        }}
+      />
     </>
   );
 }
@@ -487,6 +523,19 @@ const chatScreenColors = {
 };
 
 const styles = StyleSheet.create({
+  hiddenNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.neutral.background,
+  },
+  hiddenNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.neutral.textSecondary,
+  },
   container: {
     flex: 1,
     backgroundColor: chatScreenColors.background,

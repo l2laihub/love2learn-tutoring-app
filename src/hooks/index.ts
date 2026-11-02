@@ -241,3 +241,7 @@ export type {
   CustomSubjectInput,
 } from './useTutorProfile';
 export type { CustomSubject as TutorCustomSubject } from './useTutorProfile';
+
+// Moderation hooks (report and block, App Store Guideline 1.2)
+export { useBlockedUsers, reportMessage, REPORT_REASONS } from './useModeration';
+export type { ReportReason, BlockedUser, ReportMessageInput } from './useModeration';

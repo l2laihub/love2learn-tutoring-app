@@ -437,6 +437,7 @@ export default function RegisterTutorScreen() {
                 <Text style={styles.termsLink} onPress={openPrivacyPolicy}>
                   Privacy Policy
                 </Text>
+                , including no abusive or objectionable content in messages.
               </Text>
             </TouchableOpacity>
 

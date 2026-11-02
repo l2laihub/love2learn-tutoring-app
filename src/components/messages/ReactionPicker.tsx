@@ -14,6 +14,8 @@ interface ReactionPickerProps {
   onClose: () => void;
   onSelectReaction: (emoji: string) => void;
   onDelete?: () => void;
+  /** Shown for other people's messages (App Store Guideline 1.2) */
+  onReport?: () => void;
   position?: { x: number; y: number };
 }
 
@@ -22,6 +24,7 @@ export function ReactionPicker({
   onClose,
   onSelectReaction,
   onDelete,
+  onReport,
   position,
 }: ReactionPickerProps) {
   const handleSelect = (emoji: string) => {
@@ -35,6 +38,12 @@ export function ReactionPicker({
     // This prevents a race condition where the modal closing animation
     // interferes with the Alert presentation on both mobile and web platforms
     setTimeout(() => onDelete?.(), 150);
+  };
+
+  const handleReport = () => {
+    onClose();
+    // Same delay as delete: let this modal close before the report modal opens
+    setTimeout(() => onReport?.(), 150);
   };
 
   return (
@@ -80,6 +89,22 @@ export function ReactionPicker({
                   ]}
                 >
                   <Ionicons name="trash-outline" size={20} color={colors.accent.main} />
+                </Pressable>
+              </>
+            )}
+            {onReport && (
+              <>
+                <View style={styles.divider} />
+                <Pressable
+                  onPress={handleReport}
+                  style={({ pressed }) => [
+                    styles.deleteButton,
+                    pressed && styles.deletePressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Report message"
+                >
+                  <Ionicons name="flag-outline" size={20} color={colors.status.error} />
                 </Pressable>
               </>
             )}

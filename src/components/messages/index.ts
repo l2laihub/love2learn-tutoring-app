@@ -16,3 +16,4 @@ export { NewMessageModal } from './NewMessageModal';
 export { ParentGroupModal } from './ParentGroupModal';
 export { ParentGroupSelector } from './ParentGroupSelector';
 export { ManageGroupsModal } from './ManageGroupsModal';
+export { ReportMessageModal } from './ReportMessageModal';

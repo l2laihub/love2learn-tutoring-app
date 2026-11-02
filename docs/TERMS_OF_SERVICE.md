@@ -2,7 +2,7 @@
 
 **DaLesson Tutoring Management Platform**
 
-**Last Updated: October 30, 2026**
+**Last Updated: November 2, 2026**
 
 **Effective Date: January 31, 2026**
 
@@ -246,7 +246,17 @@ All content uploaded to the Service must:
 - Not infringe upon intellectual property rights
 - Not contain malicious code or links
 
-### 6.3 Enforcement
+### 6.3 Messages: Zero Tolerance for Abuse
+
+There is no tolerance for objectionable content or abusive users in DaLesson messages. Harassment, threats, hate speech, sexual content, spam and content that is unsafe for children are not allowed.
+
+- **Report:** long-press any message from someone else and tap the flag to report it.
+- **Block:** you can block the sender when you report. Messages from people you block are hidden from you. You can unblock them under Profile → Blocked people.
+- **Our response:** we review every report within 24 hours. We remove content that breaks these Terms and suspend or remove the accounts that posted it.
+
+You can also report content by emailing support@dalesson.app.
+
+### 6.4 Enforcement
 
 We reserve the right to:
 - Remove any content that violates these Terms

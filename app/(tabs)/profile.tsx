@@ -24,6 +24,7 @@ import { colors, spacing, typography, borderRadius, shadows, getSubjectColor, Su
 import { Student, UpdateStudentInput } from '../../src/types/database';
 import { StudentFormModal } from '../../src/components/StudentFormModal';
 import { DeleteAccountSection } from '../../src/components/DeleteAccountSection';
+import { BlockedUsersSection } from '../../src/components/BlockedUsersSection';
 import { LegalLinks } from '../../src/components/LegalLinks';
 import { parseBirthday } from '../../src/utils/dateUtils';
 import { AvatarUpload, AvatarDisplay } from '../../src/components/AvatarUpload';
@@ -355,6 +356,7 @@ export default function ProfileTabScreen() {
             <Ionicons name="log-out-outline" size={20} color={colors.status.error} />
             <Text style={styles.signOutText}>Sign Out</Text>
           </Pressable>
+          <BlockedUsersSection />
           <DeleteAccountSection />
           <LegalLinks />
         </View>
