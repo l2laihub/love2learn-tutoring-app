@@ -34,6 +34,8 @@ interface MessageBubbleProps {
   message: MessageWithDetails;
   onToggleReaction: (emoji: string) => void;
   onDelete?: () => void;
+  /** Report this message (only passed for other people's messages) */
+  onReport?: () => void;
   // Selection mode props
   isSelectionMode?: boolean;
   isSelected?: boolean;
@@ -112,6 +114,7 @@ export function MessageBubble({
   message,
   onToggleReaction,
   onDelete,
+  onReport,
   isSelectionMode = false,
   isSelected = false,
   onToggleSelect,
@@ -244,6 +247,7 @@ export function MessageBubble({
         onClose={() => setShowReactionPicker(false)}
         onSelectReaction={handleSelectReaction}
         onDelete={onDelete}
+        onReport={isOwnMessage ? undefined : onReport}
         position={pressPosition}
       />
     </>

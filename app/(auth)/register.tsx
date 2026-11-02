@@ -36,6 +36,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [registrationComplete, setRegistrationComplete] = useState(false);
 
@@ -132,6 +133,11 @@ export default function RegisterScreen() {
     setMessage(null);
 
     if (!validateForm()) {
+      return;
+    }
+
+    if (!agreedToTerms) {
+      setMessage({ type: 'error', text: 'Please agree to the Terms of Service and Privacy Policy' });
       return;
     }
 
@@ -463,6 +469,32 @@ export default function RegisterScreen() {
               Password must be at least 6 characters
             </Text>
 
+            {/* Terms Checkbox (includes the no-abuse rules for messages, Guideline 1.2) */}
+            <TouchableOpacity
+              style={styles.termsContainer}
+              onPress={() => setAgreedToTerms(!agreedToTerms)}
+              disabled={isLoading}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: agreedToTerms }}
+            >
+              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+                {agreedToTerms && (
+                  <Ionicons name="checkmark" size={16} color={colors.neutral.white} />
+                )}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to the{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/terms')}>
+                  Terms of Service
+                </Text>
+                {' '}and{' '}
+                <Text style={styles.termsLink} onPress={() => router.push('/privacy')}>
+                  Privacy Policy
+                </Text>
+                , including no abusive or objectionable content in messages.
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[
                 styles.registerButton,
@@ -592,6 +624,34 @@ const styles = StyleSheet.create({
   },
   eyeIcon: {
     padding: spacing.xs,
+  },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.xl,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: borderRadius.sm,
+    borderWidth: 2,
+    borderColor: colors.primary.main,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary.main,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.neutral.text,
+    lineHeight: 20,
+  },
+  termsLink: {
+    color: colors.primary.main,
+    fontWeight: typography.weights.medium,
   },
   passwordHint: {
     fontSize: typography.sizes.xs,
